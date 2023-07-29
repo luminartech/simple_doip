@@ -1,0 +1,15 @@
+[package]
+name = "doip"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bincode = "1"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", optional = true }
+tokio-native-tls = { version = "0.3", optional = true }
+
+[features]
+client = ["dep:tokio"]
+server = ["dep:tokio"]
+tls = ["dep:tokio-native-tls"]
