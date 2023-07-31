@@ -5,14 +5,15 @@ use std::io::{Read, Write};
 /// DoIP Protocol Version
 #[derive(Clone, Copy, Debug)]
 pub enum ProtocolVersion {
+    Reserved,
     /// ISO 13400-2:2010
     V2010,
     /// ISO 13400-2:2012
     V2012,
     /// ISO 13400-2:2019
     V2019,
-    /// DoIP Spec Reserved
-    Reserved(u8),
+    /// DoIP Future Spec Reserved
+    ReservedFuture(u8),
     /// DoiP Version Value for Vehicle Identification Request
     VehicleIdentificationRequest,
 }
@@ -20,11 +21,12 @@ pub enum ProtocolVersion {
 impl From<u8> for ProtocolVersion {
     fn from(value: u8) -> Self {
         match value {
+            0x00 => ProtocolVersion::Reserved,
             0x01 => ProtocolVersion::V2010,
             0x02 => ProtocolVersion::V2012,
             0x03 => ProtocolVersion::V2019,
-            0x04..=0xFE => ProtocolVersion::Reserved(value),
-            OxFF => ProtocolVersion::VehicleIdentificationRequest,
+            0x04..=0xFE => ProtocolVersion::ReservedFuture(value),
+            0xFF => ProtocolVersion::VehicleIdentificationRequest,
         }
     }
 }
@@ -32,10 +34,11 @@ impl From<u8> for ProtocolVersion {
 impl From<ProtocolVersion> for u8 {
     fn from(value: ProtocolVersion) -> Self {
         match value {
+            ProtocolVersion::Reserved => 0x00,
             ProtocolVersion::V2010 => 0x01,
             ProtocolVersion::V2012 => 0x02,
             ProtocolVersion::V2019 => 0x03,
-            ProtocolVersion::Reserved(value) => value,
+            ProtocolVersion::ReservedFuture(value) => value,
             ProtocolVersion::VehicleIdentificationRequest => 0xFF,
         }
     }
@@ -156,6 +159,7 @@ impl DoIpHeader {
     }
     fn read<T: Read>(reader: &mut T) -> DoIpHeader {
         let protocol_version = reader.read_u8().unwrap().into();
+        println!("protocol_version: {:?}", protocol_version);
         let inverse_protocol_version = reader.read_u8().unwrap();
         let payload_type = reader.read_u16::<BigEndian>().unwrap().into();
         let payload_length = reader.read_u32::<BigEndian>().unwrap();
@@ -185,7 +189,8 @@ pub struct DoIPParser {}
 impl DoIPParser {
     pub fn parse_doip_message(message_bytes: &mut [u8]) -> DoIPMessage {
         let header = DoIpHeader::read(&mut message_bytes.as_ref());
-        let payload = Vec::new();
+        assert!(header.version_inverse_correct());
+        let payload = Vec::from(message_bytes);
         DoIPMessage { header, payload }
     }
 }
@@ -202,5 +207,11 @@ mod tests {
         let mut buf: Vec<u8> = vec![0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         let deserialized_message = DoIPParser::parse_doip_message(&mut buf);
         assert!(deserialized_message.header.version_inverse_correct());
+    }
+    #[test]
+    #[should_panic]
+    fn test_invalid_inverse() {
+        let mut buf: Vec<u8> = vec![0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let deserialized_message = DoIPParser::parse_doip_message(&mut buf);
     }
 }
