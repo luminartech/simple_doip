@@ -1,9 +1,9 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use bytes::{buf::Reader, BytesMut};
 use std::io::{Read, Write};
 
 /// DoIP Protocol Version
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
 pub enum ProtocolVersion {
     Reserved,
     /// ISO 13400-2:2010
@@ -45,7 +45,8 @@ impl From<ProtocolVersion> for u8 {
 }
 
 /// DoIP Message Payload Type
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
 pub enum PayloadType {
     /// DoIP Negative Acknowledge
     /// Ignore packets with multi- or broadcast address as source IP address
@@ -190,28 +191,33 @@ impl DoIPParser {
     pub fn parse_doip_message(message_bytes: &mut [u8]) -> DoIPMessage {
         let header = DoIpHeader::read(&mut message_bytes.as_ref());
         assert!(header.version_inverse_correct());
-        let payload = Vec::from(message_bytes);
+        assert!(header.payload_length == (message_bytes.len() - 8) as u32);
+
+        let payload = Vec::from(message_bytes.iter().skip(8));
         DoIPMessage { header, payload }
     }
 }
 #[cfg(test)]
 mod tests {
 
-    use bytes::BufMut;
-
     use super::*;
 
     /// Check that we properly decode and encode hex bytes
     #[test]
     fn test_valid_messages() {
-        let mut buf: Vec<u8> = vec![0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let mut buf: Vec<u8> = vec![
+            0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ];
         let deserialized_message = DoIPParser::parse_doip_message(&mut buf);
-        assert!(deserialized_message.header.version_inverse_correct());
+        assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2012);
+        assert!(deserialized_message.header.payload_type == PayloadType::NegativeAcknowledge);
+        assert!(deserialized_message.header.payload_length == 8);
     }
     #[test]
     #[should_panic]
     fn test_invalid_inverse() {
-        let mut buf: Vec<u8> = vec![0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-        let deserialized_message = DoIPParser::parse_doip_message(&mut buf);
+        let mut buf: Vec<u8> = vec![0x02, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let _deserialized_message = DoIPParser::parse_doip_message(&mut buf);
     }
 }
