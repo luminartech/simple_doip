@@ -3,7 +3,6 @@ use std::io::{Read, Write};
 
 /// DoIP Protocol Version
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
 pub enum ProtocolVersion {
     Reserved,
     /// ISO 13400-2:2010
@@ -46,7 +45,6 @@ impl From<ProtocolVersion> for u8 {
 
 /// DoIP Message Payload Type
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
 pub enum PayloadType {
     /// DoIP Negative Acknowledge
     /// Ignore packets with multi- or broadcast address as source IP address
@@ -154,11 +152,11 @@ pub struct DoIpHeader {
 
 /// DoIP Message Header
 impl DoIpHeader {
-    fn version_inverse_correct(&self) -> bool {
+    pub(crate) fn version_inverse_correct(&self) -> bool {
         let protocol_version: u8 = self.protocol_version.into();
         protocol_version ^ 0xFF == self.inverse_protocol_version
     }
-    fn read<T: Read>(reader: &mut T) -> DoIpHeader {
+    pub fn read<T: Read>(reader: &mut T) -> DoIpHeader {
         let protocol_version = reader.read_u8().unwrap().into();
         println!("protocol_version: {:?}", protocol_version);
         let inverse_protocol_version = reader.read_u8().unwrap();
@@ -177,47 +175,5 @@ impl DoIpHeader {
         let payload_type: u16 = self.payload_type.into();
         writer.write_u16::<BigEndian>(payload_type).unwrap();
         writer.write_u32::<BigEndian>(self.payload_length).unwrap();
-    }
-}
-
-pub struct DoIPMessage {
-    pub header: DoIpHeader,
-    pub payload: Vec<u8>,
-}
-
-pub struct DoIPParser {}
-
-impl DoIPParser {
-    pub fn parse_doip_message(message_bytes: &mut [u8]) -> DoIPMessage {
-        let header = DoIpHeader::read(&mut message_bytes.as_ref());
-        assert!(header.version_inverse_correct());
-        assert!(header.payload_length == (message_bytes.len() - 8) as u32);
-
-        let payload = Vec::from(message_bytes.iter().skip(8));
-        DoIPMessage { header, payload }
-    }
-}
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    /// Check that we properly decode and encode hex bytes
-    #[test]
-    fn test_valid_messages() {
-        let mut buf: Vec<u8> = vec![
-            0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00,
-        ];
-        let deserialized_message = DoIPParser::parse_doip_message(&mut buf);
-        assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2012);
-        assert!(deserialized_message.header.payload_type == PayloadType::NegativeAcknowledge);
-        assert!(deserialized_message.header.payload_length == 8);
-    }
-    #[test]
-    #[should_panic]
-    fn test_invalid_inverse() {
-        let mut buf: Vec<u8> = vec![0x02, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-        let _deserialized_message = DoIPParser::parse_doip_message(&mut buf);
     }
 }
