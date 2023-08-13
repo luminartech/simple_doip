@@ -1,9 +1,9 @@
 use std::io::{Read, Write};
 
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{ReadBytesExt, WriteBytesExt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NegativeAck {
+pub enum Nack {
     IncorrectPatternFormat,
     UnknownPayloadType,
     MessageTooLarge,
@@ -12,9 +12,9 @@ pub enum NegativeAck {
     Reserved(u8),
 }
 
-impl From<u8> for NegativeAck {
+impl From<u8> for Nack {
     fn from(value: u8) -> Self {
-        use NegativeAck::*;
+        use Nack::*;
         match value {
             0x00 => IncorrectPatternFormat,
             0x01 => UnknownPayloadType,
@@ -26,9 +26,9 @@ impl From<u8> for NegativeAck {
     }
 }
 
-impl From<NegativeAck> for u8 {
-    fn from(value: NegativeAck) -> Self {
-        use NegativeAck::*;
+impl From<Nack> for u8 {
+    fn from(value: Nack) -> Self {
+        use Nack::*;
         match value {
             IncorrectPatternFormat => 0x00,
             UnknownPayloadType => 0x01,
@@ -40,13 +40,12 @@ impl From<NegativeAck> for u8 {
     }
 }
 
-/// DoIP Message Header
-impl NegativeAck {
-    pub fn read<T: Read>(reader: &mut T) -> NegativeAck {
+/// Nack read/write
+impl Nack {
+    pub fn read<T: Read>(reader: &mut T) -> Nack {
         reader.read_u8().unwrap().into()
     }
     pub fn write<T: Write>(&self, writer: &mut T) {
-        let raw: u8 = self.into();
-        writer.write_u8(self.into()).unwrap();
+        writer.write_u8((*self).into()).unwrap();
     }
 }
