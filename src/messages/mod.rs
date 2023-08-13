@@ -1,5 +1,6 @@
 pub mod header;
 pub mod nack;
+pub mod vehicle_identification_response;
 
 use header::DoIpHeader;
 
