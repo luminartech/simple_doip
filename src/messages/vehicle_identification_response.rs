@@ -40,3 +40,42 @@ impl FurtherActionRequired {
         writer.write_u8((*self).into()).unwrap();
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VinGidSyncStatus {
+    /// VIN and/or GID are synchronized
+    Synchronized,
+    Reserved(u8),
+    /// VIN and GID are NOT synchronized
+    Incomplete,
+}
+
+impl From<u8> for VinGidSyncStatus {
+    fn from(value: u8) -> Self {
+        match value {
+            0x00 => VinGidSyncStatus::Synchronized,
+            0x10 => VinGidSyncStatus::Incomplete,
+            // 0x01..=0x0F and 0x11..=0xFF
+            _ => VinGidSyncStatus::Reserved(value),
+        }
+    }
+}
+
+impl From<VinGidSyncStatus> for u8 {
+    fn from(value: VinGidSyncStatus) -> Self {
+        match value {
+            VinGidSyncStatus::Synchronized => 0x00,
+            VinGidSyncStatus::Incomplete => 0x10,
+            VinGidSyncStatus::Reserved(value) => value,
+        }
+    }
+}
+
+impl VinGidSyncStatus {
+    pub fn read<T: Read>(reader: &mut T) -> VinGidSyncStatus {
+        reader.read_u8().unwrap().into()
+    }
+    pub fn write<T: Write>(&self, writer: &mut T) {
+        writer.write_u8((*self).into()).unwrap();
+    }
+}
