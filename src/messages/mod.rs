@@ -1,6 +1,7 @@
 pub mod header;
 pub mod nack;
 pub mod routing_activation_request;
+pub mod routing_activation_response;
 pub mod vehicle_identification_response;
 
 use header::DoIpHeader;
