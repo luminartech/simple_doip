@@ -1,4 +1,4 @@
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 use crate::error::DoIPError;
@@ -45,7 +45,7 @@ impl From<ActivationTypeCode> for u8 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RoutingActivationRequest {
     /// Address of DoIP entity that requests routing activation.
-    pub source_address: [u8; 2],
+    pub source_address: u16,
     pub activation_type: ActivationTypeCode,
     pub reserved: [u8; 4],
     pub reserved_vehicle_manufacturer: Option<[u8; 4]>,
@@ -53,8 +53,7 @@ pub struct RoutingActivationRequest {
 
 impl RoutingActivationRequest {
     pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPError> {
-        let mut source_address = [0x00; 2];
-        reader.read_exact(&mut source_address)?;
+        let source_address = reader.read_u16::<BigEndian>()?;
         let activation_type = ActivationTypeCode::from(reader.read_u8()?);
 
         let mut reserved = [0x00; 4];
@@ -71,7 +70,7 @@ impl RoutingActivationRequest {
     }
 
     pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
-        writer.write_all(&self.source_address)?;
+        writer.write_u16::<BigEndian>(self.source_address)?;
         writer.write_u8(self.activation_type.into())?;
         writer.write_all(&self.reserved)?;
         if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {

@@ -1,7 +1,11 @@
 pub mod alive_check_response;
+pub mod diagnostic_message;
+pub mod diagnostic_message_negative_ack;
+pub mod diagnostic_message_positive_ack;
 pub mod entity_status_response;
 pub mod header;
 pub mod nack;
+pub mod power_mode_info_response;
 pub mod routing_activation_request;
 pub mod routing_activation_response;
 pub mod vehicle_identification_response;
@@ -9,15 +13,17 @@ pub mod vehicle_identification_response;
 use crate::{
     error::DoIPError,
     messages::{
-        alive_check_response::AliveCheckResponse, entity_status_response::EntityStatusResponse,
-        header::DoIpHeader, nack::NackCode, routing_activation_request::RoutingActivationRequest,
+        alive_check_response::AliveCheckResponse, diagnostic_message::DiagnosticMessage,
+        entity_status_response::EntityStatusResponse, header::DoIpHeader, nack::NackCode,
+        power_mode_info_response::DiagnosticPowerModeCode,
+        routing_activation_request::RoutingActivationRequest,
         routing_activation_response::RoutingActivationResponse,
         vehicle_identification_response::VehicleIdentificationResponse,
     },
 };
 
 /// DoIP Message Payload Type
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DoIPPayload {
     /// DoIP Negative Acknowledge
     /// Ignore packets with multi- or broadcast address as source IP address
@@ -46,9 +52,9 @@ pub enum DoIPPayload {
     /// DoIP Diagnostic Power Mode Info Request Message
     DiagnosticPowerModeInfoRequest,
     /// DoIP Diagnostic Power Mode Info Response Message
-    DiagnosticPowerModeInfoResponse,
+    DiagnosticPowerModeInfoResponse(DiagnosticPowerModeCode),
     /// DoIP Diagnostic Message
-    DiagnosticMessage,
+    DiagnosticMessage(DiagnosticMessage),
     /// DoIP Diagnostic Message Positive Acknowledge
     DiagnosticMessagePositiveAcknowledge,
     /// DoIP Diagnostic Message Negative Acknowledge
