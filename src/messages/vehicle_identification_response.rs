@@ -2,6 +2,8 @@ use std::io::{Read, Write};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
+use crate::error::DoIPError;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FurtherActionRequired {
     NoFurtherActionRequired,
@@ -29,15 +31,6 @@ impl From<FurtherActionRequired> for u8 {
             FurtherActionRequired::RoutingActivationRequiredToInitiateCentralSecurity => 0x10,
             FurtherActionRequired::VehicleManufacturerSpecific(value) => value,
         }
-    }
-}
-
-impl FurtherActionRequired {
-    pub fn read<T: Read>(reader: &mut T) -> FurtherActionRequired {
-        reader.read_u8().unwrap().into()
-    }
-    pub fn write<T: Write>(&self, writer: &mut T) {
-        writer.write_u8((*self).into()).unwrap();
     }
 }
 
@@ -71,15 +64,6 @@ impl From<VinGidSyncStatus> for u8 {
     }
 }
 
-impl VinGidSyncStatus {
-    pub fn read<T: Read>(reader: &mut T) -> VinGidSyncStatus {
-        reader.read_u8().unwrap().into()
-    }
-    pub fn write<T: Write>(&self, writer: &mut T) {
-        writer.write_u8((*self).into()).unwrap();
-    }
-}
-
 /// Vehicle identification response / Vehicle announcement
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VehicleIdentificationResponse {
@@ -98,18 +82,18 @@ pub struct VehicleIdentificationResponse {
 }
 
 impl VehicleIdentificationResponse {
-    pub fn read<T: Read>(reader: &mut T) -> Self {
+    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPError> {
         let mut vin = [0x00; 17];
-        reader.read_exact(&mut vin).unwrap();
+        reader.read_exact(&mut vin)?;
 
         let mut logical_address = [0x00; 2];
-        reader.read_exact(&mut logical_address).unwrap();
+        reader.read_exact(&mut logical_address)?;
 
         let mut entity_id = [0x00; 6];
-        reader.read_exact(&mut entity_id).unwrap();
+        reader.read_exact(&mut entity_id)?;
 
         let mut group_id = [0x00; 6];
-        reader.read_exact(&mut group_id).unwrap();
+        reader.read_exact(&mut group_id)?;
 
         // Table 1 - value not set
         let group_id = if group_id == [0x00; 6] || group_id == [0xFF; 6] {
@@ -118,32 +102,33 @@ impl VehicleIdentificationResponse {
             Some(group_id)
         };
 
-        let further_action_byte = reader.read_u8().unwrap();
+        let further_action_byte = reader.read_u8()?;
         let further_action = FurtherActionRequired::from(further_action_byte);
 
-        let vin_gid_sync_status_byte = reader.read_u8().unwrap();
+        let vin_gid_sync_status_byte = reader.read_u8()?;
         let vin_gid_sync_status = VinGidSyncStatus::from(vin_gid_sync_status_byte);
 
-        Self {
+        Ok(Self {
             vin,
             logical_address,
             entity_id,
             group_id,
             further_action,
             vin_gid_sync_status,
-        }
+        })
     }
 
-    pub fn write<T: std::io::Write>(&self, writer: &mut T) {
-        writer.write_all(&self.vin).unwrap();
-        writer.write_all(&self.logical_address).unwrap();
-        writer.write_all(&self.entity_id).unwrap();
+    pub fn write<T: std::io::Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
+        writer.write_all(&self.vin)?;
+        writer.write_all(&self.logical_address)?;
+        writer.write_all(&self.entity_id)?;
         if let Some(group_id) = self.group_id {
-            writer.write_all(&group_id).unwrap();
+            writer.write_all(&group_id)?;
         } else {
-            writer.write_all(&[0x00; 6]).unwrap();
+            writer.write_all(&[0x00; 6])?;
         }
-        self.further_action.write(writer);
-        self.vin_gid_sync_status.write(writer);
+        writer.write_u8(self.further_action.into())?;
+        writer.write_u8(self.vin_gid_sync_status.into())?;
+        Ok(())
     }
 }

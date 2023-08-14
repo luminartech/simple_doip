@@ -2,8 +2,13 @@ use std::io::{Read, Write};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
+use crate::error::DoIPError;
+
+/// Negative Acknowledgement payload
+/// Only sent by the server except in development
+/// Indicates error condition in previously received message
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Nack {
+pub enum NackCode {
     IncorrectPatternFormat,
     UnknownPayloadType,
     MessageTooLarge,
@@ -12,9 +17,9 @@ pub enum Nack {
     Reserved(u8),
 }
 
-impl From<u8> for Nack {
+impl From<u8> for NackCode {
     fn from(value: u8) -> Self {
-        use Nack::*;
+        use NackCode::*;
         match value {
             0x00 => IncorrectPatternFormat,
             0x01 => UnknownPayloadType,
@@ -26,9 +31,9 @@ impl From<u8> for Nack {
     }
 }
 
-impl From<Nack> for u8 {
-    fn from(value: Nack) -> Self {
-        use Nack::*;
+impl From<NackCode> for u8 {
+    fn from(value: NackCode) -> Self {
+        use NackCode::*;
         match value {
             IncorrectPatternFormat => 0x00,
             UnknownPayloadType => 0x01,
@@ -41,11 +46,12 @@ impl From<Nack> for u8 {
 }
 
 /// Nack read/write
-impl Nack {
-    pub fn read<T: Read>(reader: &mut T) -> Nack {
-        reader.read_u8().unwrap().into()
+impl NackCode {
+    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPError> {
+        Ok(reader.read_u8()?.into())
     }
-    pub fn write<T: Write>(&self, writer: &mut T) {
-        writer.write_u8((*self).into()).unwrap();
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
+        writer.write_u8((*self).into())?;
+        Ok(())
     }
 }

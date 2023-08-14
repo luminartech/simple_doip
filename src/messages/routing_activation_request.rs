@@ -2,11 +2,14 @@ use std::io::{Read, Write};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
+use crate::error::DoIPError;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ActivationType {
+pub enum ActivationTypeCode {
     /// ISO 14229
     Default,
-    /// Diagnostic communication required by regulation (e.g. ISO 27145, the ISO 20730 series, etc.)
+    /// Diagnostic communication required by regulation
+    /// (e.g. ISO 27145, the ISO 20730 series, etc.)
     RegulationRequired,
     /// ISO/SAE reserved
     Reserved(u8),
@@ -16,36 +19,27 @@ pub enum ActivationType {
     VehicleManufacturerSpecific(u8),
 }
 
-impl From<u8> for ActivationType {
+impl From<u8> for ActivationTypeCode {
     fn from(value: u8) -> Self {
         match value {
-            0x00 => ActivationType::Default,
-            0x01 => ActivationType::RegulationRequired,
-            0x02..=0xDF => ActivationType::Reserved(value),
-            0xE0 => ActivationType::CentralSecurity,
-            0xE1..=0xFF => ActivationType::VehicleManufacturerSpecific(value),
+            0x00 => ActivationTypeCode::Default,
+            0x01 => ActivationTypeCode::RegulationRequired,
+            0x02..=0xDF => ActivationTypeCode::Reserved(value),
+            0xE0 => ActivationTypeCode::CentralSecurity,
+            0xE1..=0xFF => ActivationTypeCode::VehicleManufacturerSpecific(value),
         }
     }
 }
 
-impl From<ActivationType> for u8 {
-    fn from(value: ActivationType) -> Self {
+impl From<ActivationTypeCode> for u8 {
+    fn from(value: ActivationTypeCode) -> Self {
         match value {
-            ActivationType::Default => 0x00,
-            ActivationType::RegulationRequired => 0x01,
-            ActivationType::Reserved(value) => value,
-            ActivationType::CentralSecurity => 0xE0,
-            ActivationType::VehicleManufacturerSpecific(value) => value,
+            ActivationTypeCode::Default => 0x00,
+            ActivationTypeCode::RegulationRequired => 0x01,
+            ActivationTypeCode::Reserved(value) => value,
+            ActivationTypeCode::CentralSecurity => 0xE0,
+            ActivationTypeCode::VehicleManufacturerSpecific(value) => value,
         }
-    }
-}
-
-impl ActivationType {
-    pub fn read<T: Read>(reader: &mut T) -> ActivationType {
-        reader.read_u8().unwrap().into()
-    }
-    pub fn write<T: Write>(&self, writer: &mut T) {
-        writer.write_u8((*self).into()).unwrap();
     }
 }
 
@@ -53,38 +47,37 @@ impl ActivationType {
 pub struct RoutingActivationRequest {
     /// Address of DoIP entity that requests routing activation.
     pub source_address: [u8; 2],
-    pub activation_type: ActivationType,
+    pub activation_type: ActivationTypeCode,
     pub reserved: [u8; 4],
     pub reserved_vehicle_manufacturer: Option<[u8; 4]>,
 }
 
 impl RoutingActivationRequest {
-    pub fn write<T: Write>(&self, writer: &mut T) {
-        writer.write_all(&self.source_address).unwrap();
-        writer.write_u8(self.activation_type.into()).unwrap();
-        writer.write_all(&self.reserved).unwrap();
-        if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {
-            writer.write_all(&reserved_vehicle_manufacturer).unwrap();
-        }
-    }
-
-    pub fn read<T: Read>(reader: &mut T) -> Self {
+    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPError> {
         let mut source_address = [0x00; 2];
-        reader.read_exact(&mut source_address).unwrap();
-
-        let activation_type_raw: u8 = reader.read_u8().unwrap();
-        let activation_type = ActivationType::try_from(activation_type_raw).unwrap();
+        reader.read_exact(&mut source_address)?;
+        let activation_type = ActivationTypeCode::from(reader.read_u8()?);
 
         let mut reserved = [0x00; 4];
-        reader.read_exact(&mut reserved).unwrap();
+        reader.read_exact(&mut reserved)?;
 
         let reserved_vehicle_manufacturer = None; // TODO
 
-        Self {
+        Ok(Self {
             source_address,
             activation_type,
             reserved,
             reserved_vehicle_manufacturer,
+        })
+    }
+
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
+        writer.write_all(&self.source_address)?;
+        writer.write_u8(self.activation_type.into())?;
+        writer.write_all(&self.reserved)?;
+        if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {
+            writer.write_all(&reserved_vehicle_manufacturer)?;
         }
+        Ok(())
     }
 }
