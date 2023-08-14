@@ -1,6 +1,8 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
+use crate::error::DoIPError;
+
 /// DoIP Protocol Version
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProtocolVersion {
@@ -152,11 +154,17 @@ pub struct DoIpHeader {
 
 /// DoIP Message Header
 impl DoIpHeader {
-    pub(crate) fn version_inverse_correct(&self) -> bool {
+    pub(crate) fn version_inverse_correct(&self) -> Result<(), DoIPError> {
         let protocol_version: u8 = self.protocol_version.into();
-        protocol_version ^ 0xFF == self.inverse_protocol_version
+        if protocol_version ^ 0xFF == self.inverse_protocol_version {
+            Ok(())
+        } else {
+            Err(DoIPError::VersionInverseIncorrect {
+                value: self.inverse_protocol_version,
+            })
+        }
     }
-    pub fn read<T: Read>(reader: &mut T) -> DoIpHeader {
+    pub(crate) fn read<T: Read>(reader: &mut T) -> DoIpHeader {
         let protocol_version = reader.read_u8().unwrap().into();
         println!("protocol_version: {:?}", protocol_version);
         let inverse_protocol_version = reader.read_u8().unwrap();
@@ -169,7 +177,7 @@ impl DoIpHeader {
             payload_length,
         }
     }
-    pub fn write<T: Write>(&self, writer: &mut T) {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) {
         writer.write_u8(self.protocol_version.into()).unwrap();
         writer.write_u8(self.inverse_protocol_version).unwrap();
         let payload_type: u16 = self.payload_type.into();

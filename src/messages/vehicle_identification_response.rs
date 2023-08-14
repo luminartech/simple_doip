@@ -1,6 +1,5 @@
-use std::io::{Read, Write};
-
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use std::io::{Read, Write};
 
 use crate::error::DoIPError;
 
@@ -65,7 +64,7 @@ impl From<VinGidSyncStatus> for u8 {
 }
 
 /// Vehicle identification response / Vehicle announcement
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VehicleIdentificationResponse {
     /// Vehicle Identification Number
     pub vin: [u8; 17],
@@ -118,7 +117,7 @@ impl VehicleIdentificationResponse {
         })
     }
 
-    pub fn write<T: std::io::Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
         writer.write_all(&self.vin)?;
         writer.write_all(&self.logical_address)?;
         writer.write_all(&self.entity_id)?;

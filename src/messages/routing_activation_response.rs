@@ -1,6 +1,5 @@
-use std::io::{Read, Write};
-
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use std::io::{Read, Write};
 
 use crate::error::DoIPError;
 
@@ -84,7 +83,7 @@ impl From<RoutingActivationResponseCode> for u8 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RoutingActivationResponse {
     /// External test equipment address
     pub logical_address_tester: u16,
@@ -96,7 +95,7 @@ pub struct RoutingActivationResponse {
 }
 
 impl RoutingActivationResponse {
-    pub fn read<T: Read>(reader: &mut T, payload_length: u32) -> Result<Self, DoIPError> {
+    pub(crate) fn read<T: Read>(reader: &mut T, payload_length: u32) -> Result<Self, DoIPError> {
         let logical_address_tester = reader.read_u16::<BigEndian>()?;
         let logical_address_of_doip_entity = reader.read_u16::<BigEndian>()?;
         let routing_activation_response_code_byte = reader.read_u8()?;
@@ -122,7 +121,7 @@ impl RoutingActivationResponse {
         })
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
         writer.write_all(&self.logical_address_tester.to_be_bytes())?;
         writer.write_all(&self.logical_address_of_doip_entity.to_be_bytes())?;
         writer.write_u8(self.routing_activation_response_code.into())?;

@@ -1,10 +1,9 @@
-use std::io::{Read, Write};
-
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use std::io::{Read, Write};
 
 use crate::error::DoIPError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActivationTypeCode {
     /// ISO 14229
     Default,
@@ -43,7 +42,7 @@ impl From<ActivationTypeCode> for u8 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RoutingActivationRequest {
     /// Address of DoIP entity that requests routing activation.
     pub source_address: [u8; 2],
