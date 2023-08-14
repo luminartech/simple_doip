@@ -1,6 +1,5 @@
-use std::io::{Read, Write};
-
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use std::io::{Read, Write};
 
 use crate::error::DoIPError;
 
@@ -47,7 +46,6 @@ impl From<NackCode> for u8 {
 
 /// Nack read/write
 impl NackCode {
-
     pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPError> {
         Ok(reader.read_u8()?.into())
     }

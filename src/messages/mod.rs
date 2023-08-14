@@ -1,17 +1,19 @@
+pub mod alive_check_response;
+pub mod entity_status_response;
 pub mod header;
 pub mod nack;
 pub mod routing_activation_request;
 pub mod routing_activation_response;
 pub mod vehicle_identification_response;
 
-use header::DoIpHeader;
-
-use crate::error::DoIPError;
-
-use self::{
-    nack::NackCode, routing_activation_request::RoutingActivationRequest,
-    routing_activation_response::RoutingActivationResponse,
-    vehicle_identification_response::VehicleIdentificationResponse,
+use crate::{
+    error::DoIPError,
+    messages::{
+        alive_check_response::AliveCheckResponse, entity_status_response::EntityStatusResponse,
+        header::DoIpHeader, nack::NackCode, routing_activation_request::RoutingActivationRequest,
+        routing_activation_response::RoutingActivationResponse,
+        vehicle_identification_response::VehicleIdentificationResponse,
+    },
 };
 
 /// DoIP Message Payload Type
@@ -36,11 +38,11 @@ pub enum DoIPPayload {
     /// DoIP Alive Check Request Message
     AliveCheckRequest,
     /// DoIP Alive Check Response Message
-    AliveCheckResponse,
+    AliveCheckResponse(AliveCheckResponse),
     /// DoIP Entity Status Request Message
     DoIPEntityStatusRequest,
     /// DoIP Entity Status Response Message
-    DoIPEntityStatusResponse,
+    DoIPEntityStatusResponse(EntityStatusResponse),
     /// DoIP Diagnostic Power Mode Info Request Message
     DiagnosticPowerModeInfoRequest,
     /// DoIP Diagnostic Power Mode Info Response Message
