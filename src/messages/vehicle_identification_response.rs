@@ -1,4 +1,4 @@
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
 use crate::error::DoIPError;
@@ -68,8 +68,7 @@ impl From<VinGidSyncStatus> for u8 {
 pub struct VehicleIdentificationResponse {
     /// Vehicle Identification Number
     pub vin: [u8; 17],
-
-    pub logical_address: [u8; 2],
+    pub logical_address: u16,
     /// Unique entity id, e.g. MAC address of network interface.
     pub entity_id: [u8; 6],
     //// Unique group identification of entities within a vehicle.
@@ -85,8 +84,7 @@ impl VehicleIdentificationResponse {
         let mut vin = [0x00; 17];
         reader.read_exact(&mut vin)?;
 
-        let mut logical_address = [0x00; 2];
-        reader.read_exact(&mut logical_address)?;
+        let mut logical_address = reader.read_u16::<BigEndian>()?;
 
         let mut entity_id = [0x00; 6];
         reader.read_exact(&mut entity_id)?;
@@ -119,7 +117,7 @@ impl VehicleIdentificationResponse {
 
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
         writer.write_all(&self.vin)?;
-        writer.write_all(&self.logical_address)?;
+        writer.write_u16::<BigEndian>(self.logical_address)?;
         writer.write_all(&self.entity_id)?;
         if let Some(group_id) = self.group_id {
             writer.write_all(&group_id)?;

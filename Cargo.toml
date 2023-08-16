@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+async-trait = "0.1"
 bincode = "1"
 bytes = "1"
 byteorder = "1"
@@ -13,6 +14,7 @@ tokio = { version = "1", optional = true }
 tokio-native-tls = { version = "0.3", optional = true }
 
 [features]
+default = ["client", "server", "tls"]
 client = ["dep:tokio"]
 server = ["dep:tokio"]
 tls = ["dep:tokio-native-tls"]
