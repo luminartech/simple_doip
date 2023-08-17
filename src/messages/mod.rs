@@ -1,7 +1,6 @@
 pub mod alive_check_response;
 pub mod diagnostic_message;
-pub mod diagnostic_message_negative_ack;
-pub mod diagnostic_message_positive_ack;
+pub mod diagnostic_message_ack;
 pub mod entity_status_response;
 pub mod header;
 pub mod nack;
@@ -21,6 +20,8 @@ use crate::{
         vehicle_identification_response::VehicleIdentificationResponse,
     },
 };
+
+use self::diagnostic_message_ack::DiagnosticMessageAck;
 
 /// DoIP Message Payload Type
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,9 +57,7 @@ pub enum DoIPPayload {
     /// DoIP Diagnostic Message
     DiagnosticMessage(DiagnosticMessage),
     /// DoIP Diagnostic Message Positive Acknowledge
-    DiagnosticMessagePositiveAcknowledge,
-    /// DoIP Diagnostic Message Negative Acknowledge
-    DiagnosticMessageNegativeAcknowledge,
+    DiagnosticMessagePositiveAcknowledge(DiagnosticMessageAck),
     /// DoIP Spec Reserved
     Reserved(u16),
     /// DoIP Spec Reserved for Vehicle Manufacturer

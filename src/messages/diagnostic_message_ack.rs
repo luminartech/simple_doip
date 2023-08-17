@@ -5,40 +5,62 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use crate::error::DoIPError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DiagnosticPositiveAckCode {
+pub enum DiagnosticAckCode {
     RoutingConfirmationAck,
     Reserved(u8),
+    InvalidSourceAddress,
+    UnknownTargetAddress,
+    DiagnosticMessageTooLarge,
+    OutOfMemory,
+    TargetUnreachable,
+    UnknownNetwork,
+    TransportProtocolError,
 }
 
-impl From<u8> for DiagnosticPositiveAckCode {
+impl From<u8> for DiagnosticAckCode {
     fn from(value: u8) -> Self {
-        use DiagnosticPositiveAckCode::*;
+        use DiagnosticAckCode::*;
         match value {
             0x00 => RoutingConfirmationAck,
-            _ => Reserved(value),
+            0x01 => Reserved(value),
+            0x02 => InvalidSourceAddress,
+            0x03 => UnknownTargetAddress,
+            0x04 => DiagnosticMessageTooLarge,
+            0x05 => OutOfMemory,
+            0x06 => TargetUnreachable,
+            0x07 => UnknownNetwork,
+            0x08 => TransportProtocolError,
+            0x09..=0xFF => Reserved(value),
         }
     }
 }
 
-impl From<DiagnosticPositiveAckCode> for u8 {
-    fn from(value: DiagnosticPositiveAckCode) -> Self {
-        use DiagnosticPositiveAckCode::*;
+impl From<DiagnosticAckCode> for u8 {
+    fn from(value: DiagnosticAckCode) -> Self {
+        use DiagnosticAckCode::*;
         match value {
             RoutingConfirmationAck => 0x00,
             Reserved(value) => value,
+            InvalidSourceAddress => 0x02,
+            UnknownTargetAddress => 0x03,
+            DiagnosticMessageTooLarge => 0x04,
+            OutOfMemory => 0x05,
+            TargetUnreachable => 0x06,
+            UnknownNetwork => 0x07,
+            TransportProtocolError => 0x08,
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DiagnosticMessagePositiveAck {
+pub struct DiagnosticMessageAck {
     pub source_address: u16,
     pub target_address: u16,
-    pub ack_code: DiagnosticPositiveAckCode,
+    pub ack_code: DiagnosticAckCode,
     pub previous_message_data: Vec<u8>,
 }
 
-impl DiagnosticMessagePositiveAck {
+impl DiagnosticMessageAck {
     pub fn read<T: Read>(reader: &mut T, payload_length: u32) -> Result<Self, DoIPError> {
         let source_address = reader.read_u16::<BigEndian>()?;
 
