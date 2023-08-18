@@ -1,7 +1,8 @@
-use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
-use crate::error::DoIPError;
+use byteorder::{ReadBytesExt, WriteBytesExt};
+
+use super::message_error::DoIPMessageError;
 
 /// Negative Acknowledgement payload
 /// Only sent by the server except in development
@@ -46,10 +47,10 @@ impl From<NackCode> for u8 {
 
 /// Nack read/write
 impl NackCode {
-    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPError> {
+    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
         Ok(reader.read_u8()?.into())
     }
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
         writer.write_u8((*self).into())?;
         Ok(())
     }

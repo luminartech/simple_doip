@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::error::DoIPError;
+use super::message_error::DoIPMessageError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiagnosticAckCode {
@@ -61,7 +61,7 @@ pub struct DiagnosticMessageAck {
 }
 
 impl DiagnosticMessageAck {
-    pub fn read<T: Read>(reader: &mut T, payload_length: u32) -> Result<Self, DoIPError> {
+    pub fn read<T: Read>(reader: &mut T, payload_length: u32) -> Result<Self, DoIPMessageError> {
         let source_address = reader.read_u16::<BigEndian>()?;
 
         let target_address = reader.read_u16::<BigEndian>()?;
@@ -80,7 +80,7 @@ impl DiagnosticMessageAck {
         })
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
         writer.write_u16::<BigEndian>(self.source_address)?;
         writer.write_u16::<BigEndian>(self.target_address)?;
         writer.write_u8(self.ack_code.into())?;

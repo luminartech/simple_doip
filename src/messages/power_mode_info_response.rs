@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
-use crate::error::DoIPError;
+use super::message_error::DoIPMessageError;
 
 ///Identifies whether or not the vehicle is in diagnostic power mode and ready to perform reliable diagnostics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,11 +37,11 @@ impl From<DiagnosticPowerModeCode> for u8 {
 }
 
 impl DiagnosticPowerModeCode {
-    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPError> {
+    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
         Ok(reader.read_u8()?.into())
     }
 
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
         writer.write_u8((*self).into())?;
         Ok(())
     }

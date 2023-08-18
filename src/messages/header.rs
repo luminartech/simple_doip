@@ -1,7 +1,8 @@
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
-use crate::error::DoIPError;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+
+use super::message_error::DoIPMessageError;
 
 /// DoIP Protocol Version
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -154,12 +155,12 @@ pub struct DoIpHeader {
 
 /// DoIP Message Header
 impl DoIpHeader {
-    pub(crate) fn version_inverse_correct(&self) -> Result<(), DoIPError> {
+    pub(crate) fn version_inverse_correct(&self) -> Result<(), DoIPMessageError> {
         let protocol_version: u8 = self.protocol_version.into();
         if protocol_version ^ 0xFF == self.inverse_protocol_version {
             Ok(())
         } else {
-            Err(DoIPError::VersionInverseIncorrect {
+            Err(DoIPMessageError::VersionInverseIncorrect {
                 value: self.inverse_protocol_version,
             })
         }

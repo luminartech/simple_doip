@@ -3,22 +3,21 @@ pub mod diagnostic_message;
 pub mod diagnostic_message_ack;
 pub mod entity_status_response;
 pub mod header;
+pub mod message_error;
 pub mod nack;
 pub mod power_mode_info_response;
 pub mod routing_activation_request;
 pub mod routing_activation_response;
 pub mod vehicle_identification_response;
 
-use crate::{
-    error::DoIPError,
-    messages::{
-        alive_check_response::AliveCheckResponse, diagnostic_message::DiagnosticMessage,
-        entity_status_response::EntityStatusResponse, header::DoIpHeader, nack::NackCode,
-        power_mode_info_response::DiagnosticPowerModeCode,
-        routing_activation_request::RoutingActivationRequest,
-        routing_activation_response::RoutingActivationResponse,
-        vehicle_identification_response::VehicleIdentificationResponse,
-    },
+use crate::messages::{
+    alive_check_response::AliveCheckResponse, diagnostic_message::DiagnosticMessage,
+    entity_status_response::EntityStatusResponse, header::DoIpHeader,
+    message_error::DoIPMessageError, nack::NackCode,
+    power_mode_info_response::DiagnosticPowerModeCode,
+    routing_activation_request::RoutingActivationRequest,
+    routing_activation_response::RoutingActivationResponse,
+    vehicle_identification_response::VehicleIdentificationResponse,
 };
 
 use self::diagnostic_message_ack::DiagnosticMessageAck;
@@ -71,12 +70,12 @@ pub struct DoIPMessage {
 pub struct DoIPParser {}
 
 impl DoIPParser {
-    pub fn parse_doip_message(message_bytes: &mut [u8]) -> Result<DoIPMessage, DoIPError> {
+    pub fn parse_doip_message(message_bytes: &mut [u8]) -> Result<DoIPMessage, DoIPMessageError> {
         let header = DoIpHeader::read(&mut message_bytes.as_ref());
         header.version_inverse_correct()?;
         let payload = message_bytes[8..].to_vec();
         if header.payload_length != payload.len() as u32 {
-            return Err(DoIPError::PayloadLengthIncorrect {
+            return Err(DoIPMessageError::PayloadLengthIncorrect {
                 value: payload.len(),
                 expected: header.payload_length,
             });
@@ -90,10 +89,13 @@ impl DoIPParser {
 
 trait DoIPMessagePayload {
     fn encoded_size(&self) -> usize;
-    fn read<T: std::io::Read>(reader: &mut T, payload_length: u32) -> Result<Self, DoIPError>
+    fn read<T: std::io::Read>(
+        reader: &mut T,
+        payload_length: u32,
+    ) -> Result<Self, DoIPMessageError>
     where
         Self: Sized;
-    fn write<T: std::io::Write>(&self, writer: &mut T) -> Result<(), DoIPError>;
+    fn write<T: std::io::Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError>;
 }
 #[cfg(test)]
 mod tests {

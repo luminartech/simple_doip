@@ -7,7 +7,6 @@
 //! ## Design
 //!
 
-pub mod error;
 pub mod messages;
 
 /// The client feature enables
@@ -16,3 +15,5 @@ pub mod client;
 
 #[cfg(feature = "server")]
 pub mod server;
+#[cfg(feature = "server")]
+pub mod server_error;

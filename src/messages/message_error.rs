@@ -3,7 +3,7 @@ use crate::messages::{header::PayloadType, nack::NackCode};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum DoIPError {
+pub enum DoIPMessageError {
     #[error("Negative acknowledgement: {0:?}")]
     Nack(NackCode),
     #[error("Version Inverse Incorrect: {value:?}")]

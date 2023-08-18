@@ -1,7 +1,8 @@
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
-use crate::error::DoIPError;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+
+use super::message_error::DoIPMessageError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FurtherActionRequired {
@@ -80,7 +81,7 @@ pub struct VehicleIdentificationResponse {
 }
 
 impl VehicleIdentificationResponse {
-    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPError> {
+    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
         let mut vin = [0x00; 17];
         reader.read_exact(&mut vin)?;
 
@@ -115,7 +116,7 @@ impl VehicleIdentificationResponse {
         })
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
         writer.write_all(&self.vin)?;
         writer.write_u16::<BigEndian>(self.logical_address)?;
         writer.write_all(&self.entity_id)?;
