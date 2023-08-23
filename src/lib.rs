@@ -13,6 +13,9 @@ pub mod messages;
 #[cfg(feature = "client")]
 pub mod client;
 
+#[cfg(feature = "codec")]
+pub mod message_codec;
+
 #[cfg(feature = "server")]
 pub mod server;
 #[cfg(feature = "server")]

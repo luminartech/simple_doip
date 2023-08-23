@@ -142,7 +142,7 @@ impl From<PayloadType> for u16 {
 }
 
 /// DoIP Message Header
-pub struct DoIpHeader {
+pub struct DoIPHeader {
     /// DoIP Protocol Version
     pub protocol_version: ProtocolVersion,
     /// Bitwise inverse of protocol_version for verification
@@ -154,7 +154,7 @@ pub struct DoIpHeader {
 }
 
 /// DoIP Message Header
-impl DoIpHeader {
+impl DoIPHeader {
     pub(crate) fn version_inverse_correct(&self) -> Result<(), DoIPMessageError> {
         let protocol_version: u8 = self.protocol_version.into();
         if protocol_version ^ 0xFF == self.inverse_protocol_version {
@@ -165,13 +165,13 @@ impl DoIpHeader {
             })
         }
     }
-    pub(crate) fn read<T: Read>(reader: &mut T) -> DoIpHeader {
+    pub(crate) fn read<T: Read>(reader: &mut T) -> DoIPHeader {
         let protocol_version = reader.read_u8().unwrap().into();
         println!("protocol_version: {:?}", protocol_version);
         let inverse_protocol_version = reader.read_u8().unwrap();
         let payload_type = reader.read_u16::<BigEndian>().unwrap().into();
         let payload_length = reader.read_u32::<BigEndian>().unwrap();
-        DoIpHeader {
+        DoIPHeader {
             protocol_version,
             inverse_protocol_version,
             payload_type,

@@ -12,7 +12,7 @@ pub mod vehicle_identification_response;
 
 use crate::messages::{
     alive_check_response::AliveCheckResponse, diagnostic_message::DiagnosticMessage,
-    entity_status_response::EntityStatusResponse, header::DoIpHeader,
+    entity_status_response::EntityStatusResponse, header::DoIPHeader,
     message_error::DoIPMessageError, nack::NackCode,
     power_mode_info_response::DiagnosticPowerModeCode,
     routing_activation_request::RoutingActivationRequest,
@@ -63,15 +63,15 @@ pub enum DoIPPayload {
     ReservedVehicleManufacturer(u16),
 }
 pub struct DoIPMessage {
-    pub header: header::DoIpHeader,
+    pub header: header::DoIPHeader,
     pub payload: DoIPPayload,
 }
 
-pub struct DoIPParser {}
+pub struct DoIPParser;
 
 impl DoIPParser {
     pub fn parse_doip_message(message_bytes: &mut [u8]) -> Result<DoIPMessage, DoIPMessageError> {
-        let header = DoIpHeader::read(&mut message_bytes.as_ref());
+        let header = DoIPHeader::read(&mut message_bytes.as_ref());
         header.version_inverse_correct()?;
         let payload = message_bytes[8..].to_vec();
         if header.payload_length != payload.len() as u32 {

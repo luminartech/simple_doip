@@ -12,10 +12,10 @@ byteorder = "1"
 serde = { version = "1", features = ["derive"] }
 thiserror = "1"
 tokio = { version = "1", optional = true, features = ["net"] }
-tokio-native-tls = { version = "0.3", optional = true }
+tokio-util = { version = "0.7", optional = true, features = ["net", "codec"] }
 
 [features]
-default = ["client", "server", "tls"]
-client = ["dep:tokio"]
-server = ["dep:tokio"]
-tls = ["dep:tokio-native-tls"]
+default = ["client", "codec", "server"]
+codec = ["dep:tokio", "dep:tokio-util"]
+client = ["codec"]
+server = ["codec"]

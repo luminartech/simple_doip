@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use tokio::net::UdpSocket;
+use tokio::net::{TcpStream, UdpSocket};
+use tokio_util::codec::Framed;
 
 use crate::{
     messages::{
@@ -11,14 +12,23 @@ use crate::{
         vehicle_identification_response::{
             FurtherActionRequired, VehicleIdentificationResponse, VinGidSyncStatus,
         },
+        DoIPMessage,
     },
     server_error::DoIPServerError,
 };
 use std::{
     net::{IpAddr, SocketAddr, TcpListener},
-    sync::Arc,
+    sync::{
+        atomic::{self, AtomicUsize, Ordering},
+        Arc,
+    },
 };
+
+/// Default TCP port for DoIP
+/// This is the port used for unencrypted connections
 const SERVER_TCP_PORT: u16 = 13400;
+
+/// TODO: Implement TLS support
 const SERVER_TCP_TLS_PORT: u16 = 3496;
 
 pub struct DoIPClientConnectionInfo {
@@ -35,7 +45,8 @@ pub trait DoIPServerConnectionHandler<ErrorType> {
     // Required Functions
     // These functions must be implemented by the server implementation
 
-    fn get_client_udp_address() -> SocketAddr;
+    /// Get the udp address where vehicle announcment messages should be sent
+    //fn get_client_udp_address() -> SocketAddr;
 
     /// Get the Vehicle Identification Number for this server
     fn get_vin() -> [u8; 17];
@@ -154,54 +165,70 @@ pub trait DoIPServerConnectionHandler<ErrorType> {
 
 pub struct DoIPServer<T: DoIPServerConnectionHandler<DoIPServerError>> {
     connection_handler: Arc<T>,
+    active_connections: AtomicUsize,
 }
 
 impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPServer<T> {
-    pub fn new(tls: bool, connection_handler: T) -> Self {
-        let port = match tls {
-            true => SERVER_TCP_TLS_PORT,
-            false => SERVER_TCP_PORT,
-        };
-        let tcp_listener =
-            TcpListener::bind(format!("127.0.0.1:{port}")).expect("Failed to bind to TCP port");
-        DoIPServer {
+    pub fn new(connection_handler: T) -> Result<Self, DoIPServerError> {
+        // TODO: Validate the provided handler
+        Ok(DoIPServer {
             connection_handler: Arc::new(connection_handler),
-        }
+            active_connections: AtomicUsize::new(0),
+        })
     }
 
-    pub async fn run(&self) -> Result<(), DoIPServerError> {
-        let target_address =
-            <T as DoIPServerConnectionHandler<DoIPServerError>>::get_client_udp_address();
-        let udp = UdpSocket::bind(target_address).await?;
-        Ok(())
-        /* /
-        //let udp = UdpSocket::bind("
-        // Tokio's UdpSocket does not directly offer "set_reuse_address", go with socket2
-        let udp_socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
-        udp_socket.set_reuse_address(true)?;
-        udp_socket.set_broadcast(true)?;
+    pub async fn run_server(&self) -> Result<(), DoIPServerError> {
+        // TODO: Vehicle Announcement over UDP
 
-        // The port zero indicates that a random, free port is chosen.
-        let client_addr_udp = SocketAddr::new(self.addr, 0);
-        udp_socket.bind(&client_addr_udp.into())?;
-        let udp_socket = UdpSocket::from_std(udp_socket.into())?;
-
-        let listener = TcpListener::bind(("0.0.0.0", TCP_DATA_TLS_PORT)).await?;
-
+        let tcp_listener = TcpListener::bind(("0.0.0.0", SERVER_TCP_PORT)).await?;
         loop {
-            match listener.accept().await {
+            match tcp_listener.accept().await {
                 Ok((tcp_stream, client_socket_addr)) => {
-                    if let Err(client_error) =
-                        self.handle_client(client_socket_addr, tcp_stream).await
+                    if let Err(client_error) = self
+                        .handle_client_connection(client_socket_addr, tcp_stream)
+                        .await
                     {
-                        error!("Error occured: {client_error}");
+                        panic!("Error occured: {client_error}");
                     }
                 }
                 Err(accept_error) => {
-                    error!("Failed to accept new TCP client: {accept_error}");
+                    // TODO: Don't panic here, this might happen
+                    panic!("Failed to accept new TCP client: {accept_error}");
                 }
             }
         }
-        */
+        Ok(())
+    }
+
+    async fn handle_client_connection(
+        &self,
+        client_socket_addr: SocketAddr,
+        tcp_stream: TcpStream,
+    ) -> Result<(), DoIPServerError> {
+        let currently_open_sockets = self.active_connections.fetch_add(1, Ordering::Relaxed);
+
+        let mut client_message_stream = Framed::new(tcp_stream, DoIPMessageCodec {});
+
+        loop {
+            match client_message_stream.next().await {
+                Some(Ok((header, payload))) => {
+                    let (response_header, response_payload) = self
+                        .handle_client_message(client_socket_addr, header, payload)
+                        .await?;
+
+                    client_message_stream
+                        .send((&response_header, &response_payload))
+                        .await?;
+                }
+                Some(Err(codec_error)) => {
+                    panic!("Client, decoding error source: {client_socket_addr}, {codec_error}")
+                }
+                None => {
+                    println!("Client stream closed, client addr: {client_socket_addr}");
+                    self.active_connections.fetch_sub(1, Ordering::Relaxed);
+                    return Ok(());
+                }
+            }
+        }
     }
 }
