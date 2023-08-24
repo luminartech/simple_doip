@@ -98,7 +98,7 @@ pub struct RoutingActivationResponse {
 impl RoutingActivationResponse {
     pub(crate) fn read<T: Read>(
         reader: &mut T,
-        payload_length: u32,
+        payload_length: usize,
     ) -> Result<Self, DoIPMessageError> {
         let logical_address_tester = reader.read_u16::<BigEndian>()?;
         let logical_address_of_doip_entity = reader.read_u16::<BigEndian>()?;

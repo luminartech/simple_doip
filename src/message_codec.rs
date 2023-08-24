@@ -16,10 +16,14 @@ impl Decoder for DoIPMessageCodec {
     }
 }
 
-impl Encoder<(&DoIPHeader, &[u8])> for DoIPMessageCodec {
+impl Encoder<(&DoIPMessage, &[u8])> for DoIPMessageCodec {
     type Error = DoIPMessageError;
 
-    fn encode(&mut self, message: &DoIPMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
+    fn encode(
+        &mut self,
+        message: (&DoIPMessage, &[u8]),
+        dst: &mut BytesMut,
+    ) -> Result<(), Self::Error> {
         message.write(&mut dst.writer())?;
         dst.put(payload);
         Ok(())

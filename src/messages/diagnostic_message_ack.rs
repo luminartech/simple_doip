@@ -61,7 +61,7 @@ pub struct DiagnosticMessageAck {
 }
 
 impl DiagnosticMessageAck {
-    pub fn read<T: Read>(reader: &mut T, payload_length: u32) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T, payload_length: usize) -> Result<Self, DoIPMessageError> {
         let source_address = reader.read_u16::<BigEndian>()?;
 
         let target_address = reader.read_u16::<BigEndian>()?;

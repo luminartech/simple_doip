@@ -180,9 +180,9 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
     pub async fn run_server(&self) -> Result<(), DoIPServerError> {
         // TODO: Vehicle Announcement over UDP
 
-        let tcp_listener = TcpListener::bind(("0.0.0.0", SERVER_TCP_PORT)).await?;
+        let tcp_listener = TcpListener::bind(("0.0.0.0", SERVER_TCP_PORT))?;
         loop {
-            match tcp_listener.accept().await {
+            match tcp_listener.accept() {
                 Ok((tcp_stream, client_socket_addr)) => {
                     if let Err(client_error) = self
                         .handle_client_connection(client_socket_addr, tcp_stream)
