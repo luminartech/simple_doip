@@ -172,88 +172,43 @@ impl DoIPMessage {
 
     pub fn write<T: Write>(&self, writer: &mut T) {
         self.header.write(writer);
-        match self.header.payload_type {
-            PayloadType::NegativeAcknowledge => {
-                if payload.len() != 1 {
-                    return Err(DoIPMessageError::PayloadLengthIncorrect {
-                        value: payload.len(),
-                        expected: 1,
-                    });
-                }
-                DoIPPayload::NegativeAcknowledge(NackCode::from(payload[0]))
-            }
-            PayloadType::VehicleIdentificationRequest => DoIPPayload::VehicleIdentificationRequest,
-            PayloadType::VehicleIdentificationRequestWithEID => {
-                let eid: [u8; 6] =
-                    payload
-                        .try_into()
-                        .map_err(|e| DoIPMessageError::PayloadLengthIncorrect {
-                            value: payload.len(),
-                            expected: 6,
-                        })?;
-                DoIPPayload::VehicleIdentificationRequestWithEID(eid)
-            }
-            PayloadType::VehicleIdentificationRequestWithVIN => {
-                let vin: [u8; 17] =
-                    payload
-                        .try_into()
-                        .map_err(|e| DoIPMessageError::PayloadLengthIncorrect {
-                            value: payload.len(),
-                            expected: 17,
-                        })?;
-                DoIPPayload::VehicleIdentificationRequestWithVIN(vin)
-            }
-            PayloadType::VehicleAnnouncement => DoIPPayload::VehicleAnnouncement(
-                VehicleIdentificationResponse::read(&mut payload.as_ref())?,
-            ),
-            PayloadType::RoutingActivationRequest => DoIPPayload::RoutingActivationRequest(
-                RoutingActivationRequest::read(&mut payload.as_ref())?,
-            ),
-            PayloadType::RoutingActivationResponse => DoIPPayload::RoutingActivationResponse(
-                RoutingActivationResponse::read(&mut payload.as_ref(), payload.len())?,
-            ),
-            PayloadType::AliveCheckRequest => DoIPPayload::AliveCheckRequest,
-            PayloadType::AliveCheckResponse => {
-                DoIPPayload::AliveCheckResponse(AliveCheckResponse::read(&mut payload.as_ref())?)
-            }
-            PayloadType::DoIPEntityStatusRequest => DoIPPayload::DoIPEntityStatusRequest,
-            PayloadType::DoIPEntityStatusResponse => DoIPPayload::DoIPEntityStatusResponse(
-                EntityStatusResponse::read(&mut payload.as_ref())?,
-            ),
-            PayloadType::DiagnosticPowerModeInfoRequest => {
-                DoIPPayload::DiagnosticPowerModeInfoRequest
-            }
-            PayloadType::DiagnosticPowerModeInfoResponse => {
-                if payload.len() != 1 {
-                    return Err(DoIPMessageError::PayloadLengthIncorrect {
-                        value: payload.len(),
-                        expected: 1,
-                    });
-                }
-                DoIPPayload::DiagnosticPowerModeInfoResponse(DiagnosticPowerModeCode::from(
-                    payload[0],
-                ))
-            }
-            PayloadType::DiagnosticMessage => DoIPPayload::DiagnosticMessage(
-                DiagnosticMessage::read(&mut payload.as_ref(), payload.len())?,
-            ),
-            PayloadType::DiagnosticMessagePositiveAcknowledge => {
-                DoIPPayload::DiagnosticMessagePositiveAcknowledge(DiagnosticMessageAck::read(
-                    &mut payload.as_ref(),
-                    payload.len(),
-                )?)
-            }
-            PayloadType::DiagnosticMessageNegativeAcknowledge => {
-                DoIPPayload::DiagnosticMessageNegativeAcknowledge(DiagnosticMessageAck::read(
-                    &mut payload.as_ref(),
-                    payload.len(),
-                )?)
-            }
-
-            PayloadType::Reserved(value) => DoIPPayload::Reserved(value),
-            PayloadType::ReservedVehicleManufacturer(u16) => {
-                DoIPPayload::ReservedVehicleManufacturer(u16)
-            }
+        match self.payload {
+           NegativeAcknowledge => ,
+    /// DoIP Vehicle Identification Request
+    VehicleIdentificationRequest,
+    /// DoIP Vehicle Identification Request with Entity ID (EID)
+    VehicleIdentificationRequestWithEID([u8; 6]),
+    /// DoIP Vehicle Identification Request with Vehicle Identification Number (VIN)
+    VehicleIdentificationRequestWithVIN([u8; 17]),
+    /// DoIP Vehicle Announcement Message
+    VehicleAnnouncement(VehicleIdentificationResponse),
+    /// DoIP Routing Activation Request Message
+    RoutingActivationRequest(RoutingActivationRequest),
+    /// DoIP Routing Activation Response Message
+    RoutingActivationResponse(RoutingActivationResponse),
+    /// DoIP Alive Check Request Message
+    AliveCheckRequest,
+    /// DoIP Alive Check Response Message
+    AliveCheckResponse(AliveCheckResponse),
+    /// DoIP Entity Status Request Message
+    DoIPEntityStatusRequest,
+    /// DoIP Entity Status Response Message
+    DoIPEntityStatusResponse(EntityStatusResponse),
+    /// DoIP Diagnostic Power Mode Info Request Message
+    DiagnosticPowerModeInfoRequest,
+    /// DoIP Diagnostic Power Mode Info Response Message
+    DiagnosticPowerModeInfoResponse(DiagnosticPowerModeCode),
+    /// DoIP Diagnostic Message
+    DiagnosticMessage(DiagnosticMessage),
+    /// DoIP Diagnostic Message Positive Acknowledge
+    DiagnosticMessagePositiveAcknowledge(DiagnosticMessageAck),
+    /// DoIP Diagnostic Message Negative Acknowledge
+    DiagnosticMessageNegativeAcknowledge(DiagnosticMessageAck),
+    /// DoIP Spec Reserved
+    Reserved(u16),
+    /// DoIP Spec Reserved for Vehicle Manufacturer
+    ReservedVehicleManufacturer(u16),
+}
         }
     }
 }
