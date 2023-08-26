@@ -50,8 +50,8 @@ impl NackCode {
     pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
         Ok(reader.read_u8()?.into())
     }
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_u8((*self).into())?;
-        Ok(())
+        Ok(1)
     }
 }

@@ -80,11 +80,11 @@ impl DiagnosticMessageAck {
         })
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_u16::<BigEndian>(self.source_address)?;
         writer.write_u16::<BigEndian>(self.target_address)?;
         writer.write_u8(self.ack_code.into())?;
         writer.write_all(&self.previous_message_data)?;
-        Ok(())
+        Ok(5 + self.previous_message_data.len())
     }
 }

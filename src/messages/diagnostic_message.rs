@@ -30,10 +30,10 @@ impl DiagnosticMessage {
         })
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_u16::<BigEndian>(self.source_address)?;
         writer.write_u16::<BigEndian>(self.target_address)?;
         writer.write_all(&self.user_data)?;
-        Ok(())
+        Ok(4 + self.user_data.len())
     }
 }

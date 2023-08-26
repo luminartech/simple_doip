@@ -17,8 +17,8 @@ impl AliveCheckResponse {
         })
     }
 
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_all(&self.source_address.to_be_bytes())?;
-        Ok(())
+        Ok(2)
     }
 }

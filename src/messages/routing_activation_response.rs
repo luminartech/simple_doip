@@ -125,7 +125,7 @@ impl RoutingActivationResponse {
         })
     }
 
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_all(&self.logical_address_tester.to_be_bytes())?;
         writer.write_all(&self.logical_address_of_doip_entity.to_be_bytes())?;
         writer.write_u8(self.routing_activation_response_code.into())?;
@@ -133,6 +133,6 @@ impl RoutingActivationResponse {
         if let Some(oem_specific) = self.oem_specific {
             writer.write_all(&oem_specific)?;
         }
-        Ok(())
+        Ok(13 + self.oem_specific.map(|_| 4).unwrap_or(0))
     }
 }

@@ -70,13 +70,13 @@ impl RoutingActivationRequest {
         })
     }
 
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_u16::<BigEndian>(self.source_address)?;
         writer.write_u8(self.activation_type.into())?;
         writer.write_all(&self.reserved)?;
         if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {
             writer.write_all(&reserved_vehicle_manufacturer)?;
         }
-        Ok(())
+        Ok(11)
     }
 }

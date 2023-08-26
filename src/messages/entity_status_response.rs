@@ -53,11 +53,11 @@ impl EntityStatusResponse {
         })
     }
 
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_u8(self.node_type.into())?;
         writer.write_u8(self.max_concurrent_tcp_sockets)?;
         writer.write_u8(self.open_tcp_sockets)?;
         writer.write_u32::<BigEndian>(self.max_data_size)?;
-        Ok(())
+        Ok(7)
     }
 }

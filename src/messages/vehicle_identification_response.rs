@@ -116,7 +116,7 @@ impl VehicleIdentificationResponse {
         })
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<(), DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_all(&self.vin)?;
         writer.write_u16::<BigEndian>(self.logical_address)?;
         writer.write_all(&self.entity_id)?;
@@ -127,6 +127,6 @@ impl VehicleIdentificationResponse {
         }
         writer.write_u8(self.further_action.into())?;
         writer.write_u8(self.vin_gid_sync_status.into())?;
-        Ok(())
+        Ok(33)
     }
 }
