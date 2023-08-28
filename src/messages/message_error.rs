@@ -9,7 +9,7 @@ pub enum DoIPMessageError {
     #[error("Version Inverse Incorrect: {value:?}")]
     VersionInverseIncorrect { value: u8 },
     #[error("Payload length in header does match expected payload type length: {value:?}, expected: {expected:?}")]
-    PayloadLengthIncorrect { value: usize, expected: u32 },
+    PayloadLengthTooShort { value: usize, expected: u32 },
     #[error("Unexpected payload type found: {value:?}")]
     UnexpectedPayloadType { value: PayloadType },
     #[error(transparent)]

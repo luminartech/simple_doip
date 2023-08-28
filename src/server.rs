@@ -192,7 +192,7 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
                         .handle_client_connection(client_socket_addr, tcp_stream)
                         .await
                     {
-                        panic!("Error occured: {client_error}");
+                        println!("Client error: {client_error}");
                     }
                 }
                 Err(accept_error) => {

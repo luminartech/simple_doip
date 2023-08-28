@@ -68,14 +68,19 @@ impl DoIPClient {
         })
     }
 
+    pub async fn close(&mut self) -> Result<(), DoIPClientError> {
+        self.tcp_stream.flush().await?;
+        self.tcp_stream.close().await?;
+        Ok(())
+    }
+
     pub async fn request_routing_activation(
         &mut self,
-        source_address: u16,
         activation_type: ActivationTypeCode,
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
     ) -> Result<RoutingActivationResponse, DoIPClientError> {
         let request = RoutingActivationRequest {
-            source_address,
+            source_address: self.client_options.client_logical_address,
             activation_type,
             reserved: [0, 0, 0, 0],
             reserved_vehicle_manufacturer,

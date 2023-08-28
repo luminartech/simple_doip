@@ -36,6 +36,7 @@ impl DoIPServerConnectionHandler<DoIPServerError> for ServerHandler {
         source_address: u16,
         _activation_type: ActivationTypeCode,
     ) -> Result<RoutingActivationResponse, DoIPServerError> {
+        println!("Routing activation request from 0x{:04X}", source_address);
         Ok(RoutingActivationResponse {
             logical_address_tester: source_address,
             logical_address_of_doip_entity: 0x0001,

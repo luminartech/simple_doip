@@ -10,7 +10,9 @@ pub mod routing_activation_request;
 pub mod routing_activation_response;
 pub mod vehicle_identification_response;
 
-use std::io::Write;
+use std::io::{Read, Write};
+
+use bytes::Buf;
 
 use crate::messages::{header::DoIPHeader, message_error::DoIPMessageError};
 
@@ -22,16 +24,11 @@ pub struct DoIPMessage {
 impl DoIPMessage {
     // TODO: This needs careful review and should do a lot more error checking than it does now
     pub fn read(message_bytes: &mut [u8]) -> Result<DoIPMessage, DoIPMessageError> {
+        let mut reader = message_bytes.reader();
         let header = DoIPHeader::read(&mut message_bytes.as_ref())?;
         header.version_inverse_correct()?;
-        let payload = message_bytes[8..].to_vec();
-        if header.payload_length != payload.len() as u32 {
-            return Err(DoIPMessageError::PayloadLengthIncorrect {
-                value: payload.len(),
-                expected: header.payload_length,
-            });
-        }
-
+        let mut payload = vec![0u8; header.payload_length as usize];
+        reader.read_exact(&mut payload)?;
         Ok(DoIPMessage { header, payload })
     }
 

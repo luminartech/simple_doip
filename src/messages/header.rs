@@ -181,7 +181,6 @@ impl DoIPHeader {
     }
     pub(crate) fn read<T: Read>(reader: &mut T) -> Result<DoIPHeader, DoIPMessageError> {
         let protocol_version = reader.read_u8()?.into();
-        println!("protocol_version: {:?}", protocol_version);
         let inverse_protocol_version = reader.read_u8()?;
         let payload_type = reader.read_u16::<BigEndian>()?.into();
         let payload_length = reader.read_u32::<BigEndian>()?;
