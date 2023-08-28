@@ -53,7 +53,7 @@ pub struct RoutingActivationRequest {
 }
 
 impl RoutingActivationRequest {
-    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
         let source_address = reader.read_u16::<BigEndian>()?;
         let activation_type = ActivationTypeCode::from(reader.read_u8()?);
 
@@ -70,7 +70,7 @@ impl RoutingActivationRequest {
         })
     }
 
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_u16::<BigEndian>(self.source_address)?;
         writer.write_u8(self.activation_type.into())?;
         writer.write_all(&self.reserved)?;

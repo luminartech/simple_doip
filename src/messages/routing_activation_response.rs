@@ -96,10 +96,7 @@ pub struct RoutingActivationResponse {
 }
 
 impl RoutingActivationResponse {
-    pub(crate) fn read<T: Read>(
-        reader: &mut T,
-        payload_length: usize,
-    ) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T, payload_length: usize) -> Result<Self, DoIPMessageError> {
         let logical_address_tester = reader.read_u16::<BigEndian>()?;
         let logical_address_of_doip_entity = reader.read_u16::<BigEndian>()?;
         let routing_activation_response_code_byte = reader.read_u8()?;
@@ -125,7 +122,7 @@ impl RoutingActivationResponse {
         })
     }
 
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_all(&self.logical_address_tester.to_be_bytes())?;
         writer.write_all(&self.logical_address_of_doip_entity.to_be_bytes())?;
         writer.write_u8(self.routing_activation_response_code.into())?;

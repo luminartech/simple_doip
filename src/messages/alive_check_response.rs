@@ -9,7 +9,7 @@ pub struct AliveCheckResponse {
 }
 
 impl AliveCheckResponse {
-    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
         let mut source_address = [0x00u8; 2];
         reader.read_exact(&mut source_address)?;
         Ok(AliveCheckResponse {
@@ -17,7 +17,7 @@ impl AliveCheckResponse {
         })
     }
 
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_all(&self.source_address.to_be_bytes())?;
         Ok(2)
     }

@@ -81,7 +81,7 @@ pub struct VehicleIdentificationResponse {
 }
 
 impl VehicleIdentificationResponse {
-    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
         let mut vin = [0x00; 17];
         reader.read_exact(&mut vin)?;
 

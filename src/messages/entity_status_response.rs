@@ -33,14 +33,14 @@ impl From<EntityStatusNodeType> for u8 {
 /// This allows, for example a client DoIP entity to detect existing diagnostic communication sessions as well as the capabilities of a DoIP entity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EntityStatusResponse {
-    node_type: EntityStatusNodeType,
-    max_concurrent_tcp_sockets: u8,
-    open_tcp_sockets: u8,
-    max_data_size: u32,
+    pub node_type: EntityStatusNodeType,
+    pub max_concurrent_tcp_sockets: u8,
+    pub open_tcp_sockets: u8,
+    pub max_data_size: u32,
 }
 
 impl EntityStatusResponse {
-    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
         let node_type = EntityStatusNodeType::from(reader.read_u8()?);
         let max_concurrent_tcp_sockets = reader.read_u8()?;
         let open_tcp_sockets = reader.read_u8()?;
@@ -53,7 +53,7 @@ impl EntityStatusResponse {
         })
     }
 
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_u8(self.node_type.into())?;
         writer.write_u8(self.max_concurrent_tcp_sockets)?;
         writer.write_u8(self.open_tcp_sockets)?;
