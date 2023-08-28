@@ -165,24 +165,25 @@ impl DoIPHeader {
             })
         }
     }
-    pub(crate) fn read<T: Read>(reader: &mut T) -> DoIPHeader {
-        let protocol_version = reader.read_u8().unwrap().into();
+    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<DoIPHeader, DoIPMessageError> {
+        let protocol_version = reader.read_u8()?.into();
         println!("protocol_version: {:?}", protocol_version);
-        let inverse_protocol_version = reader.read_u8().unwrap();
-        let payload_type = reader.read_u16::<BigEndian>().unwrap().into();
-        let payload_length = reader.read_u32::<BigEndian>().unwrap();
-        DoIPHeader {
+        let inverse_protocol_version = reader.read_u8()?;
+        let payload_type = reader.read_u16::<BigEndian>()?.into();
+        let payload_length = reader.read_u32::<BigEndian>()?;
+        Ok(DoIPHeader {
             protocol_version,
             inverse_protocol_version,
             payload_type,
             payload_length,
-        }
+        })
     }
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) {
-        writer.write_u8(self.protocol_version.into()).unwrap();
-        writer.write_u8(self.inverse_protocol_version).unwrap();
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+        writer.write_u8(self.protocol_version.into())?;
+        writer.write_u8(self.inverse_protocol_version)?;
         let payload_type: u16 = self.payload_type.into();
-        writer.write_u16::<BigEndian>(payload_type).unwrap();
-        writer.write_u32::<BigEndian>(self.payload_length).unwrap();
+        writer.write_u16::<BigEndian>(payload_type)?;
+        writer.write_u32::<BigEndian>(self.payload_length)?;
+        Ok(8)
     }
 }

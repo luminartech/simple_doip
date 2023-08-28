@@ -1,13 +1,17 @@
 use async_trait::async_trait;
-use tokio::net::{TcpStream, UdpSocket};
+use futures::{SinkExt, StreamExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::Framed;
 
 use crate::{
+    message_codec::DoIPMessageCodec,
     messages::{
         alive_check_response::AliveCheckResponse,
         diagnostic_message_ack::DiagnosticMessageAck,
+        entity_status_response::{EntityStatusNodeType, EntityStatusResponse},
+        header::PayloadType,
         power_mode_info_response::DiagnosticPowerModeCode,
-        routing_activation_request::ActivationTypeCode,
+        routing_activation_request::{ActivationTypeCode, RoutingActivationRequest},
         routing_activation_response::RoutingActivationResponse,
         vehicle_identification_response::{
             FurtherActionRequired, VehicleIdentificationResponse, VinGidSyncStatus,
@@ -17,7 +21,7 @@ use crate::{
     server_error::DoIPServerError,
 };
 use std::{
-    net::{IpAddr, SocketAddr, TcpListener},
+    net::{IpAddr, SocketAddr},
     sync::{
         atomic::{self, AtomicUsize, Ordering},
         Arc,
@@ -180,9 +184,9 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
     pub async fn run_server(&self) -> Result<(), DoIPServerError> {
         // TODO: Vehicle Announcement over UDP
 
-        let tcp_listener = TcpListener::bind(("0.0.0.0", SERVER_TCP_PORT))?;
+        let tcp_listener = TcpListener::bind(("0.0.0.0", SERVER_TCP_PORT)).await?;
         loop {
-            match tcp_listener.accept() {
+            match tcp_listener.accept().await {
                 Ok((tcp_stream, client_socket_addr)) => {
                     if let Err(client_error) = self
                         .handle_client_connection(client_socket_addr, tcp_stream)
@@ -211,14 +215,12 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
 
         loop {
             match client_message_stream.next().await {
-                Some(Ok((header, payload))) => {
-                    let (response_header, response_payload) = self
-                        .handle_client_message(client_socket_addr, header, payload)
+                Some(Ok(message)) => {
+                    let response = self
+                        .handle_client_message(client_socket_addr, message)
                         .await?;
 
-                    client_message_stream
-                        .send((&response_header, &response_payload))
-                        .await?;
+                    client_message_stream.send(&response).await?;
                 }
                 Some(Err(codec_error)) => {
                     panic!("Client, decoding error source: {client_socket_addr}, {codec_error}")
@@ -230,5 +232,61 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
                 }
             }
         }
+    }
+
+    async fn handle_client_message(
+        &self,
+        client_socket_addr: SocketAddr,
+        message: DoIPMessage,
+    ) -> Result<DoIPMessage, DoIPServerError> {
+        // TODO: Need to handle active sockets by adding clients to a map
+        // client count should come from that map, as well as the logical address missing below
+        let connection_info = DoIPClientConnectionInfo {
+            ip_address: client_socket_addr.ip(),
+            logical_address: 0x0000, // TODO fix this constant
+        };
+        let mut response_payload = Vec::new();
+        let response: Result<_, DoIPServerError> = match message.header.payload_type {
+            PayloadType::AliveCheckRequest => {
+                let response = self
+                    .connection_handler
+                    .alive_check(&connection_info)
+                    .await?;
+                response.write(&mut response_payload)?;
+
+                Ok((PayloadType::AliveCheckResponse, response_payload))
+            }
+            PayloadType::RoutingActivationRequest => {
+                let request = RoutingActivationRequest::read(&mut message.payload.as_slice())?;
+                let source_address = request.source_address;
+                let response = self
+                    .connection_handler
+                    .routing_activation(&connection_info, source_address, request.activation_type)
+                    .await?;
+
+                response.write(&mut response_payload)?;
+
+                Ok((PayloadType::RoutingActivationResponse, response_payload))
+            }
+            PayloadType::DoIPEntityStatusRequest => {
+                let response = EntityStatusResponse {
+                    node_type: EntityStatusNodeType::DoIPNode,
+                    max_concurrent_tcp_sockets: u8::MAX,
+                    currently_open_socketsopen_tcp_sockets: self
+                        .currently_open_sockets
+                        .load(Ordering::Relaxed),
+                    max_data_size: u32::MAX,
+                };
+                response.write(&mut response_payload)?;
+                Ok((PayloadType::DoIpEntityStatusResponse, response_payload))
+            }
+            // TODO add remaining
+            _ => Err(ServerError::Unsupported(header.payload_type)),
+        };
+
+        let (payload_type, payload) = response?;
+
+        let header = DoIpHeader::new(payload_type, payload.len() as u32);
+        Ok((header, payload))
     }
 }

@@ -3,7 +3,7 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use crate::messages::{message_error::DoIPMessageError, DoIPMessage};
 
-struct DoIPMessageCodec;
+pub struct DoIPMessageCodec;
 
 impl Decoder for DoIPMessageCodec {
     type Item = DoIPMessage;

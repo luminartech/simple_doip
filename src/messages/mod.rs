@@ -24,207 +24,31 @@ use crate::messages::{
 
 use self::diagnostic_message_ack::DiagnosticMessageAck;
 
-/// DoIP Message Payload Type
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DoIPPayload {
-    /// DoIP Negative Acknowledge
-    /// Ignore packets with multi- or broadcast address as source IP address
-    /// One DoIP message per UDP datagram
-    NegativeAcknowledge(NackCode),
-    /// DoIP Vehicle Identification Request
-    VehicleIdentificationRequest,
-    /// DoIP Vehicle Identification Request with Entity ID (EID)
-    VehicleIdentificationRequestWithEID([u8; 6]),
-    /// DoIP Vehicle Identification Request with Vehicle Identification Number (VIN)
-    VehicleIdentificationRequestWithVIN([u8; 17]),
-    /// DoIP Vehicle Announcement Message
-    VehicleAnnouncement(VehicleIdentificationResponse),
-    /// DoIP Routing Activation Request Message
-    RoutingActivationRequest(RoutingActivationRequest),
-    /// DoIP Routing Activation Response Message
-    RoutingActivationResponse(RoutingActivationResponse),
-    /// DoIP Alive Check Request Message
-    AliveCheckRequest,
-    /// DoIP Alive Check Response Message
-    AliveCheckResponse(AliveCheckResponse),
-    /// DoIP Entity Status Request Message
-    DoIPEntityStatusRequest,
-    /// DoIP Entity Status Response Message
-    DoIPEntityStatusResponse(EntityStatusResponse),
-    /// DoIP Diagnostic Power Mode Info Request Message
-    DiagnosticPowerModeInfoRequest,
-    /// DoIP Diagnostic Power Mode Info Response Message
-    DiagnosticPowerModeInfoResponse(DiagnosticPowerModeCode),
-    /// DoIP Diagnostic Message
-    DiagnosticMessage(DiagnosticMessage),
-    /// DoIP Diagnostic Message Positive Acknowledge
-    DiagnosticMessagePositiveAcknowledge(DiagnosticMessageAck),
-    /// DoIP Diagnostic Message Negative Acknowledge
-    DiagnosticMessageNegativeAcknowledge(DiagnosticMessageAck),
-    /// DoIP Spec Reserved
-    Reserved(u16),
-    /// DoIP Spec Reserved for Vehicle Manufacturer
-    ReservedVehicleManufacturer(u16),
-}
 pub struct DoIPMessage {
     pub header: header::DoIPHeader,
-    pub payload: DoIPPayload,
+    pub payload: Vec<u8>,
 }
 
 impl DoIPMessage {
     // TODO: This needs careful review and should do a lot more error checking than it does now
     pub fn read(message_bytes: &mut [u8]) -> Result<DoIPMessage, DoIPMessageError> {
-        let header = DoIPHeader::read(&mut message_bytes.as_ref());
+        let header = DoIPHeader::read(&mut message_bytes.as_ref())?;
         header.version_inverse_correct()?;
-        let payload = &message_bytes[8..];
+        let payload = message_bytes[8..].to_vec();
         if header.payload_length != payload.len() as u32 {
             return Err(DoIPMessageError::PayloadLengthIncorrect {
                 value: payload.len(),
                 expected: header.payload_length,
             });
         }
-        let payload = match header.payload_type {
-            PayloadType::NegativeAcknowledge => {
-                if payload.len() != 1 {
-                    return Err(DoIPMessageError::PayloadLengthIncorrect {
-                        value: payload.len(),
-                        expected: 1,
-                    });
-                }
-                DoIPPayload::NegativeAcknowledge(NackCode::from(payload[0]))
-            }
-            PayloadType::VehicleIdentificationRequest => DoIPPayload::VehicleIdentificationRequest,
-            PayloadType::VehicleIdentificationRequestWithEID => {
-                let eid: [u8; 6] =
-                    payload
-                        .try_into()
-                        .map_err(|e| DoIPMessageError::PayloadLengthIncorrect {
-                            value: payload.len(),
-                            expected: 6,
-                        })?;
-                DoIPPayload::VehicleIdentificationRequestWithEID(eid)
-            }
-            PayloadType::VehicleIdentificationRequestWithVIN => {
-                let vin: [u8; 17] =
-                    payload
-                        .try_into()
-                        .map_err(|e| DoIPMessageError::PayloadLengthIncorrect {
-                            value: payload.len(),
-                            expected: 17,
-                        })?;
-                DoIPPayload::VehicleIdentificationRequestWithVIN(vin)
-            }
-            PayloadType::VehicleAnnouncement => DoIPPayload::VehicleAnnouncement(
-                VehicleIdentificationResponse::read(&mut payload.as_ref())?,
-            ),
-            PayloadType::RoutingActivationRequest => DoIPPayload::RoutingActivationRequest(
-                RoutingActivationRequest::read(&mut payload.as_ref())?,
-            ),
-            PayloadType::RoutingActivationResponse => DoIPPayload::RoutingActivationResponse(
-                RoutingActivationResponse::read(&mut payload.as_ref(), payload.len())?,
-            ),
-            PayloadType::AliveCheckRequest => DoIPPayload::AliveCheckRequest,
-            PayloadType::AliveCheckResponse => {
-                DoIPPayload::AliveCheckResponse(AliveCheckResponse::read(&mut payload.as_ref())?)
-            }
-            PayloadType::DoIPEntityStatusRequest => DoIPPayload::DoIPEntityStatusRequest,
-            PayloadType::DoIPEntityStatusResponse => DoIPPayload::DoIPEntityStatusResponse(
-                EntityStatusResponse::read(&mut payload.as_ref())?,
-            ),
-            PayloadType::DiagnosticPowerModeInfoRequest => {
-                DoIPPayload::DiagnosticPowerModeInfoRequest
-            }
-            PayloadType::DiagnosticPowerModeInfoResponse => {
-                if payload.len() != 1 {
-                    return Err(DoIPMessageError::PayloadLengthIncorrect {
-                        value: payload.len(),
-                        expected: 1,
-                    });
-                }
-                DoIPPayload::DiagnosticPowerModeInfoResponse(DiagnosticPowerModeCode::from(
-                    payload[0],
-                ))
-            }
-            PayloadType::DiagnosticMessage => DoIPPayload::DiagnosticMessage(
-                DiagnosticMessage::read(&mut payload.as_ref(), payload.len())?,
-            ),
-            PayloadType::DiagnosticMessagePositiveAcknowledge => {
-                DoIPPayload::DiagnosticMessagePositiveAcknowledge(DiagnosticMessageAck::read(
-                    &mut payload.as_ref(),
-                    payload.len(),
-                )?)
-            }
-            PayloadType::DiagnosticMessageNegativeAcknowledge => {
-                DoIPPayload::DiagnosticMessageNegativeAcknowledge(DiagnosticMessageAck::read(
-                    &mut payload.as_ref(),
-                    payload.len(),
-                )?)
-            }
-
-            PayloadType::Reserved(value) => DoIPPayload::Reserved(value),
-            PayloadType::ReservedVehicleManufacturer(u16) => {
-                DoIPPayload::ReservedVehicleManufacturer(u16)
-            }
-        };
 
         Ok(DoIPMessage { header, payload })
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         self.header.write(writer);
-        let payload_size = match self.payload {
-            DoIPPayload::NegativeAcknowledge(nack) => nack.write(writer),
-            DoIPPayload::VehicleIdentificationRequest => {
-                // Nothing to write
-                Ok(0)
-            }
-            DoIPPayload::VehicleIdentificationRequestWithEID(entity_id) => {
-                Ok(writer.write(&entity_id)?)
-            }
-            DoIPPayload::VehicleIdentificationRequestWithVIN(vin) => Ok(writer.write(&vin)?),
-            DoIPPayload::VehicleAnnouncement(announcement) => announcement.write(writer),
-            DoIPPayload::RoutingActivationRequest(activation_request) => {
-                activation_request.write(writer)
-            }
-            DoIPPayload::RoutingActivationResponse(activation_response) => {
-                activation_response.write(writer)
-            }
-            DoIPPayload::AliveCheckRequest => {
-                // Nothing to write
-                Ok(0)
-            }
-            DoIPPayload::AliveCheckResponse(not_dead_yet) => not_dead_yet.write(writer),
-            DoIPEntityStatusRequest => {
-                // Nothing to write
-                Ok(0)
-            }
-            DoIPPayload::DoIPEntityStatusResponse(entity_status_response) => {
-                entity_status_response.write(writer)
-            }
-            DoIPPayload::DiagnosticPowerModeInfoRequest => {
-                // Nothing to write
-                Ok(0)
-            }
-            DoIPPayload::DiagnosticPowerModeInfoResponse(power_mode_response) => {
-                power_mode_response.write(writer)
-            }
-            DoIPPayload::DiagnosticMessage(diagnostic_message) => diagnostic_message.write(writer),
-            DoIPPayload::DiagnosticMessagePositiveAcknowledge(positive_ack) => {
-                positive_ack.write(writer)
-            }
-            DoIPPayload::DiagnosticMessageNegativeAcknowledge(negative_ack) => {
-                negative_ack.write(writer)
-            }
-            DoIPPayload::Reserved(_reserved) => {
-                // Nothing to write
-                Ok(0)
-            }
-            DoIPPayload::ReservedVehicleManufacturer(_reserved) => {
-                // Nothing to write
-                Ok(0)
-            }
-        }?;
-        return Ok(payload_size + 8);
+        writer.write(&self.payload)?;
+        return Ok(self.payload.len() + 8);
     }
 }
 
