@@ -12,6 +12,8 @@ pub mod messages;
 /// The client feature enables
 #[cfg(feature = "client")]
 pub mod client;
+#[cfg(feature = "client")]
+pub mod client_error;
 
 #[cfg(feature = "codec")]
 pub mod message_codec;

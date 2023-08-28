@@ -69,7 +69,7 @@ impl RoutingActivationRequest {
             reserved_vehicle_manufacturer,
         })
     }
-
+    // TODO: Investigate if we should write the optional vehicle manufacturer specific data if none
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_u16::<BigEndian>(self.source_address)?;
         writer.write_u8(self.activation_type.into())?;

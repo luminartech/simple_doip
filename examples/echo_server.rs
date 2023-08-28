@@ -18,7 +18,7 @@ impl DoIPServerConnectionHandler<DoIPServerError> for ServerHandler {
     }
 
     fn get_logical_address() -> u16 {
-        0x1000
+        0x0001
     }
 
     fn get_entity_id() -> [u8; 6] {
@@ -38,7 +38,7 @@ impl DoIPServerConnectionHandler<DoIPServerError> for ServerHandler {
     ) -> Result<RoutingActivationResponse, DoIPServerError> {
         Ok(RoutingActivationResponse {
             logical_address_tester: source_address,
-            logical_address_of_doip_entity: 0x1000,
+            logical_address_of_doip_entity: 0x0001,
             routing_activation_response_code:
                 RoutingActivationResponseCode::RoutingSuccessfullyActivated,
             reserved_oem: [0x00, 0x00, 0x00, 0x00],

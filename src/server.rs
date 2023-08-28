@@ -30,7 +30,7 @@ use std::{
 
 /// Default TCP port for DoIP
 /// This is the port used for unencrypted connections
-const SERVER_TCP_PORT: u16 = 13400;
+pub const SERVER_TCP_PORT: u16 = 13400;
 
 /// TODO: Implement TLS support
 //const SERVER_TCP_TLS_PORT: u16 = 3496;
