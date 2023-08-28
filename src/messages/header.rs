@@ -155,6 +155,19 @@ pub struct DoIPHeader {
 
 /// DoIP Message Header
 impl DoIPHeader {
+    pub fn new(
+        protocol_version: ProtocolVersion,
+        payload_type: PayloadType,
+        payload_length: u32,
+    ) -> Self {
+        let protocol_version_byte: u8 = protocol_version.into();
+        DoIPHeader {
+            protocol_version,
+            inverse_protocol_version: protocol_version_byte ^ 0xFF,
+            payload_type,
+            payload_length,
+        }
+    }
     pub(crate) fn version_inverse_correct(&self) -> Result<(), DoIPMessageError> {
         let protocol_version: u8 = self.protocol_version.into();
         if protocol_version ^ 0xFF == self.inverse_protocol_version {

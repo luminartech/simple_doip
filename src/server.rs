@@ -9,7 +9,7 @@ use crate::{
         alive_check_response::AliveCheckResponse,
         diagnostic_message_ack::DiagnosticMessageAck,
         entity_status_response::{EntityStatusNodeType, EntityStatusResponse},
-        header::PayloadType,
+        header::{DoIPHeader, PayloadType, ProtocolVersion},
         power_mode_info_response::DiagnosticPowerModeCode,
         routing_activation_request::{ActivationTypeCode, RoutingActivationRequest},
         routing_activation_response::RoutingActivationResponse,
@@ -23,7 +23,7 @@ use crate::{
 use std::{
     net::{IpAddr, SocketAddr},
     sync::{
-        atomic::{self, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -33,7 +33,7 @@ use std::{
 const SERVER_TCP_PORT: u16 = 13400;
 
 /// TODO: Implement TLS support
-const SERVER_TCP_TLS_PORT: u16 = 3496;
+//const SERVER_TCP_TLS_PORT: u16 = 3496;
 
 pub struct DoIPClientConnectionInfo {
     /// Client IP address
@@ -201,7 +201,6 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
                 }
             }
         }
-        Ok(())
     }
 
     async fn handle_client_connection(
@@ -209,7 +208,7 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
         client_socket_addr: SocketAddr,
         tcp_stream: TcpStream,
     ) -> Result<(), DoIPServerError> {
-        let currently_open_sockets = self.active_connections.fetch_add(1, Ordering::Relaxed);
+        let _currently_open_sockets = self.active_connections.fetch_add(1, Ordering::Relaxed);
 
         let mut client_message_stream = Framed::new(tcp_stream, DoIPMessageCodec {});
 
@@ -246,7 +245,10 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
             logical_address: 0x0000, // TODO fix this constant
         };
         let mut response_payload = Vec::new();
-        let response: Result<_, DoIPServerError> = match message.header.payload_type {
+        let response: Result<(PayloadType, Vec<u8>), DoIPServerError> = match message
+            .header
+            .payload_type
+        {
             PayloadType::AliveCheckRequest => {
                 let response = self
                     .connection_handler
@@ -272,21 +274,21 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
                 let response = EntityStatusResponse {
                     node_type: EntityStatusNodeType::DoIPNode,
                     max_concurrent_tcp_sockets: u8::MAX,
-                    currently_open_socketsopen_tcp_sockets: self
-                        .currently_open_sockets
-                        .load(Ordering::Relaxed),
+                    open_tcp_sockets: self.active_connections.load(Ordering::Relaxed) as u8,
                     max_data_size: u32::MAX,
                 };
                 response.write(&mut response_payload)?;
-                Ok((PayloadType::DoIpEntityStatusResponse, response_payload))
+                Ok((PayloadType::DoIPEntityStatusResponse, response_payload))
             }
             // TODO add remaining
-            _ => Err(ServerError::Unsupported(header.payload_type)),
+            _ => Err(DoIPServerError::UnsupportedMessageTypeError(
+                message.header.payload_type,
+            )),
         };
 
         let (payload_type, payload) = response?;
 
-        let header = DoIpHeader::new(payload_type, payload.len() as u32);
-        Ok((header, payload))
+        let header = DoIPHeader::new(ProtocolVersion::V2012, payload_type, payload.len() as u32);
+        Ok(DoIPMessage { header, payload })
     }
 }
