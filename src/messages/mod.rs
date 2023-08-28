@@ -12,17 +12,7 @@ pub mod vehicle_identification_response;
 
 use std::io::Write;
 
-use crate::messages::{
-    alive_check_response::AliveCheckResponse, diagnostic_message::DiagnosticMessage,
-    entity_status_response::EntityStatusResponse, header::DoIPHeader, header::PayloadType,
-    message_error::DoIPMessageError, nack::NackCode,
-    power_mode_info_response::DiagnosticPowerModeCode,
-    routing_activation_request::RoutingActivationRequest,
-    routing_activation_response::RoutingActivationResponse,
-    vehicle_identification_response::VehicleIdentificationResponse,
-};
-
-use self::diagnostic_message_ack::DiagnosticMessageAck;
+use crate::messages::{header::DoIPHeader, message_error::DoIPMessageError};
 
 pub struct DoIPMessage {
     pub header: header::DoIPHeader,
@@ -46,8 +36,9 @@ impl DoIPMessage {
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
-        self.header.write(writer);
-        writer.write(&self.payload)?;
+        self.header.write(writer)?;
+        let payload_len = writer.write(&self.payload)?;
+        assert!(payload_len == self.header.payload_length as usize);
         return Ok(self.payload.len() + 8);
     }
 }

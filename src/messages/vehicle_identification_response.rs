@@ -85,7 +85,7 @@ impl VehicleIdentificationResponse {
         let mut vin = [0x00; 17];
         reader.read_exact(&mut vin)?;
 
-        let mut logical_address = reader.read_u16::<BigEndian>()?;
+        let logical_address = reader.read_u16::<BigEndian>()?;
 
         let mut entity_id = [0x00; 6];
         reader.read_exact(&mut entity_id)?;

@@ -18,9 +18,12 @@ impl DiagnosticMessage {
         let target_address = reader.read_u16::<BigEndian>()?;
 
         let user_data_len = payload_length - 4; // 4 == source + target address
-        let mut user_data = Vec::with_capacity(user_data_len as usize);
+        let mut user_data;
         if user_data_len > 0 {
+            user_data = Vec::with_capacity(user_data_len as usize);
             reader.read_exact(&mut user_data)?;
+        } else {
+            user_data = Vec::new();
         }
 
         Ok(Self {
