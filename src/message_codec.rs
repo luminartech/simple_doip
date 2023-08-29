@@ -19,14 +19,14 @@ impl Decoder for DoIPMessageCodec {
         if header.payload_length as usize > src.len() {
             // We haven't received the full message yet, put the header back
             src.unsplit(header_bytes);
-            return Ok(None);
+            Ok(None)
         } else {
             // We have the full message, split off the payload from the rx buffer
             let payload = src.split_to(header.payload_length as usize);
-            return Ok(Some(DoIPMessage {
+            Ok(Some(DoIPMessage {
                 header,
                 payload: payload.to_vec(),
-            }));
+            }))
         }
     }
 }

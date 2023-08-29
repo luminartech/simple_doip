@@ -36,7 +36,7 @@ impl DoIPMessage {
         self.header.write(writer)?;
         let payload_len = writer.write(&self.payload)?;
         assert!(payload_len == self.header.payload_length as usize);
-        return Ok(self.payload.len() + 8);
+        Ok(self.payload.len() + 8)
     }
 }
 

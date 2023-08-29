@@ -175,11 +175,9 @@ impl DoIPClient {
                 // I don't think we want to error here, let the caller handle the nack
                 Ok(nack)
             }
-            _ => {
-                return Err(DoIPClientError::UnexpectedMessageType(
-                    message.header.payload_type,
-                ))
-            }
+            _ => Err(DoIPClientError::UnexpectedMessageType(
+                message.header.payload_type,
+            )),
         }
     }
 
