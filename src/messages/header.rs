@@ -1,12 +1,11 @@
 use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use serde::{Deserialize, Serialize};
 
 use super::message_error::DoIPMessageError;
 
 /// DoIP Protocol Version
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProtocolVersion {
     Reserved,
     /// ISO 13400-2:2010

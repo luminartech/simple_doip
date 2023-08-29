@@ -14,14 +14,13 @@ use crate::{
 };
 
 use futures::{SinkExt, StreamExt};
-use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};
 use tokio::net::{TcpSocket, TcpStream};
 use tokio_util::codec::Framed;
 
 /// DoIP client options used to specify connection info
 /// Derive `Serialize` and `Deserialize` for use in config files
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug)]
 pub struct DoIPClientOptions {
     /// Server IP address and port
     pub server_address: SocketAddr,
