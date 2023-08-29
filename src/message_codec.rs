@@ -13,14 +13,21 @@ impl Decoder for DoIPMessageCodec {
         if src.len() < 8 {
             return Ok(None);
         }
-        // Read length marker.
-        let mut header_bytes = [0u8; 8];
-        header_bytes.copy_from_slice(&src[..8]);
+        // Peel off the header from the rx buffer
+        let header_bytes = src.split_to(8);
         let header = DoIPHeader::read(&mut header_bytes.as_ref())?;
-        if header.payload_length + 8 > src.len() as u32 {
+        if header.payload_length as usize > src.len() {
+            // We haven't received the full message yet, put the header back
+            src.unsplit(header_bytes);
             return Ok(None);
+        } else {
+            // We have the full message, split off the payload from the rx buffer
+            let payload = src.split_to(header.payload_length as usize);
+            return Ok(Some(DoIPMessage {
+                header,
+                payload: payload.to_vec(),
+            }));
         }
-        Ok(Some(DoIPMessage::read(src)?))
     }
 }
 
