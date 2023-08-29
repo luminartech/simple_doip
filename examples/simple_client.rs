@@ -1,16 +1,9 @@
 use std::net::{IpAddr, SocketAddr};
 
-use async_trait::async_trait;
 use doip::{
     client::{DoIPClient, DoIPClientOptions},
-    messages::{
-        diagnostic_message_ack::{DiagnosticAckCode, DiagnosticMessageAck},
-        header::ProtocolVersion,
-        routing_activation_request::ActivationTypeCode,
-        routing_activation_response::{RoutingActivationResponse, RoutingActivationResponseCode},
-    },
-    server::{DoIPClientConnectionInfo, DoIPServer, DoIPServerConnectionHandler, SERVER_TCP_PORT},
-    server_error::DoIPServerError,
+    messages::{header::ProtocolVersion, routing_activation_request::ActivationTypeCode},
+    server::SERVER_TCP_PORT,
 };
 
 #[tokio::main]
