@@ -1,0 +1,120 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'doip'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=doip"
+                ],
+                "filter": {
+                    "name": "doip",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'simple_client'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=simple_client",
+                    "--package=doip"
+                ],
+                "filter": {
+                    "name": "simple_client",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'simple_client'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=simple_client",
+                    "--package=doip"
+                ],
+                "filter": {
+                    "name": "simple_client",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'echo_server'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=echo_server",
+                    "--package=doip"
+                ],
+                "filter": {
+                    "name": "echo_server",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in example 'echo_server'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--example=echo_server",
+                    "--package=doip"
+                ],
+                "filter": {
+                    "name": "echo_server",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'integration_test'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=integration_test",
+                    "--package=doip"
+                ],
+                "filter": {
+                    "name": "integration_test",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
