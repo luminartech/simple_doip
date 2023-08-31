@@ -42,7 +42,7 @@ pub struct DoIPClient {
 
 impl DoIPClient {
     /// Create a DoIP connection.
-    /// The target port defaults to [`SERVER_TCO_PORT`].
+    /// The target port defaults to [`SERVER_TCP_PORT`].
     pub async fn connect(client_options: DoIPClientOptions) -> Result<Self, DoIPClientError> {
         if client_options.client_logical_address < 0x0E00
             || client_options.client_logical_address > 0x0FFF
