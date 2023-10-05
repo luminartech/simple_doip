@@ -136,12 +136,12 @@ impl DoIPClient {
 
     pub async fn diagnostic_message(
         &mut self,
-        user_data: &Vec<u8>,
+        user_data: &[u8],
     ) -> Result<DiagnosticMessageAck, DoIPClientError> {
         let diagnostic_message = DiagnosticMessage {
             source_address: self.client_options.client_logical_address,
             target_address: self.client_options.server_logical_address,
-            user_data: user_data.clone(),
+            user_data: user_data.to_vec(),
         };
 
         let mut payload = Vec::with_capacity(4 + diagnostic_message.user_data.len());
