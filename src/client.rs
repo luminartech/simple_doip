@@ -4,7 +4,6 @@ use crate::{
     messages::{
         alive_check_response::AliveCheckResponse,
         diagnostic_message::DiagnosticMessage,
-        diagnostic_message_ack::DiagnosticMessageAck,
         header::{DoIPHeader, PayloadType, ProtocolVersion},
         nack::NackCode,
         routing_activation_request::{ActivationTypeCode, RoutingActivationRequest},
