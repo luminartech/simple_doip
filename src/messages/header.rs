@@ -142,6 +142,7 @@ impl From<PayloadType> for u16 {
 }
 
 /// DoIP Message Header
+#[derive(Debug)]
 pub struct DoIPHeader {
     /// DoIP Protocol Version
     pub protocol_version: ProtocolVersion,
