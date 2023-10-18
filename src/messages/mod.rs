@@ -14,6 +14,7 @@ use std::io::{Read, Write};
 
 use crate::messages::{header::DoIPHeader, message_error::DoIPMessageError};
 
+#[derive(Debug)]
 pub struct DoIPMessage {
     pub header: header::DoIPHeader,
     pub payload: Vec<u8>,

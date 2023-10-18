@@ -4,7 +4,6 @@ use crate::{
     messages::{
         alive_check_response::AliveCheckResponse,
         diagnostic_message::DiagnosticMessage,
-        diagnostic_message_ack::DiagnosticMessageAck,
         header::{DoIPHeader, PayloadType, ProtocolVersion},
         nack::NackCode,
         routing_activation_request::{ActivationTypeCode, RoutingActivationRequest},
@@ -137,7 +136,7 @@ impl DoIPClient {
     pub async fn diagnostic_message(
         &mut self,
         user_data: &[u8],
-    ) -> Result<DiagnosticMessageAck, DoIPClientError> {
+    ) -> Result<DiagnosticMessage, DoIPClientError> {
         let diagnostic_message = DiagnosticMessage {
             source_address: self.client_options.client_logical_address,
             target_address: self.client_options.server_logical_address,
@@ -153,29 +152,27 @@ impl DoIPClient {
             payload.len().try_into()?,
         );
         let message = DoIPMessage { header, payload };
+        // Send the message
         self.tcp_stream.send(&message).await?;
-        let response_message = self.read_tcp_message().await?;
-
-        match response_message.header.payload_type {
-            PayloadType::DiagnosticMessagePositiveAcknowledge => {
-                let ack = DiagnosticMessageAck::read(
-                    &mut response_message.payload.as_slice(),
-                    response_message.header.payload_length as usize,
-                )?;
-                Ok(ack)
-            }
-            PayloadType::DiagnosticMessageNegativeAcknowledge => {
-                let nack = DiagnosticMessageAck::read(
-                    &mut message.payload.as_slice(),
-                    message.header.payload_length as usize,
-                )?;
-                // I don't think we want to error here, let the caller handle the nack
-                Ok(nack)
-            }
-            _ => Err(DoIPClientError::UnexpectedMessageType(
-                message.header.payload_type,
-            )),
+        // Wait for the DoIP ack
+        let ack_message = self.read_tcp_message().await?;
+        if ack_message.header.payload_type != PayloadType::DiagnosticMessagePositiveAcknowledge {
+            return Err(DoIPClientError::UnexpectedAckMessage(
+                ack_message.header.payload_type,
+            ));
         }
+        // Wait for the UDS Response
+        let response_message = self.read_tcp_message().await?;
+        if response_message.header.payload_type != PayloadType::DiagnosticMessage {
+            return Err(DoIPClientError::UnexpectedMessageType(
+                response_message.header.payload_type,
+            ));
+        }
+        println!("Response message: {:?}", response_message);
+        Ok(DiagnosticMessage::read(
+            &mut response_message.payload.as_slice(),
+            response_message.header.payload_length as usize,
+        )?)
     }
 
     async fn read_tcp_message(&mut self) -> Result<DoIPMessage, DoIPClientError> {
