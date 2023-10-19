@@ -1,4 +1,7 @@
-use std::io::{Read, Write};
+use std::{
+    fmt::Display,
+    io::{Read, Write},
+};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
@@ -20,12 +23,11 @@ impl DiagnosticMessage {
         let user_data_len = payload_length - 4; // 4 == source + target address
         let mut user_data;
         if user_data_len > 0 {
-            user_data = Vec::with_capacity(user_data_len);
-            reader.read_exact(&mut user_data)?;
+            user_data = vec![0; user_data_len];
+            reader.read_exact(&mut user_data).unwrap();
         } else {
             user_data = Vec::new();
         }
-
         Ok(Self {
             source_address,
             target_address,
@@ -38,5 +40,13 @@ impl DiagnosticMessage {
         writer.write_u16::<BigEndian>(self.target_address)?;
         writer.write_all(&self.user_data)?;
         Ok(4 + self.user_data.len())
+    }
+}
+
+impl Display for DiagnosticMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Source Address: {}", &self.source_address)?;
+        writeln!(f, "Target Address: {}", &self.target_address)?;
+        writeln!(f, "User Data: {:2X?}", &self.user_data)
     }
 }
