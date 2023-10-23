@@ -19,7 +19,7 @@ use tokio_util::codec::Framed;
 
 /// DoIP client options used to specify connection info
 /// Derive `Serialize` and `Deserialize` for use in config files
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct DoIPClientOptions {
     /// Server IP address and port
     pub server_address: SocketAddr,
@@ -35,7 +35,7 @@ pub struct DoIPClientOptions {
 }
 
 pub struct DoIPClient {
-    client_options: DoIPClientOptions,
+    pub client_options: DoIPClientOptions,
     tcp_stream: Framed<TcpStream, DoIPMessageCodec>,
 }
 
@@ -133,10 +133,7 @@ impl DoIPClient {
         Ok(response_payload)
     }
 
-    pub async fn diagnostic_message(
-        &mut self,
-        user_data: &[u8],
-    ) -> Result<DiagnosticMessage, DoIPClientError> {
+    pub async fn diagnostic_message(&mut self, user_data: &[u8]) -> Result<(), DoIPClientError> {
         let diagnostic_message = DiagnosticMessage {
             source_address: self.client_options.client_logical_address,
             target_address: self.client_options.server_logical_address,
@@ -154,28 +151,10 @@ impl DoIPClient {
         let message = DoIPMessage { header, payload };
         // Send the message
         self.tcp_stream.send(&message).await?;
-        // Wait for the DoIP ack
-        let ack_message = self.read_tcp_message().await?;
-        if ack_message.header.payload_type != PayloadType::DiagnosticMessagePositiveAcknowledge {
-            return Err(DoIPClientError::UnexpectedAckMessage(
-                ack_message.header.payload_type,
-            ));
-        }
-        // Wait for the UDS Response
-        let response_message = self.read_tcp_message().await?;
-        if response_message.header.payload_type != PayloadType::DiagnosticMessage {
-            return Err(DoIPClientError::UnexpectedMessageType(
-                response_message.header.payload_type,
-            ));
-        }
-        println!("Response message: {:?}", response_message);
-        Ok(DiagnosticMessage::read(
-            &mut response_message.payload.as_slice(),
-            response_message.header.payload_length as usize,
-        )?)
+        Ok(())
     }
 
-    async fn read_tcp_message(&mut self) -> Result<DoIPMessage, DoIPClientError> {
+    pub async fn read_tcp_message(&mut self) -> Result<DoIPMessage, DoIPClientError> {
         // Unwrap here is to unwrap the option, not the result
         let message = self.tcp_stream.next().await.unwrap()?;
 
