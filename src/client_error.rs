@@ -2,7 +2,7 @@ use crate::messages::{header::PayloadType, message_error::DoIPMessageError, nack
 
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum DoIPClientError {
     #[error(transparent)]
     NetworkError(#[from] tokio::io::Error),
