@@ -1,6 +1,6 @@
 use crate::{
     client_error::DoIPClientError,
-    message_codec::DoIPMessageCodec,
+    message_codec::{self, DoIPMessageCodec},
     messages::{
         alive_check_response::AliveCheckResponse,
         diagnostic_message::DiagnosticMessage,
@@ -13,7 +13,10 @@ use crate::{
 };
 
 use futures::{SinkExt, StreamExt};
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    mem,
+    net::{IpAddr, SocketAddr},
+};
 use tokio::net::{TcpSocket, TcpStream};
 use tokio_util::codec::Framed;
 
@@ -95,7 +98,7 @@ impl DoIPClient {
         let message = DoIPMessage { header, payload };
         self.tcp_stream.send(&message).await?;
 
-        let response_message = self.read_tcp_message().await?;
+        let response_message = self.read_tcp_message().await.unwrap()?;
         if response_message.header.payload_type != PayloadType::RoutingActivationResponse {
             return Err(DoIPClientError::UnexpectedMessageType(
                 message.header.payload_type,
@@ -121,7 +124,7 @@ impl DoIPClient {
         };
         self.tcp_stream.send(&message).await?;
 
-        let response_message = self.read_tcp_message().await?;
+        let response_message = self.read_tcp_message().await.unwrap()?;
 
         if response_message.header.payload_type != PayloadType::AliveCheckResponse {
             return Err(DoIPClientError::UnexpectedMessageType(
@@ -154,15 +157,17 @@ impl DoIPClient {
         Ok(())
     }
 
-    pub async fn read_tcp_message(&mut self) -> Result<DoIPMessage, DoIPClientError> {
+    pub async fn read_tcp_message(&mut self) -> Option<Result<DoIPMessage, DoIPClientError>> {
         // Unwrap here is to unwrap the option, not the result
-        let message = self.tcp_stream.next().await.unwrap()?;
-
-        if message.header.payload_type == PayloadType::NegativeAcknowledge {
-            let nack_code = NackCode::read(&mut message.payload.as_slice())?;
-            return Err(DoIPClientError::NackReceived(nack_code));
+        match self.tcp_stream.next().await {
+            None => None,
+            Some(result) => match result {
+                Ok(message) => Some(Ok(message)),
+                Err(error) => {
+                    println!("Error reading message: {:?}", error);
+                    Some(Err(DoIPClientError::from(error)))
+                }
+            },
         }
-
-        Ok(message)
     }
 }
