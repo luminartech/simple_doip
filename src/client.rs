@@ -1,11 +1,10 @@
 use crate::{
     client_error::DoIPClientError,
-    message_codec::{self, DoIPMessageCodec},
+    message_codec::DoIPMessageCodec,
     messages::{
         alive_check_response::AliveCheckResponse,
         diagnostic_message::DiagnosticMessage,
         header::{DoIPHeader, PayloadType, ProtocolVersion},
-        nack::NackCode,
         routing_activation_request::{ActivationTypeCode, RoutingActivationRequest},
         routing_activation_response::RoutingActivationResponse,
         DoIPMessage,
@@ -13,10 +12,7 @@ use crate::{
 };
 
 use futures::{SinkExt, StreamExt};
-use std::{
-    mem,
-    net::{IpAddr, SocketAddr},
-};
+use std::net::{IpAddr, SocketAddr};
 use tokio::net::{TcpSocket, TcpStream};
 use tokio_util::codec::Framed;
 
