@@ -25,12 +25,20 @@ pub struct DoIPClientOptions {
     /// Target logical addresses, uniquely identifies the ECU to be diagnosed.
     /// Valid range: 0x0001 - 0x0DFF
     pub server_logical_address: u16,
+    /// Valid range: 0x0001 - 0x0DFF
+    pub server_physical_address: u16,
     /// Local ip address to bind the TCP and UDP sockets to, e.g. `0.0.0.0`. The port is randomly chosen.
     pub client_address: IpAddr,
     /// Valid range: 0x0E00 - 0x0FFF
     pub client_logical_address: u16,
     /// Which protocol version the client should
     pub protocol_version: ProtocolVersion,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AddressType {
+    Logical,
+    Physical,
 }
 
 pub struct DoIPClient {
@@ -132,10 +140,17 @@ impl DoIPClient {
         Ok(response_payload)
     }
 
-    pub async fn diagnostic_message(&mut self, user_data: &[u8]) -> Result<(), DoIPClientError> {
+    pub async fn diagnostic_message(
+        &mut self,
+        address_type: AddressType,
+        user_data: &[u8],
+    ) -> Result<(), DoIPClientError> {
         let diagnostic_message = DiagnosticMessage {
             source_address: self.client_options.client_logical_address,
-            target_address: self.client_options.server_logical_address,
+            target_address: match address_type {
+                AddressType::Logical => self.client_options.server_logical_address,
+                AddressType::Physical => self.client_options.server_physical_address,
+            },
             user_data: user_data.to_vec(),
         };
 
