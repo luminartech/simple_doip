@@ -63,7 +63,9 @@ impl DoIPClient {
             SocketAddr::V6(_) => TcpSocket::new_v6()?,
         };
         tcp_socket.set_reuseaddr(true)?;
-
+        const BUFFER_SIZE: u32 = 1024 * 1024 * 4;
+        tcp_socket.set_recv_buffer_size(BUFFER_SIZE)?;
+        tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
         let tcp_stream = tcp_socket.connect(client_options.server_address).await?;
         let framed_stream = Framed::new(tcp_stream, DoIPMessageCodec {});
 

@@ -15,18 +15,27 @@ impl Decoder for DoIPMessageCodec {
         }
         // Peel off the header from the rx buffer
         let header_bytes = src.split_to(8);
-        let header = DoIPHeader::read(&mut header_bytes.as_ref())?;
-        if header.payload_length as usize > src.len() {
-            // We haven't received the full message yet, put the header back
-            src.unsplit(header_bytes);
-            Ok(None)
+        let copied_bytes = header_bytes.clone();
+        if let Ok(header) = DoIPHeader::read(&mut copied_bytes.as_ref()) {
+            if header.payload_length as usize > src.len() {
+                // We haven't received the full message yet, put the header back
+                src.unsplit(header_bytes);
+                Ok(None)
+            } else {
+                // We have the full message, split off the payload from the rx buffer
+                let payload = src.split_to(header.payload_length as usize);
+
+                Ok(Some(DoIPMessage {
+                    header,
+                    payload: payload.to_vec(),
+                }))
+            }
         } else {
-            // We have the full message, split off the payload from the rx buffer
-            let payload = src.split_to(header.payload_length as usize);
-            Ok(Some(DoIPMessage {
-                header,
-                payload: payload.to_vec(),
-            }))
+            println!("{:X}", header_bytes);
+            // We don't have a valid header, put the header back
+            src.unsplit(header_bytes);
+            println!("{:X}", src);
+            return Ok(None);
         }
     }
 }
