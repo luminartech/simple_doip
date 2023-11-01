@@ -14,14 +14,16 @@ impl Decoder for DoIPMessageCodec {
             return Ok(None);
         }
         // Peel off the header from the rx buffer
-        let header_bytes = src.split_to(8);
-        let copied_bytes = header_bytes.clone();
-        if let Ok(header) = DoIPHeader::read(&mut copied_bytes.as_ref()) {
-            if header.payload_length as usize > src.len() {
+        let mut header_bytes = [0u8; 8];
+        header_bytes.copy_from_slice(&src[0..8]);
+        if let Ok(header) = DoIPHeader::read(&mut header_bytes.as_slice()) {
+            let message_length = header.payload_length as usize + 8;
+            if message_length as usize > src.len() {
                 // We haven't received the full message yet, put the header back
-                src.unsplit(header_bytes);
                 Ok(None)
             } else {
+                // Drop these, we already copied them into the header
+                let _ = src.split_to(8);
                 // We have the full message, split off the payload from the rx buffer
                 let payload = src.split_to(header.payload_length as usize);
 
@@ -31,9 +33,7 @@ impl Decoder for DoIPMessageCodec {
                 }))
             }
         } else {
-            println!("{:X}", header_bytes);
             // We don't have a valid header, put the header back
-            src.unsplit(header_bytes);
             println!("{:X}", src);
             return Ok(None);
         }
