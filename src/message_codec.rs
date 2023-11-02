@@ -18,7 +18,7 @@ impl Decoder for DoIPMessageCodec {
         header_bytes.copy_from_slice(&src[0..8]);
         if let Ok(header) = DoIPHeader::read(&mut header_bytes.as_slice()) {
             let message_length = header.payload_length as usize + 8;
-            if message_length as usize > src.len() {
+            if message_length > src.len() {
                 // We haven't received the full message yet, put the header back
                 Ok(None)
             } else {
@@ -35,7 +35,7 @@ impl Decoder for DoIPMessageCodec {
         } else {
             // We don't have a valid header, put the header back
             println!("{:X}", src);
-            return Ok(None);
+            Ok(None)
         }
     }
 }
