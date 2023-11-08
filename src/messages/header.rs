@@ -171,10 +171,12 @@ impl DoIPHeader {
     }
     pub(crate) fn version_inverse_correct(&self) -> Result<(), DoIPMessageError> {
         let protocol_version: u8 = self.protocol_version.into();
-        if protocol_version ^ 0xFF == self.inverse_protocol_version {
+        let expected = protocol_version ^ 0xFF;
+        if expected == self.inverse_protocol_version {
             Ok(())
         } else {
             Err(DoIPMessageError::VersionInverseIncorrect {
+                expected,
                 value: self.inverse_protocol_version,
             })
         }
@@ -184,12 +186,14 @@ impl DoIPHeader {
         let inverse_protocol_version = reader.read_u8()?;
         let payload_type = reader.read_u16::<BigEndian>()?.into();
         let payload_length = reader.read_u32::<BigEndian>()?;
-        Ok(DoIPHeader {
+        let header = DoIPHeader {
             protocol_version,
             inverse_protocol_version,
             payload_type,
             payload_length,
-        })
+        };
+        header.version_inverse_correct()?;
+        Ok(header)
     }
     pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_u8(self.protocol_version.into())?;

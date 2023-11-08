@@ -5,7 +5,6 @@ use crate::{
         alive_check_response::AliveCheckResponse,
         diagnostic_message::DiagnosticMessage,
         header::{DoIPHeader, PayloadType, ProtocolVersion},
-        nack::NackCode,
         routing_activation_request::{ActivationTypeCode, RoutingActivationRequest},
         routing_activation_response::RoutingActivationResponse,
         DoIPMessage,
@@ -26,12 +25,20 @@ pub struct DoIPClientOptions {
     /// Target logical addresses, uniquely identifies the ECU to be diagnosed.
     /// Valid range: 0x0001 - 0x0DFF
     pub server_logical_address: u16,
+    /// Valid range: 0x0001 - 0x0DFF
+    pub server_physical_address: u16,
     /// Local ip address to bind the TCP and UDP sockets to, e.g. `0.0.0.0`. The port is randomly chosen.
     pub client_address: IpAddr,
     /// Valid range: 0x0E00 - 0x0FFF
     pub client_logical_address: u16,
     /// Which protocol version the client should
     pub protocol_version: ProtocolVersion,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AddressType {
+    Logical,
+    Physical,
 }
 
 pub struct DoIPClient {
@@ -56,7 +63,10 @@ impl DoIPClient {
             SocketAddr::V6(_) => TcpSocket::new_v6()?,
         };
         tcp_socket.set_reuseaddr(true)?;
-
+        const BUFFER_SIZE: u32 = 1024 * 1024 * 4;
+        tcp_socket.set_recv_buffer_size(BUFFER_SIZE)?;
+        tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
+        tcp_socket.set_nodelay(true)?;
         let tcp_stream = tcp_socket.connect(client_options.server_address).await?;
         let framed_stream = Framed::new(tcp_stream, DoIPMessageCodec {});
 
@@ -95,7 +105,7 @@ impl DoIPClient {
         let message = DoIPMessage { header, payload };
         self.tcp_stream.send(&message).await?;
 
-        let response_message = self.read_tcp_message().await?;
+        let response_message = self.read_tcp_message().await.unwrap()?;
         if response_message.header.payload_type != PayloadType::RoutingActivationResponse {
             return Err(DoIPClientError::UnexpectedMessageType(
                 message.header.payload_type,
@@ -121,7 +131,7 @@ impl DoIPClient {
         };
         self.tcp_stream.send(&message).await?;
 
-        let response_message = self.read_tcp_message().await?;
+        let response_message = self.read_tcp_message().await.unwrap()?;
 
         if response_message.header.payload_type != PayloadType::AliveCheckResponse {
             return Err(DoIPClientError::UnexpectedMessageType(
@@ -133,10 +143,17 @@ impl DoIPClient {
         Ok(response_payload)
     }
 
-    pub async fn diagnostic_message(&mut self, user_data: &[u8]) -> Result<(), DoIPClientError> {
+    pub async fn diagnostic_message(
+        &mut self,
+        address_type: AddressType,
+        user_data: &[u8],
+    ) -> Result<(), DoIPClientError> {
         let diagnostic_message = DiagnosticMessage {
             source_address: self.client_options.client_logical_address,
-            target_address: self.client_options.server_logical_address,
+            target_address: match address_type {
+                AddressType::Logical => self.client_options.server_logical_address,
+                AddressType::Physical => self.client_options.server_physical_address,
+            },
             user_data: user_data.to_vec(),
         };
 
@@ -154,15 +171,17 @@ impl DoIPClient {
         Ok(())
     }
 
-    pub async fn read_tcp_message(&mut self) -> Result<DoIPMessage, DoIPClientError> {
+    pub async fn read_tcp_message(&mut self) -> Option<Result<DoIPMessage, DoIPClientError>> {
         // Unwrap here is to unwrap the option, not the result
-        let message = self.tcp_stream.next().await.unwrap()?;
-
-        if message.header.payload_type == PayloadType::NegativeAcknowledge {
-            let nack_code = NackCode::read(&mut message.payload.as_slice())?;
-            return Err(DoIPClientError::NackReceived(nack_code));
+        match self.tcp_stream.next().await {
+            None => None,
+            Some(result) => match result {
+                Ok(message) => Some(Ok(message)),
+                Err(error) => {
+                    println!("Error reading message: {:?}", error);
+                    Some(Err(DoIPClientError::from(error)))
+                }
+            },
         }
-
-        Ok(message)
     }
 }
