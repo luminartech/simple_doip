@@ -10,6 +10,8 @@ pub enum DoIPClientError {
     MessageError(#[from] DoIPMessageError),
     #[error("Invalid logical address for client: {0:#06x}")]
     InvalidClientLogicalAddress(u16),
+    #[error(transparent)]
+    ConnectionTimeout(#[from] tokio::time::error::Elapsed),
     #[error("Unexpected Ack message: {0:?}")]
     UnexpectedAckMessage(PayloadType),
     #[error("Unexpected message type: {0:?}")]
