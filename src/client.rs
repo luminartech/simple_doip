@@ -21,7 +21,7 @@ use tokio_util::codec::Framed;
 
 /// DoIP client options used to specify connection info
 /// Derive `Serialize` and `Deserialize` for use in config files
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DoIPClientOptions {
     /// Server IP address and port
     pub server_address: SocketAddr,
