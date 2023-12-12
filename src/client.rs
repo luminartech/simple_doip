@@ -71,7 +71,7 @@ impl DoIPClient {
         tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
         tcp_socket.set_nodelay(true)?;
         let tcp_stream = tokio::time::timeout(
-            Duration::from_millis(999),
+            Duration::from_millis(333),
             tcp_socket.connect(client_options.server_address),
         )
         .await??;
