@@ -21,7 +21,7 @@ use tokio_util::codec::Framed;
 
 /// DoIP client options used to specify connection info
 /// Derive `Serialize` and `Deserialize` for use in config files
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DoIPClientOptions {
     /// Server IP address and port
     pub server_address: SocketAddr,
@@ -71,7 +71,7 @@ impl DoIPClient {
         tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
         tcp_socket.set_nodelay(true)?;
         let tcp_stream = tokio::time::timeout(
-            Duration::from_millis(999),
+            Duration::from_millis(333),
             tcp_socket.connect(client_options.server_address),
         )
         .await??;
