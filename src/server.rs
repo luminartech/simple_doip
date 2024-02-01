@@ -49,7 +49,7 @@ pub trait DoIPServerConnectionHandler<ErrorType> {
     // Required Functions
     // These functions must be implemented by the server implementation
 
-    /// Get the udp address where vehicle announcment messages should be sent
+    /// Get the udp address where vehicle announcement messages should be sent
     //fn get_client_udp_address() -> SocketAddr;
 
     /// Get the Vehicle Identification Number for this server
@@ -82,7 +82,7 @@ pub trait DoIPServerConnectionHandler<ErrorType> {
     ) -> Result<DiagnosticMessageAck, ErrorType>;
 
     // Optional Functions
-    // These functions *may* be overriden to provide custom behavior
+    // These functions *may* be overridden to provide custom behavior
     // Default functionality is very simplistic and may not be suitable for production use
 
     /// Respond to an Identification request with the identity parameters provided by the trait implementer
