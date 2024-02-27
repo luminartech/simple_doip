@@ -66,12 +66,12 @@ impl DoIPClient {
             SocketAddr::V6(_) => TcpSocket::new_v6()?,
         };
         tcp_socket.set_reuseaddr(true)?;
-        const BUFFER_SIZE: u32 = 1024 * 1024 * 4;
+        const BUFFER_SIZE: u32 = 1024 * 64;
         tcp_socket.set_recv_buffer_size(BUFFER_SIZE)?;
         tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_nodelay(true)?;
+        tcp_socket.set_nodelay(false)?;
         let tcp_stream = tokio::time::timeout(
-            Duration::from_millis(333),
+            Duration::from_millis(500),
             tcp_socket.connect(client_options.server_address),
         )
         .await??;
