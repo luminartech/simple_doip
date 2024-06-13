@@ -65,7 +65,7 @@ pub trait DoIPServerConnectionHandler<ErrorType> {
     /// Get the unique group identification
     /// Optional field, return `None` if not set.
     fn get_group_id() -> Option<[u8; 6]>;
-    ///
+
     async fn routing_activation(
         &self,
         client_info: &DoIPClientConnectionInfo,
