@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+futures.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, optional = true, features = ["time"] }
 
 async-trait = "0.1"
 bytes = "1"
 byteorder = "1"
-futures = "0.3"
 tokio-util = { version = "0.7.12", optional = true, features = [
     "net",
     "codec",
