@@ -33,7 +33,7 @@ use std::{
 pub const SERVER_TCP_PORT: u16 = 13400;
 
 /// TODO: Implement TLS support
-//const SERVER_TCP_TLS_PORT: u16 = 3496;
+pub const SERVER_TCP_TLS_PORT: u16 = 3496;
 
 pub struct DoIPClientConnectionInfo {
     /// Client IP address
@@ -48,9 +48,6 @@ pub struct DoIPClientConnectionInfo {
 pub trait DoIPServerConnectionHandler<ErrorType> {
     // Required Functions
     // These functions must be implemented by the server implementation
-
-    /// Get the udp address where vehicle announcement messages should be sent
-    //fn get_client_udp_address() -> SocketAddr;
 
     /// Get the Vehicle Identification Number for this server
     fn get_vin() -> [u8; 17];
