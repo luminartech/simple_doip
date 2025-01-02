@@ -10,8 +10,8 @@ pub enum DoIPMessageError {
     VersionInverseIncorrect { expected: u8, value: u8 },
     #[error("Payload length in header does match expected payload type length: {value:?}, expected: {expected:?}")]
     PayloadLengthTooShort { value: usize, expected: u32 },
-    #[error("Unexpected payload type found: {value:?}")]
-    UnexpectedPayloadType { value: PayloadType },
+    #[error("Unexpected payload type found: {0:?}")]
+    UnexpectedPayloadType(PayloadType),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
