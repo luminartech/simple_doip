@@ -21,7 +21,7 @@ anyhow = "1"
 
 
 [features]
-default = ["client", "server"]
+default = []
 codec = ["dep:tokio", "dep:tokio-util"]
 client = ["codec"]
 server = ["codec"]
