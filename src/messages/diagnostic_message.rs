@@ -8,13 +8,13 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use super::message_error::DoIPMessageError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DiagnosticMessage {
+pub struct DiagnosticMessage<T> {
     pub source_address: u16,
     pub target_address: u16,
-    pub user_data: Vec<u8>,
+    pub user_data: T,
 }
 
-impl DiagnosticMessage {
+impl<T> DiagnosticMessage<T> {
     pub fn read<T: Read>(reader: &mut T, payload_length: usize) -> Result<Self, DoIPMessageError> {
         let source_address = reader.read_u16::<BigEndian>()?;
 
@@ -43,7 +43,7 @@ impl DiagnosticMessage {
     }
 }
 
-impl Display for DiagnosticMessage {
+impl<T> Display for DiagnosticMessage<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Source Address: {}", &self.source_address)?;
         writeln!(f, "Target Address: {}", &self.target_address)?;
