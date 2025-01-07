@@ -1,22 +1,30 @@
-pub mod alive_check_response;
-pub mod diagnostic_message;
-pub mod diagnostic_message_ack;
-pub mod entity_status_response;
-pub mod header;
-pub mod message_error;
-pub mod nack;
-pub mod payload;
-use alive_check_response::AliveCheckResponse;
+mod alive_check_response;
+pub use alive_check_response::AliveCheckResponse;
+mod diagnostic_message;
+pub use diagnostic_message::DiagnosticMessage;
+mod diagnostic_message_ack;
+pub use diagnostic_message_ack::DiagnosticMessageAck;
+mod entity_status_response;
+pub use entity_status_response::EntityStatusResponse;
+mod header;
+pub use header::DoIPHeader;
+mod message_error;
+pub use message_error::DoIPMessageError;
+mod nack;
+pub use nack::NackCode;
+mod payload;
 use header::PayloadType;
 pub use payload::Payload;
-pub mod power_mode_info_response;
-pub mod routing_activation_request;
-pub mod routing_activation_response;
-pub mod vehicle_identification_response;
+mod power_mode_info_response;
+pub use power_mode_info_response::DiagnosticPowerModeCode;
+mod routing_activation_request;
+pub use routing_activation_request::RoutingActivationRequest;
+mod routing_activation_response;
+pub use routing_activation_response::RoutingActivationResponse;
+mod vehicle_identification_response;
+pub use vehicle_identification_response::VehicleIdentificationResponse;
 
 use std::io::{Read, Write};
-
-use crate::messages::{header::DoIPHeader, message_error::DoIPMessageError};
 
 #[derive(Debug)]
 pub struct DoIPMessage {
