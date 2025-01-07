@@ -1,13 +1,24 @@
 use std::io::{Read, Write};
 
-use super::{
-    alive_check_response::AliveCheckResponse, header::PayloadType, message_error::DoIPMessageError,
+use crate::messages::{
+    alive_check_response::AliveCheckResponse, diagnostic_message::DiagnosticMessage,
+    diagnostic_message_ack::DiagnosticMessageAck, entity_status_response::EntityStatusResponse,
+    header::PayloadType, message_error::DoIPMessageError,
+    power_mode_info_response::DiagnosticPowerModeCode,
+    routing_activation_response::RoutingActivationResponse,
+    vehicle_identification_response::VehicleIdentificationResponse,
 };
 
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum Payload {
     AliveCheckResponse(AliveCheckResponse),
+    DiagnosticMessage(DiagnosticMessage),
+    DiagnosticMessageAck(DiagnosticMessageAck),
+    EntityStatusResponse(EntityStatusResponse),
+    PowerModeInfoResponse(DiagnosticPowerModeCode),
+    RoutingActivationResponse(RoutingActivationResponse),
+    VehicleAnnouncementResponse(VehicleIdentificationResponse),
 }
 
 impl Payload {
@@ -27,6 +38,9 @@ impl Payload {
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         match self {
             Self::AliveCheckResponse(alive_check_response) => alive_check_response.write(writer),
+            _ => Err(DoIPMessageError::UnexpectedPayloadType(
+                PayloadType::AliveCheckResponse,
+            )),
         }
     }
 }
