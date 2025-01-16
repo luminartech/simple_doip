@@ -8,6 +8,14 @@ pub struct DoIPMessageCodec<DiagnosticsDefinition> {
     _diagnostics_definition: std::marker::PhantomData<DiagnosticsDefinition>,
 }
 
+impl<DiagnosticsDefinition> DoIPMessageCodec<DiagnosticsDefinition> {
+    pub fn new() -> Self {
+        Self {
+            _diagnostics_definition: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder
     for DoIPMessageCodec<DiagnosticsDefinition>
 {
