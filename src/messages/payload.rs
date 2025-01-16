@@ -3,13 +3,12 @@ use std::io::{Read, Write};
 use uds_protocol::WireFormat;
 
 use crate::messages::{
-    alive_check_response::AliveCheckResponse, diagnostic_message::DiagnosticMessage,
-    diagnostic_message_ack::DiagnosticMessageAck, entity_status_response::EntityStatusResponse,
-    header::PayloadType, message_error::DoIPMessageError,
-    power_mode_info_response::DiagnosticPowerModeCode,
-    routing_activation_response::RoutingActivationResponse,
-    vehicle_identification_response::VehicleIdentificationResponse,
+    AliveCheckResponse, DiagnosticMessage, DiagnosticMessageAck, DiagnosticPowerModeCode,
+    DoIPMessageError, EntityStatusResponse, PayloadType, RoutingActivationResponse,
+    VehicleIdentificationResponse,
 };
+
+use super::RoutingActivationRequest;
 
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -19,6 +18,7 @@ pub enum Payload<DiagnosticsDefinition> {
     DiagnosticMessageAck(DiagnosticMessageAck),
     EntityStatusResponse(EntityStatusResponse),
     PowerModeInfoResponse(DiagnosticPowerModeCode),
+    RoutingActivationRequest(RoutingActivationRequest),
     RoutingActivationResponse(RoutingActivationResponse),
     VehicleAnnouncementResponse(VehicleIdentificationResponse),
 }
