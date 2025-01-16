@@ -1,5 +1,7 @@
 use std::io::{Read, Write};
 
+use uds_protocol::WireFormat;
+
 use crate::messages::{
     alive_check_response::AliveCheckResponse, diagnostic_message::DiagnosticMessage,
     diagnostic_message_ack::DiagnosticMessageAck, entity_status_response::EntityStatusResponse,
@@ -11,9 +13,9 @@ use crate::messages::{
 
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
-pub enum Payload {
+pub enum Payload<DiagnosticsDefinition> {
     AliveCheckResponse(AliveCheckResponse),
-    DiagnosticMessage(DiagnosticMessage),
+    DiagnosticMessage(DiagnosticMessage<DiagnosticsDefinition>),
     DiagnosticMessageAck(DiagnosticMessageAck),
     EntityStatusResponse(EntityStatusResponse),
     PowerModeInfoResponse(DiagnosticPowerModeCode),
@@ -21,9 +23,9 @@ pub enum Payload {
     VehicleAnnouncementResponse(VehicleIdentificationResponse),
 }
 
-impl Payload {
-    pub fn read<T: Read>(
-        mut payload_bytes: &mut T,
+impl<DiagnosticsDefinitions: WireFormat> Payload<DiagnosticsDefinitions> {
+    pub fn read<R: Read>(
+        mut payload_bytes: &mut R,
         payload_type: PayloadType,
     ) -> Result<Self, DoIPMessageError> {
         match payload_type {
@@ -35,7 +37,7 @@ impl Payload {
         }
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub fn write<W: Write>(&self, writer: &mut W) -> Result<usize, DoIPMessageError> {
         match self {
             Self::AliveCheckResponse(alive_check_response) => alive_check_response.write(writer),
             _ => Err(DoIPMessageError::UnexpectedPayloadType(

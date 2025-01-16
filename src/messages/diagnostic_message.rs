@@ -1,33 +1,27 @@
-use std::{
-    fmt::Display,
-    io::{Read, Write},
-};
+use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use uds_protocol::SingleValueWireFormat;
 
 use super::message_error::DoIPMessageError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DiagnosticMessage<T> {
+pub struct DiagnosticMessage<DiagnosticsDefinition> {
     pub source_address: u16,
     pub target_address: u16,
-    pub user_data: T,
+    pub user_data: DiagnosticsDefinition,
 }
 
-impl<T> DiagnosticMessage<T> {
-    pub fn read<T: Read>(reader: &mut T, payload_length: usize) -> Result<Self, DoIPMessageError> {
+impl<DiagnosticsDefinition: SingleValueWireFormat> DiagnosticMessage<DiagnosticsDefinition> {
+    pub fn read<R: Read>(reader: &mut R, payload_length: usize) -> Result<Self, DoIPMessageError> {
         let source_address = reader.read_u16::<BigEndian>()?;
-
         let target_address = reader.read_u16::<BigEndian>()?;
 
         let user_data_len = payload_length - 4; // 4 == source + target address
-        let mut user_data;
-        if user_data_len > 0 {
-            user_data = vec![0; user_data_len];
-            reader.read_exact(&mut user_data).unwrap();
-        } else {
-            user_data = Vec::new();
-        }
+        let mut user_data = vec![0; user_data_len];
+        reader.read_exact(&mut user_data)?;
+        let user_data = DiagnosticsDefinition::from_reader(&mut user_data.as_slice())?;
+
         Ok(Self {
             source_address,
             target_address,
@@ -38,15 +32,6 @@ impl<T> DiagnosticMessage<T> {
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
         writer.write_u16::<BigEndian>(self.source_address)?;
         writer.write_u16::<BigEndian>(self.target_address)?;
-        writer.write_all(&self.user_data)?;
-        Ok(4 + self.user_data.len())
-    }
-}
-
-impl<T> Display for DiagnosticMessage<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Source Address: {}", &self.source_address)?;
-        writeln!(f, "Target Address: {}", &self.target_address)?;
-        writeln!(f, "User Data: {:2X?}", &self.user_data)
+        Ok(4 + self.user_data.to_writer(writer)?)
     }
 }

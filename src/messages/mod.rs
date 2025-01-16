@@ -22,19 +22,22 @@ pub use routing_activation_request::RoutingActivationRequest;
 mod routing_activation_response;
 pub use routing_activation_response::RoutingActivationResponse;
 mod vehicle_identification_response;
+use uds_protocol::SingleValueWireFormat;
 pub use vehicle_identification_response::VehicleIdentificationResponse;
 
 use std::io::{Read, Write};
 
 #[derive(Debug)]
-pub struct DoIPMessage {
+pub struct DoIPMessage<DiagnosticDefinitions> {
     pub header: header::DoIPHeader,
-    pub payload: Payload,
+    pub payload: Payload<DiagnosticDefinitions>,
 }
 
-impl DoIPMessage {
+impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefinition> {
     // TODO: This needs careful review and should do a lot more error checking than it does now
-    pub fn read<T: Read>(mut message_bytes: &mut T) -> Result<DoIPMessage, DoIPMessageError> {
+    pub fn read<T: Read>(
+        mut message_bytes: &mut T,
+    ) -> Result<DoIPMessage<DiagnosticsDefinition>, DoIPMessageError> {
         let header = DoIPHeader::read(&mut message_bytes)?;
         header.version_inverse_correct()?;
         let payload = match header.payload_type {
@@ -62,19 +65,21 @@ mod tests {
     /// Check that we properly decode and encode hex bytes
     #[test]
     fn test_valid_messages() {
-        let mut buf: Vec<u8> = vec![
+        let buf: [u8; 16] = [
             0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00,
         ];
-        let deserialized_message = DoIPMessage::read(&mut buf.as_slice()).unwrap();
+        let deserialized_message: DoIPMessage<uds_protocol::Request> =
+            DoIPMessage::read(&mut buf.as_ref()).unwrap();
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2012);
         assert!(deserialized_message.header.payload_type == PayloadType::NegativeAcknowledge);
         assert!(deserialized_message.header.payload_length == 8);
-        buf = vec![
+        let buf: [u8; 15] = [
             0x01, 0xFE, 0x00, 0x01, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00,
         ];
-        let deserialized_message = DoIPMessage::read(&mut buf.as_slice()).unwrap();
+        let deserialized_message: DoIPMessage<uds_protocol::Request> =
+            DoIPMessage::read(&mut buf.as_ref()).unwrap();
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2010);
         assert!(
             deserialized_message.header.payload_type == PayloadType::VehicleIdentificationRequest
@@ -85,9 +90,13 @@ mod tests {
     }
     #[test]
     fn test_invalid_inverse() {
-        let buf: Vec<u8> = vec![0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let buf: [u8; 8] = [0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         // This parsing should panic for the bad inverse
         // TODO: Instead of panicking need to add error handling and return a result
-        assert!(DoIPMessage::read(&mut buf.as_slice()).is_err());
+
+        assert!(matches!(
+            DoIPMessage::<uds_protocol::Request>::read(&mut buf.as_ref()),
+            Err(DoIPMessageError::VersionInverseIncorrect { .. })
+        ));
     }
 }
