@@ -39,7 +39,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder
                 let _ = src.split_to(8);
                 // We have the full message, split off the payload from the rx buffer
                 let payload_bytes = src.split_to(header.payload_length as usize);
-                let payload = Payload::<DiagnosticsDefinition>::from_reader(
+                let payload = Payload::<DiagnosticsDefinition>::read(
                     &mut payload_bytes.as_ref(),
                     header.payload_type,
                 )?;
