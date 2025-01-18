@@ -13,6 +13,7 @@ use super::RoutingActivationRequest;
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum Payload<DiagnosticsDefinition> {
+    NoPayload,
     AliveCheckResponse(AliveCheckResponse),
     DiagnosticMessage(DiagnosticMessage<DiagnosticsDefinition>),
     DiagnosticMessageAck(DiagnosticMessageAck),
