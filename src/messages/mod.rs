@@ -57,9 +57,9 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use header::{PayloadType, ProtocolVersion};
+    use uds_protocol::ProtocolIdentifier;
 
     /// Check that we properly decode and encode hex bytes
     #[test]
@@ -68,7 +68,7 @@ mod tests {
             0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00,
         ];
-        let deserialized_message: DoIPMessage<uds_protocol::Request> =
+        let deserialized_message: DoIPMessage<uds_protocol::ProtocolRequest> =
             DoIPMessage::read(&mut buf.as_ref()).unwrap();
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2012);
         assert!(deserialized_message.header.payload_type == PayloadType::NegativeAcknowledge);
@@ -77,7 +77,7 @@ mod tests {
             0x01, 0xFE, 0x00, 0x01, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00,
         ];
-        let deserialized_message: DoIPMessage<uds_protocol::Request> =
+        let deserialized_message: DoIPMessage<uds_protocol::ProtocolResponse> =
             DoIPMessage::read(&mut buf.as_ref()).unwrap();
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2010);
         assert!(
@@ -94,7 +94,7 @@ mod tests {
         // TODO: Instead of panicking need to add error handling and return a result
 
         assert!(matches!(
-            DoIPMessage::<uds_protocol::Request>::read(&mut buf.as_ref()),
+            DoIPMessage::<uds_protocol::ProtocolRequest>::read(&mut buf.as_ref()),
             Err(DoIPMessageError::VersionInverseIncorrect { .. })
         ));
     }
