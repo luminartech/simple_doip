@@ -33,6 +33,56 @@ pub struct DoIPMessage<DiagnosticDefinitions> {
 }
 
 impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefinition> {
+    pub fn alive_check_request() -> DoIPMessage<DiagnosticsDefinition> {
+        DoIPMessage {
+            header: DoIPHeader::new(ProtocolVersion::V2010, PayloadType::AliveCheckRequest, 0),
+            payload: Payload::NoPayload,
+        }
+    }
+
+    pub fn diagnostic_message(
+        source_address: u16,
+        target_address: u16,
+        message: DiagnosticsDefinition,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        let message = DiagnosticMessage {
+            source_address,
+            target_address,
+            user_data: message,
+        };
+        DoIPMessage {
+            header: DoIPHeader::new(ProtocolVersion::V2010, PayloadType::DiagnosticMessage, 0),
+            payload: Payload::DiagnosticMessage(message),
+        }
+    }
+
+    pub fn routing_activation_request(
+        activation_type: ActivationTypeCode,
+        reserved_vehicle_manufacturer: Option<[u8; 4]>,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        let request = RoutingActivationRequest {
+            source_address: 0,
+            activation_type,
+            reserved: [0, 0, 0, 0],
+            reserved_vehicle_manufacturer,
+        };
+
+        let mut payload = Vec::with_capacity(11);
+        request.write(&mut payload).unwrap();
+
+        let header = DoIPHeader::new(
+            ProtocolVersion::V2010,
+            PayloadType::RoutingActivationRequest,
+            payload.len() as u32,
+        );
+        DoIPMessage {
+            header,
+            payload: Payload::RoutingActivationRequest(request),
+        }
+    }
+}
+
+impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefinition> {
     // TODO: This needs careful review and should do a lot more error checking than it does now
     pub fn read<T: Read>(
         mut message_bytes: &mut T,
