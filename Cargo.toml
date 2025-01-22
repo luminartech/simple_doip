@@ -19,6 +19,7 @@ tokio-util = { version = "0.7.12", optional = true, features = [
 
 [dev-dependencies]
 anyhow = "1"
+doip = { path = ".", features = ["client"] }
 
 
 [features]
