@@ -12,9 +12,10 @@ pub mod messages;
 /// The client feature enables
 #[cfg(feature = "client")]
 pub mod client;
-#[cfg(feature = "client")]
-pub mod client_error;
-
+#[cfg(any(feature = "client", feature = "server"))]
+mod error;
+#[cfg(any(feature = "client", feature = "server"))]
+pub use error::Error;
 #[cfg(feature = "codec")]
 pub mod message_codec;
 
