@@ -3,7 +3,7 @@ pub use alive_check_response::AliveCheckResponse;
 mod diagnostic_message;
 pub use diagnostic_message::DiagnosticMessage;
 mod diagnostic_message_ack;
-pub use diagnostic_message_ack::DiagnosticMessageAck;
+pub use diagnostic_message_ack::{DiagnosticAckCode, DiagnosticMessageAck};
 mod entity_status_response;
 pub use entity_status_response::EntityStatusResponse;
 mod header;
@@ -19,7 +19,7 @@ pub use power_mode_info_response::DiagnosticPowerModeCode;
 mod routing_activation_request;
 pub use routing_activation_request::{ActivationTypeCode, RoutingActivationRequest};
 mod routing_activation_response;
-pub use routing_activation_response::RoutingActivationResponse;
+pub use routing_activation_response::{RoutingActivationResponse, RoutingActivationResponseCode};
 mod vehicle_identification_response;
 use uds_protocol::SingleValueWireFormat;
 pub use vehicle_identification_response::VehicleIdentificationResponse;
@@ -57,11 +57,12 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
     }
 
     pub fn routing_activation_request(
+        source_address: u16,
         activation_type: ActivationTypeCode,
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
     ) -> DoIPMessage<DiagnosticsDefinition> {
         let request = RoutingActivationRequest {
-            source_address: 0,
+            source_address,
             activation_type,
             reserved: [0, 0, 0, 0],
             reserved_vehicle_manufacturer,
