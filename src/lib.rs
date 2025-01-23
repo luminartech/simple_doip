@@ -23,3 +23,10 @@ pub mod message_codec;
 pub mod server;
 #[cfg(feature = "server")]
 pub mod server_error;
+
+/// Default TCP port for DoIP
+/// This is the port used for unencrypted connections
+pub const TCP_PORT: u16 = 13400;
+
+/// TODO: Implement TLS support
+pub const TCP_TLS_PORT: u16 = 3496;
