@@ -1,10 +1,9 @@
 use crate::{
     message_codec::DoIPMessageCodec,
     messages::{
-        ActivationTypeCode, DiagnosticMessage, DiagnosticMessageAck, DiagnosticPowerModeCode,
-        DoIPHeader, DoIPMessage, EntityStatusNodeType, EntityStatusResponse, FurtherActionRequired,
-        Payload, PayloadType, ProtocolVersion, RoutingActivationRequest, RoutingActivationResponse,
-        VehicleIdentificationResponse, VinGidSyncStatus,
+        DiagnosticMessage, DiagnosticPowerModeCode, DoIPMessage, FurtherActionRequired, Payload,
+        PayloadType, ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse,
+        VinGidSyncStatus,
     },
     Error, TCP_PORT,
 };
@@ -56,12 +55,12 @@ pub trait DoIPServerConnectionHandler<
     async fn routing_activation(
         &self,
         request: &RoutingActivationRequest,
-    ) -> Result<RoutingActivationResponse, Error>;
+    ) -> Result<DoIPMessage<WriteDefinitions>, Error>;
 
     async fn diagnostic_message(
         &self,
         message: &DiagnosticMessage<ReadDefinitions>,
-    ) -> Result<DiagnosticMessageAck, Error>;
+    ) -> Result<DoIPMessage<WriteDefinitions>, Error>;
 
     // Optional Functions
     // These functions *may* be overridden to provide custom behavior
@@ -246,35 +245,32 @@ where
         match request_message.payload {
             Payload::NoPayload => match request_message.header.payload_type {
                 PayloadType::AliveCheckRequest => {
-                    return self.connection_handler.alive_check(&connection_info).await;
+                    self.connection_handler.alive_check(&connection_info).await
                 }
-                _ => {
-                    return Err(Error::UnexpectedMessageType(
-                        request_message.header.payload_type,
-                    ))
+                PayloadType::DoIPEntityStatusRequest => {
+                    todo!("Entity Status Request is not yet supported!")
                 }
+                PayloadType::VehicleIdentificationRequest => {
+                    todo!("Vehicle Identification Request is not yet supported")
+                }
+
+                _ => Err(Error::UnexpectedMessageType(
+                    request_message.header.payload_type,
+                )),
             },
-            Payload::RoutingActivationRequest(request) => {
-                return self
-                    .connection_handler
-                    .routing_activation(&connection_info, source_address, request.activation_type)
+            Payload::DiagnosticMessage(diagnostic_message) => {
+                self.connection_handler
+                    .diagnostic_message(&diagnostic_message)
                     .await
             }
-        };
+            Payload::RoutingActivationRequest(request) => {
+                self.connection_handler.routing_activation(&request).await
+            }
+            Payload::RoutingActivationResponse(_routing_activation_response) => todo!(),
+            Payload::VehiclIdentificationResponse(_vehicle_identification_response) => todo!(),
+            _ => Err(Error::UnexpectedMessageType(
+                request_message.header.payload_type,
+            )),
+        }
     }
 }
-
-/*
-PayloadType::DoIPEntityStatusRequest => {
-    let response = EntityStatusResponse {
-        node_type: EntityStatusNodeType::DoIPNode,
-        max_concurrent_tcp_sockets: u8::MAX,
-        open_tcp_sockets: self.active_connections.load(Ordering::Relaxed) as u8,
-        max_data_size: u32::MAX,
-    };
-    response.write(&mut response_payload)?;
-    Ok((PayloadType::DoIPEntityStatusResponse, response_payload))
-}
-// TODO add remaining
-_ => Err(Error::UnexpectedMessageType(message.header.payload_type)),
-*/
