@@ -21,7 +21,7 @@ pub enum Payload<DiagnosticsDefinition> {
     PowerModeInfoResponse(DiagnosticPowerModeCode),
     RoutingActivationRequest(RoutingActivationRequest),
     RoutingActivationResponse(RoutingActivationResponse),
-    VehicleAnnouncementResponse(VehicleIdentificationResponse),
+    VehiclIdentificationResponse(VehicleIdentificationResponse),
 }
 
 impl<DiagnosticsDefinitions: WireFormat> Payload<DiagnosticsDefinitions> {
