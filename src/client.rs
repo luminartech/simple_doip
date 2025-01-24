@@ -1,8 +1,8 @@
 use crate::{
     message_codec::DoIPMessageCodec,
     messages::{
-        ActivationTypeCode, AliveCheckResponse, DiagnosticMessage, DoIPHeader, DoIPMessage,
-        Payload, PayloadType, ProtocolVersion, RoutingActivationRequest, RoutingActivationResponse,
+        ActivationTypeCode, AliveCheckResponse, DoIPHeader, DoIPMessage, Payload, PayloadType,
+        ProtocolVersion, RoutingActivationResponse,
     },
     Error,
 };
@@ -101,6 +101,7 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
     ) -> Result<RoutingActivationResponse, Error> {
         let message = DoIPMessage::<WriteDefinitions>::routing_activation_request(
+            self.client_options.protocol_version,
             self.client_options.client_logical_address,
             activation_type,
             reserved_vehicle_manufacturer,
@@ -143,6 +144,7 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
         user_data: WriteDefinitions,
     ) -> Result<(), Error> {
         let message = DoIPMessage::<WriteDefinitions>::diagnostic_message(
+            self.client_options.protocol_version,
             self.client_options.client_logical_address,
             match address_type {
                 AddressType::Logical => self.client_options.server_logical_address,
