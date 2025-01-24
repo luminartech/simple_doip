@@ -21,8 +21,6 @@ pub mod message_codec;
 
 #[cfg(feature = "server")]
 pub mod server;
-#[cfg(feature = "server")]
-pub mod server_error;
 
 /// Default TCP port for DoIP
 /// This is the port used for unencrypted connections
