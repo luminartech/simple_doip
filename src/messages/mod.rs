@@ -5,7 +5,7 @@ pub use diagnostic_message::DiagnosticMessage;
 mod diagnostic_message_ack;
 pub use diagnostic_message_ack::{DiagnosticAckCode, DiagnosticMessageAck};
 mod entity_status_response;
-pub use entity_status_response::EntityStatusResponse;
+pub use entity_status_response::{EntityStatusNodeType, EntityStatusResponse};
 mod header;
 pub use header::{DoIPHeader, PayloadType, ProtocolVersion};
 mod message_error;
@@ -22,7 +22,9 @@ mod routing_activation_response;
 pub use routing_activation_response::{RoutingActivationResponse, RoutingActivationResponseCode};
 mod vehicle_identification_response;
 use uds_protocol::SingleValueWireFormat;
-pub use vehicle_identification_response::VehicleIdentificationResponse;
+pub use vehicle_identification_response::{
+    FurtherActionRequired, VehicleIdentificationResponse, VinGidSyncStatus,
+};
 
 use std::io::{Read, Write};
 
@@ -33,14 +35,28 @@ pub struct DoIPMessage<DiagnosticDefinitions> {
 }
 
 impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefinition> {
-    pub fn alive_check_request() -> DoIPMessage<DiagnosticsDefinition> {
+    pub fn alive_check_request(
+        protocol_version: ProtocolVersion,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
         DoIPMessage {
-            header: DoIPHeader::new(ProtocolVersion::V2010, PayloadType::AliveCheckRequest, 0),
+            header: DoIPHeader::new(protocol_version, PayloadType::AliveCheckRequest, 0),
             payload: Payload::NoPayload,
         }
     }
 
+    pub fn alive_check_response(
+        protocol_version: ProtocolVersion,
+        source_address: u16,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        let respnse = AliveCheckResponse { source_address };
+        DoIPMessage {
+            header: DoIPHeader::new(protocol_version, PayloadType::AliveCheckResponse, 0),
+            payload: Payload::AliveCheckResponse(respnse),
+        }
+    }
+
     pub fn diagnostic_message(
+        protocol_version: ProtocolVersion,
         source_address: u16,
         target_address: u16,
         message: DiagnosticsDefinition,
@@ -51,12 +67,13 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
             user_data: message,
         };
         DoIPMessage {
-            header: DoIPHeader::new(ProtocolVersion::V2010, PayloadType::DiagnosticMessage, 0),
+            header: DoIPHeader::new(protocol_version, PayloadType::DiagnosticMessage, 0),
             payload: Payload::DiagnosticMessage(message),
         }
     }
 
     pub fn routing_activation_request(
+        protocol_version: ProtocolVersion,
         source_address: u16,
         activation_type: ActivationTypeCode,
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
@@ -72,7 +89,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
         request.write(&mut payload).unwrap();
 
         let header = DoIPHeader::new(
-            ProtocolVersion::V2010,
+            protocol_version,
             PayloadType::RoutingActivationRequest,
             payload.len() as u32,
         );
