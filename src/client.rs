@@ -1,14 +1,10 @@
 use crate::{
-    client_error::DoIPClientError,
     message_codec::DoIPMessageCodec,
     messages::{
-        alive_check_response::AliveCheckResponse,
-        diagnostic_message::DiagnosticMessage,
-        header::{DoIPHeader, PayloadType, ProtocolVersion},
-        routing_activation_request::{ActivationTypeCode, RoutingActivationRequest},
-        routing_activation_response::RoutingActivationResponse,
-        DoIPMessage,
+        ActivationTypeCode, AliveCheckResponse, DiagnosticMessage, DoIPHeader, DoIPMessage,
+        Payload, PayloadType, ProtocolVersion, RoutingActivationRequest, RoutingActivationResponse,
     },
+    Error,
 };
 
 use futures::{SinkExt, StreamExt};
@@ -16,8 +12,12 @@ use std::{
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
-use tokio::net::{TcpSocket, TcpStream};
-use tokio_util::codec::Framed;
+use tokio::net::{
+    tcp::{OwnedReadHalf, OwnedWriteHalf},
+    TcpSocket,
+};
+use tokio_util::codec::{FramedRead, FramedWrite};
+use uds_protocol::SingleValueWireFormat;
 
 /// DoIP client options used to specify connection info
 /// Derive `Serialize` and `Deserialize` for use in config files
@@ -44,19 +44,22 @@ pub enum AddressType {
     Physical,
 }
 
-pub struct DoIPClient {
+pub struct DoIPClient<ReadDefinitions, WriteDefinitions> {
     pub client_options: DoIPClientOptions,
-    tcp_stream: Framed<TcpStream, DoIPMessageCodec>,
+    read_stream: FramedRead<OwnedReadHalf, DoIPMessageCodec<ReadDefinitions>>,
+    write_sink: FramedWrite<OwnedWriteHalf, DoIPMessageCodec<WriteDefinitions>>,
 }
 
-impl DoIPClient {
+impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFormat>
+    DoIPClient<ReadDefinitions, WriteDefinitions>
+{
     /// Create a DoIP connection.
     /// The target port defaults to [`SERVER_TCP_PORT`].
-    pub async fn connect(client_options: DoIPClientOptions) -> Result<Self, DoIPClientError> {
+    pub async fn connect(client_options: DoIPClientOptions) -> Result<Self, Error> {
         if client_options.client_logical_address < 0x0E00
             || client_options.client_logical_address > 0x0FFF
         {
-            return Err(DoIPClientError::InvalidClientLogicalAddress(
+            return Err(Error::InvalidClientLogicalAddress(
                 client_options.client_logical_address,
             ));
         }
@@ -75,18 +78,20 @@ impl DoIPClient {
             tcp_socket.connect(client_options.server_address),
         )
         .await??;
-
-        let framed_stream = Framed::new(tcp_stream, DoIPMessageCodec {});
+        let (rx, tx) = tcp_stream.into_split();
+        let read_stream = FramedRead::new(rx, DoIPMessageCodec::<ReadDefinitions>::new());
+        let write_sink = FramedWrite::new(tx, DoIPMessageCodec::<WriteDefinitions>::new());
 
         Ok(Self {
             client_options,
-            tcp_stream: framed_stream,
+            read_stream,
+            write_sink,
         })
     }
 
-    pub async fn close(&mut self) -> Result<(), DoIPClientError> {
-        self.tcp_stream.flush().await?;
-        self.tcp_stream.close().await?;
+    pub async fn close(&mut self) -> Result<(), Error> {
+        self.write_sink.flush().await?;
+        self.write_sink.close().await?;
         Ok(())
     }
 
@@ -94,40 +99,25 @@ impl DoIPClient {
         &mut self,
         activation_type: ActivationTypeCode,
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
-    ) -> Result<RoutingActivationResponse, DoIPClientError> {
-        let request = RoutingActivationRequest {
-            source_address: self.client_options.client_logical_address,
+    ) -> Result<RoutingActivationResponse, Error> {
+        let message = DoIPMessage::<WriteDefinitions>::routing_activation_request(
+            self.client_options.client_logical_address,
             activation_type,
-            reserved: [0, 0, 0, 0],
             reserved_vehicle_manufacturer,
-        };
-
-        let mut payload = Vec::with_capacity(11);
-        request.write(&mut payload)?;
-
-        let header = DoIPHeader::new(
-            self.client_options.protocol_version,
-            PayloadType::RoutingActivationRequest,
-            payload.len().try_into()?,
         );
-        let message = DoIPMessage { header, payload };
-        self.tcp_stream.send(&message).await?;
 
+        self.write_sink.send(&message).await?;
         let response_message = self.read_tcp_message().await.unwrap()?;
-        if response_message.header.payload_type != PayloadType::RoutingActivationResponse {
-            return Err(DoIPClientError::UnexpectedMessageType(
-                message.header.payload_type,
-            ));
+        if let Payload::RoutingActivationResponse(response) = response_message.payload {
+            Ok(response)
+        } else {
+            Err(Error::UnexpectedMessageType(
+                response_message.header.payload_type,
+            ))
         }
-
-        let response_payload = RoutingActivationResponse::read(
-            &mut response_message.payload.as_slice(),
-            response_message.header.payload_length as usize,
-        )?;
-        Ok(response_payload)
     }
 
-    pub async fn request_alive_check(&mut self) -> Result<AliveCheckResponse, DoIPClientError> {
+    pub async fn request_alive_check(&mut self) -> Result<AliveCheckResponse, Error> {
         let header = DoIPHeader::new(
             self.client_options.protocol_version,
             PayloadType::AliveCheckRequest,
@@ -138,54 +128,44 @@ impl DoIPClient {
         self.write_sink.send(&message).await?;
 
         let response_message = self.read_tcp_message().await.unwrap()?;
-
-        if response_message.header.payload_type != PayloadType::AliveCheckResponse {
-            return Err(DoIPClientError::UnexpectedMessageType(
+        if let Payload::AliveCheckResponse(response_payload) = response_message.payload {
+            Ok(response_payload)
+        } else {
+            Err(Error::UnexpectedMessageType(
                 response_message.header.payload_type,
-            ));
+            ))
         }
-
-        let response_payload = AliveCheckResponse::read(&mut response_message.payload.as_slice())?;
-        Ok(response_payload)
     }
 
     pub async fn diagnostic_message(
         &mut self,
         address_type: AddressType,
-        user_data: &[u8],
-    ) -> Result<(), DoIPClientError> {
-        let diagnostic_message = DiagnosticMessage {
-            source_address: self.client_options.client_logical_address,
-            target_address: match address_type {
+        user_data: WriteDefinitions,
+    ) -> Result<(), Error> {
+        let message = DoIPMessage::<WriteDefinitions>::diagnostic_message(
+            self.client_options.client_logical_address,
+            match address_type {
                 AddressType::Logical => self.client_options.server_logical_address,
                 AddressType::Physical => self.client_options.server_physical_address,
             },
-            user_data: user_data.to_vec(),
-        };
-
-        let mut payload = Vec::with_capacity(4 + diagnostic_message.user_data.len());
-        diagnostic_message.write(&mut payload)?;
-
-        let header = DoIPHeader::new(
-            self.client_options.protocol_version,
-            PayloadType::DiagnosticMessage,
-            payload.len().try_into()?,
+            user_data,
         );
-        let message = DoIPMessage { header, payload };
         // Send the message
-        self.tcp_stream.send(&message).await?;
+        self.write_sink.send(&message).await?;
         Ok(())
     }
 
-    pub async fn read_tcp_message(&mut self) -> Option<Result<DoIPMessage, DoIPClientError>> {
+    pub async fn read_tcp_message(
+        &mut self,
+    ) -> Option<Result<DoIPMessage<ReadDefinitions>, Error>> {
         // Unwrap here is to unwrap the option, not the result
-        match self.tcp_stream.next().await {
+        match self.read_stream.next().await {
             None => None,
             Some(result) => match result {
                 Ok(message) => Some(Ok(message)),
                 Err(error) => {
                     println!("Error reading message: {:?}", error);
-                    Some(Err(DoIPClientError::from(error)))
+                    Some(Err(Error::from(error)))
                 }
             },
         }
