@@ -1,18 +1,16 @@
 use async_trait::async_trait;
 use doip::{
     messages::{
-        diagnostic_message_ack::{DiagnosticAckCode, DiagnosticMessageAck},
-        routing_activation_request::ActivationTypeCode,
-        routing_activation_response::{RoutingActivationResponse, RoutingActivationResponseCode},
+        ActivationTypeCode, DiagnosticAckCode, DiagnosticMessageAck, RoutingActivationResponse,
+        RoutingActivationResponseCode,
     },
-    server::{DoIPClientConnectionInfo, DoIPServer, DoIPServerConnectionHandler},
-    server_error::DoIPServerError,
+    DoIPClientConnectionInfo, DoIPServer, DoIPServerConnectionHandle, Error,
 };
 
 struct ServerHandler {}
 
 #[async_trait]
-impl DoIPServerConnectionHandler<DoIPServerError> for ServerHandler {
+impl DoIPServerConnectionHandler<Error> for ServerHandler {
     fn get_vin() -> [u8; 17] {
         [0x00; 17]
     }
