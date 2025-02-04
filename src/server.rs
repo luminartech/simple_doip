@@ -2,8 +2,7 @@ use crate::{
     message_codec::DoIPMessageCodec,
     messages::{
         DiagnosticMessage, DiagnosticPowerModeCode, DoIPMessage, FurtherActionRequired, Payload,
-        PayloadType, ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse,
-        VinGidSyncStatus,
+        ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse, VinGidSyncStatus,
     },
     Error, TCP_PORT,
 };
@@ -243,30 +242,24 @@ where
         };
 
         match request_message.payload {
-            Payload::NoPayload => match request_message.header.payload_type {
-                PayloadType::AliveCheckRequest => {
-                    self.connection_handler.alive_check(&connection_info).await
-                }
-                PayloadType::DoIPEntityStatusRequest => {
-                    todo!("Entity Status Request is not yet supported!")
-                }
-                PayloadType::VehicleIdentificationRequest => {
-                    todo!("Vehicle Identification Request is not yet supported")
-                }
-
-                _ => Err(Error::UnexpectedMessageType(
-                    request_message.header.payload_type,
-                )),
-            },
+            Payload::AliveCheckRequest => {
+                self.connection_handler.alive_check(&connection_info).await
+            }
             Payload::DiagnosticMessage(diagnostic_message) => {
                 self.connection_handler
                     .diagnostic_message(&diagnostic_message)
                     .await
             }
+            Payload::EntityStatusRequest => {
+                todo!("Entity Status Request is not yet supported!")
+            }
             Payload::RoutingActivationRequest(request) => {
                 self.connection_handler.routing_activation(&request).await
             }
             Payload::RoutingActivationResponse(_routing_activation_response) => todo!(),
+            Payload::VehicleIdentificationRequest => {
+                todo!("Vehicle Identification Request is not yet supported")
+            }
             Payload::VehiclIdentificationResponse(_vehicle_identification_response) => todo!(),
             _ => Err(Error::UnexpectedMessageType(
                 request_message.header.payload_type,
