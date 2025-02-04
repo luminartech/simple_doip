@@ -1,8 +1,7 @@
 use async_trait::async_trait;
 use doip::{
     messages::{
-        ActivationTypeCode, DiagnosticAckCode, DiagnosticMessage, DiagnosticMessageAck,
-        DoIPMessage, RoutingActivationRequest, RoutingActivationResponse,
+        DiagnosticAckCode, DiagnosticMessage, DoIPMessage, RoutingActivationRequest,
         RoutingActivationResponseCode,
     },
     server::{DoIPServer, DoIPServerConnectionHandler},
