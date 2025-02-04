@@ -77,10 +77,8 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
         source_address: u16,
         target_address: u16,
         ack_code: DiagnosticAckCode,
-        request: DiagnosticsDefinition,
+        previous_message_data: Vec<u8>,
     ) -> DoIPMessage<DiagnosticsDefinition> {
-        let mut previous_message_data = Vec::with_capacity(request.required_size());
-        request.to_writer(&mut previous_message_data).unwrap();
         let ack = DiagnosticMessageAck {
             source_address,
             target_address,

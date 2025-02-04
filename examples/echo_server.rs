@@ -8,7 +8,7 @@ use doip::{
     server::{DoIPServer, DoIPServerConnectionHandler},
     Error,
 };
-use uds_protocol::{ProtocolRequest, ProtocolResponse};
+use uds_protocol::{ProtocolRequest, ProtocolResponse, WireFormat};
 
 struct ServerHandler {}
 
@@ -70,12 +70,17 @@ impl DoIPServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHa
         &self,
         message: &DiagnosticMessage<ProtocolRequest>,
     ) -> Result<DoIPMessage<ProtocolResponse>, Error> {
+        let mut previous_message_data = Vec::with_capacity(message.user_data.required_size());
+        message
+            .user_data
+            .to_writer(&mut previous_message_data)
+            .unwrap();
         Ok(DoIPMessage::diagnostic_message_ack(
             self.protocol_version(),
             message.source_address,
             message.target_address,
             DiagnosticAckCode::RoutingConfirmationAck,
-            message.user_data,
+            previous_message_data,
         ))
     }
     /*
