@@ -38,18 +38,18 @@ pub trait DoIPServerConnectionHandler<
     // These functions must be implemented by the server implementation
 
     /// Get the Vehicle Identification Number for this server
-    fn get_vin() -> [u8; 17];
+    fn get_vin(&self) -> [u8; 17];
 
     /// Get the ECU logical address for this server
-    fn get_logical_address() -> u16;
+    fn get_logical_address(&self) -> u16;
 
     /// Get the unique entity ID for this server
     /// This is usually the MAC address of the network interface.
-    fn get_entity_id() -> [u8; 6];
+    fn get_entity_id(&self) -> [u8; 6];
 
     /// Get the unique group identification
     /// Optional field, return `None` if not set.
-    fn get_group_id() -> Option<[u8; 6]>;
+    fn get_group_id(&self) -> Option<[u8; 6]>;
 
     async fn routing_activation(
         &self,
@@ -71,10 +71,10 @@ pub trait DoIPServerConnectionHandler<
         _client_info: &DoIPClientConnectionInfo,
     ) -> Result<VehicleIdentificationResponse, Error> {
         Ok(VehicleIdentificationResponse {
-            entity_id: Self::get_entity_id(),
-            logical_address: Self::get_logical_address(),
-            vin: Self::get_vin(),
-            group_id: Self::get_group_id(),
+            entity_id: self.get_entity_id(),
+            logical_address: self.get_logical_address(),
+            vin: self.get_vin(),
+            group_id: self.get_group_id(),
             further_action: FurtherActionRequired::NoFurtherActionRequired,
             vin_gid_sync_status: VinGidSyncStatus::Synchronized,
         })
@@ -87,13 +87,13 @@ pub trait DoIPServerConnectionHandler<
         _client_info: &DoIPClientConnectionInfo,
         eid: &[u8; 6],
     ) -> Result<Option<VehicleIdentificationResponse>, Error> {
-        if Self::get_entity_id() == *eid {
+        if self.get_entity_id() == *eid {
             // If the request is directed to us, respond with our identification
             Ok(Some(VehicleIdentificationResponse {
-                entity_id: Self::get_entity_id(),
-                logical_address: Self::get_logical_address(),
-                vin: Self::get_vin(),
-                group_id: Self::get_group_id(),
+                entity_id: self.get_entity_id(),
+                logical_address: self.get_logical_address(),
+                vin: self.get_vin(),
+                group_id: self.get_group_id(),
                 further_action: FurtherActionRequired::NoFurtherActionRequired,
                 vin_gid_sync_status: VinGidSyncStatus::Synchronized,
             }))
@@ -112,12 +112,12 @@ pub trait DoIPServerConnectionHandler<
         vin: &[u8; 17],
     ) -> Result<Option<VehicleIdentificationResponse>, Error> {
         // If the request is directed to us, respond with our identification
-        if Self::get_vin() == *vin {
+        if self.get_vin() == *vin {
             Ok(Some(VehicleIdentificationResponse {
-                entity_id: Self::get_entity_id(),
-                logical_address: Self::get_logical_address(),
-                vin: Self::get_vin(),
-                group_id: Self::get_group_id(),
+                entity_id: self.get_entity_id(),
+                logical_address: self.get_logical_address(),
+                vin: self.get_vin(),
+                group_id: self.get_group_id(),
                 further_action: FurtherActionRequired::NoFurtherActionRequired,
                 vin_gid_sync_status: VinGidSyncStatus::Synchronized,
             }))

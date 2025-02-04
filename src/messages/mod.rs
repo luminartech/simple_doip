@@ -72,6 +72,31 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
         }
     }
 
+    pub fn diagnostic_message_ack(
+        protocol_version: ProtocolVersion,
+        source_address: u16,
+        target_address: u16,
+        ack_code: DiagnosticAckCode,
+        request: DiagnosticsDefinition,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        let mut previous_message_data = Vec::with_capacity(request.required_size());
+        request.to_writer(&mut previous_message_data).unwrap();
+        let ack = DiagnosticMessageAck {
+            source_address,
+            target_address,
+            ack_code,
+            previous_message_data,
+        };
+        DoIPMessage {
+            header: DoIPHeader::new(
+                protocol_version,
+                PayloadType::DiagnosticMessagePositiveAcknowledge,
+                0,
+            ),
+            payload: Payload::DiagnosticMessageAck(ack),
+        }
+    }
+
     pub fn routing_activation_request(
         protocol_version: ProtocolVersion,
         source_address: u16,
@@ -96,6 +121,27 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
         DoIPMessage {
             header,
             payload: Payload::RoutingActivationRequest(request),
+        }
+    }
+
+    pub fn routing_activation_response(
+        protocol_version: ProtocolVersion,
+        logical_address_tester: u16,
+        logical_address_of_doip_entity: u16,
+        routing_activation_response_code: RoutingActivationResponseCode,
+        reserved_oem: [u8; 4],
+        oem_specific: Option<[u8; 4]>,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        let response = RoutingActivationResponse {
+            logical_address_tester,
+            logical_address_of_doip_entity,
+            routing_activation_response_code,
+            reserved_oem,
+            oem_specific,
+        };
+        DoIPMessage {
+            header: DoIPHeader::new(protocol_version, PayloadType::RoutingActivationResponse, 0),
+            payload: Payload::RoutingActivationResponse(response),
         }
     }
 }
@@ -127,7 +173,6 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
 mod tests {
     use super::*;
     use header::{PayloadType, ProtocolVersion};
-    use uds_protocol::ProtocolIdentifier;
 
     /// Check that we properly decode and encode hex bytes
     #[test]
