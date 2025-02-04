@@ -40,7 +40,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
     ) -> DoIPMessage<DiagnosticsDefinition> {
         DoIPMessage {
             header: DoIPHeader::new(protocol_version, PayloadType::AliveCheckRequest, 0),
-            payload: Payload::NoPayload,
+            payload: Payload::AliveCheckRequest,
         }
     }
 

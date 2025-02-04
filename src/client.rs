@@ -133,11 +133,9 @@ impl DoIPClient {
             PayloadType::AliveCheckRequest,
             0,
         );
-        let message = DoIPMessage {
-            header,
-            payload: Vec::new(),
-        };
-        self.tcp_stream.send(&message).await?;
+        let payload = Payload::<WriteDefinitions>::AliveCheckRequest;
+        let message = DoIPMessage { header, payload };
+        self.write_sink.send(&message).await?;
 
         let response_message = self.read_tcp_message().await.unwrap()?;
 

@@ -10,17 +10,21 @@ use crate::messages::{
 
 use super::RoutingActivationRequest;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Payload<DiagnosticsDefinition> {
-    NoPayload,
+    DoIPNack,
+    AliveCheckRequest,
     AliveCheckResponse(AliveCheckResponse),
     DiagnosticMessage(DiagnosticMessage<DiagnosticsDefinition>),
     DiagnosticMessageAck(DiagnosticMessageAck),
+    DiagnosticMessageNack,
+    EntityStatusRequest,
     EntityStatusResponse(EntityStatusResponse),
     PowerModeInfoResponse(DiagnosticPowerModeCode),
     RoutingActivationRequest(RoutingActivationRequest),
     RoutingActivationResponse(RoutingActivationResponse),
+    VehicleIdentificationRequest,
     VehiclIdentificationResponse(VehicleIdentificationResponse),
 }
 
