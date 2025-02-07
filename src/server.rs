@@ -260,7 +260,7 @@ where
             Payload::VehicleIdentificationRequest => {
                 todo!("Vehicle Identification Request is not yet supported")
             }
-            Payload::VehiclIdentificationResponse(_vehicle_identification_response) => todo!(),
+            Payload::VehicleIdentificationResponse(_vehicle_identification_response) => todo!(),
             _ => Err(Error::UnexpectedMessageType(
                 request_message.header.payload_type,
             )),
