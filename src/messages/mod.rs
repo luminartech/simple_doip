@@ -21,12 +21,12 @@ pub use routing_activation_request::{ActivationTypeCode, RoutingActivationReques
 mod routing_activation_response;
 pub use routing_activation_response::{RoutingActivationResponse, RoutingActivationResponseCode};
 mod vehicle_identification_response;
-use uds_protocol::SingleValueWireFormat;
 pub use vehicle_identification_response::{
     FurtherActionRequired, VehicleIdentificationResponse, VinGidSyncStatus,
 };
 
 use std::io::{Read, Write};
+use uds_protocol::{SingleValueWireFormat, WireFormat};
 
 #[derive(Debug)]
 pub struct DoIPMessage<DiagnosticDefinitions> {
@@ -61,13 +61,18 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
         target_address: u16,
         message: DiagnosticsDefinition,
     ) -> DoIPMessage<DiagnosticsDefinition> {
+        let payload_size = message.required_size() as u32 + 4;
         let message = DiagnosticMessage {
             source_address,
             target_address,
             user_data: message,
         };
         DoIPMessage {
-            header: DoIPHeader::new(protocol_version, PayloadType::DiagnosticMessage, 0),
+            header: DoIPHeader::new(
+                protocol_version,
+                PayloadType::DiagnosticMessage,
+                payload_size,
+            ),
             payload: Payload::DiagnosticMessage(message),
         }
     }
