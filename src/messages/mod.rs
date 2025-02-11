@@ -26,7 +26,7 @@ pub use vehicle_identification_response::{
 };
 
 use std::io::{Read, Write};
-use uds_protocol::{SingleValueWireFormat, WireFormat};
+use uds_protocol::SingleValueWireFormat;
 
 #[derive(Debug)]
 pub struct DoIPMessage<DiagnosticDefinitions> {

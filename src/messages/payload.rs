@@ -1,7 +1,4 @@
-use std::{
-    io::{Read, Write},
-    ops::Neg,
-};
+use std::io::{Read, Write};
 
 use uds_protocol::SingleValueWireFormat;
 
@@ -63,7 +60,7 @@ impl<DiagnosticsDefinitions: SingleValueWireFormat> Payload<DiagnosticsDefinitio
             PayloadType::DiagnosticMessagePositiveAcknowledge => {
                 Self::DiagnosticMessageAck(DiagnosticMessageAck::read(payload_bytes)?)
             }
-            PayloadType::DiagnosticMessageNegativeAcknowledge => todo!(),
+            PayloadType::DiagnosticMessageNegativeAcknowledge => Self::DiagnosticMessageNack,
             PayloadType::Reserved(_) => todo!(),
             PayloadType::ReservedVehicleManufacturer(_) => todo!(),
         })
