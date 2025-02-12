@@ -10,6 +10,12 @@ pub struct DoIPMessageCodec<DiagnosticsDefinition> {
 
 impl<DiagnosticsDefinition> DoIPMessageCodec<DiagnosticsDefinition> {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl<DiagnosticsDefinition> Default for DoIPMessageCodec<DiagnosticsDefinition> {
+    fn default() -> Self {
         Self {
             _diagnostics_definition: std::marker::PhantomData,
         }
