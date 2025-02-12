@@ -108,13 +108,18 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
         );
 
         self.write_sink.send(&message).await?;
-        let response_message = self.read_tcp_message().await.unwrap()?;
-        if let Payload::RoutingActivationResponse(response) = response_message.payload {
-            Ok(response)
-        } else {
-            Err(Error::UnexpectedMessageType(
-                response_message.header.payload_type,
-            ))
+        match self.read_tcp_message().await {
+            Some(Ok(response_message)) => {
+                if let Payload::RoutingActivationResponse(response) = response_message.payload {
+                    Ok(response)
+                } else {
+                    Err(Error::UnexpectedMessageType(
+                        response_message.header.payload_type,
+                    ))
+                }
+            }
+            Some(Err(error)) => Err(error),
+            None => Err(Error::ConnectionClosed),
         }
     }
 

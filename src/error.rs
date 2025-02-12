@@ -6,6 +6,8 @@ use thiserror::Error;
 pub enum Error {
     #[error(transparent)]
     NetworkError(#[from] tokio::io::Error),
+    #[error("Connection closed by remote host")]
+    ConnectionClosed,
     #[error(transparent)]
     MessageError(#[from] DoIPMessageError),
     #[error("Invalid logical address for client: {0:#06x}")]
