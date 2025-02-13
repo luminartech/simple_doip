@@ -45,6 +45,7 @@ impl DoIPServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHa
             [0; 4],
             None,
         ))
+        // TODO: Much of this server code is temporarily disabled until we re-work the traits for DoIP entities
         /*let response = {
             Ok(RoutingActivationResponse {
                 logical_address_tester: request.source_address,
