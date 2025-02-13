@@ -156,12 +156,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
     ) -> Result<DoIPMessage<DiagnosticsDefinition>, DoIPMessageError> {
         let header = DoIPHeader::read(&mut message_bytes)?;
         header.version_inverse_correct()?;
-        let payload = match header.payload_type {
-            PayloadType::AliveCheckResponse => {
-                Payload::AliveCheckResponse(AliveCheckResponse::read(&mut message_bytes)?)
-            }
-            _ => return Err(DoIPMessageError::UnexpectedPayloadType(header.payload_type)),
-        };
+        let payload = Payload::read(&mut message_bytes, header.payload_type)?;
         Ok(DoIPMessage { header, payload })
     }
 
@@ -180,15 +175,12 @@ mod tests {
     /// Check that we properly decode and encode hex bytes
     #[test]
     fn test_valid_messages() {
-        let buf: [u8; 16] = [
-            0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00,
-        ];
+        let buf: [u8; 9] = [0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03];
         let deserialized_message: DoIPMessage<uds_protocol::ProtocolRequest> =
             DoIPMessage::read(&mut buf.as_ref()).unwrap();
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2012);
         assert!(deserialized_message.header.payload_type == PayloadType::NegativeAcknowledge);
-        assert!(deserialized_message.header.payload_length == 8);
+        assert!(deserialized_message.header.payload_length == 1);
         let buf: [u8; 15] = [
             0x01, 0xFE, 0x00, 0x01, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00,
