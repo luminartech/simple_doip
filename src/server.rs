@@ -1,25 +1,13 @@
-use async_trait::async_trait;
-use futures::{SinkExt, StreamExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio_util::codec::Framed;
-
 use crate::{
     message_codec::DoIPMessageCodec,
     messages::{
-        alive_check_response::AliveCheckResponse,
-        diagnostic_message_ack::DiagnosticMessageAck,
-        entity_status_response::{EntityStatusNodeType, EntityStatusResponse},
-        header::{DoIPHeader, PayloadType, ProtocolVersion},
-        power_mode_info_response::DiagnosticPowerModeCode,
-        routing_activation_request::{ActivationTypeCode, RoutingActivationRequest},
-        routing_activation_response::RoutingActivationResponse,
-        vehicle_identification_response::{
-            FurtherActionRequired, VehicleIdentificationResponse, VinGidSyncStatus,
-        },
-        DoIPMessage,
+        DiagnosticMessage, DiagnosticPowerModeCode, DoIPMessage, FurtherActionRequired, Payload,
+        ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse, VinGidSyncStatus,
     },
-    server_error::DoIPServerError,
+    Error, TCP_PORT,
 };
+use async_trait::async_trait;
+use futures::{SinkExt, StreamExt};
 use std::{
     net::{IpAddr, SocketAddr},
     sync::{
@@ -27,13 +15,9 @@ use std::{
         Arc,
     },
 };
-
-/// Default TCP port for DoIP
-/// This is the port used for unencrypted connections
-pub const SERVER_TCP_PORT: u16 = 13400;
-
-/// TODO: Implement TLS support
-pub const SERVER_TCP_TLS_PORT: u16 = 3496;
+use tokio::net::{TcpListener, TcpStream};
+use tokio_util::codec::{FramedRead, FramedWrite};
+use uds_protocol::SingleValueWireFormat;
 
 pub struct DoIPClientConnectionInfo {
     /// Client IP address
@@ -43,40 +27,39 @@ pub struct DoIPClientConnectionInfo {
 }
 /// Trait for handling DoIP connections as a server.
 /// Implement this trait to create a custom DoIP server.
-/// Most protocol functions have a simple, default implementation
+/// Most protocol functions have a simple, de=fault implementation
 #[async_trait]
-pub trait DoIPServerConnectionHandler<ErrorType> {
+pub trait DoIPServerConnectionHandler<
+    ReadDefinitions: SingleValueWireFormat,
+    WriteDefinitions: SingleValueWireFormat,
+>
+{
     // Required Functions
     // These functions must be implemented by the server implementation
 
     /// Get the Vehicle Identification Number for this server
-    fn get_vin() -> [u8; 17];
+    fn get_vin(&self) -> [u8; 17];
 
     /// Get the ECU logical address for this server
-    fn get_logical_address() -> u16;
+    fn get_logical_address(&self) -> u16;
 
     /// Get the unique entity ID for this server
     /// This is usually the MAC address of the network interface.
-    fn get_entity_id() -> [u8; 6];
+    fn get_entity_id(&self) -> [u8; 6];
 
     /// Get the unique group identification
     /// Optional field, return `None` if not set.
-    fn get_group_id() -> Option<[u8; 6]>;
+    fn get_group_id(&self) -> Option<[u8; 6]>;
 
     async fn routing_activation(
         &self,
-        client_info: &DoIPClientConnectionInfo,
-        source_address: u16,
-        activation_type: ActivationTypeCode,
-    ) -> Result<RoutingActivationResponse, ErrorType>;
+        request: &RoutingActivationRequest,
+    ) -> Result<DoIPMessage<WriteDefinitions>, Error>;
 
     async fn diagnostic_message(
         &self,
-        client_info: &DoIPClientConnectionInfo,
-        source_address: u16,
-        target_address: u16,
-        user_data: Vec<u8>,
-    ) -> Result<DiagnosticMessageAck, ErrorType>;
+        message: &DiagnosticMessage<ReadDefinitions>,
+    ) -> Result<DoIPMessage<WriteDefinitions>, Error>;
 
     // Optional Functions
     // These functions *may* be overridden to provide custom behavior
@@ -86,12 +69,12 @@ pub trait DoIPServerConnectionHandler<ErrorType> {
     fn received_vehicle_identification_request(
         &self,
         _client_info: &DoIPClientConnectionInfo,
-    ) -> Result<VehicleIdentificationResponse, ErrorType> {
+    ) -> Result<VehicleIdentificationResponse, Error> {
         Ok(VehicleIdentificationResponse {
-            entity_id: Self::get_entity_id(),
-            logical_address: Self::get_logical_address(),
-            vin: Self::get_vin(),
-            group_id: Self::get_group_id(),
+            entity_id: self.get_entity_id(),
+            logical_address: self.get_logical_address(),
+            vin: self.get_vin(),
+            group_id: self.get_group_id(),
             further_action: FurtherActionRequired::NoFurtherActionRequired,
             vin_gid_sync_status: VinGidSyncStatus::Synchronized,
         })
@@ -103,14 +86,14 @@ pub trait DoIPServerConnectionHandler<ErrorType> {
         &self,
         _client_info: &DoIPClientConnectionInfo,
         eid: &[u8; 6],
-    ) -> Result<Option<VehicleIdentificationResponse>, ErrorType> {
-        if Self::get_entity_id() == *eid {
+    ) -> Result<Option<VehicleIdentificationResponse>, Error> {
+        if self.get_entity_id() == *eid {
             // If the request is directed to us, respond with our identification
             Ok(Some(VehicleIdentificationResponse {
-                entity_id: Self::get_entity_id(),
-                logical_address: Self::get_logical_address(),
-                vin: Self::get_vin(),
-                group_id: Self::get_group_id(),
+                entity_id: self.get_entity_id(),
+                logical_address: self.get_logical_address(),
+                vin: self.get_vin(),
+                group_id: self.get_group_id(),
                 further_action: FurtherActionRequired::NoFurtherActionRequired,
                 vin_gid_sync_status: VinGidSyncStatus::Synchronized,
             }))
@@ -127,14 +110,14 @@ pub trait DoIPServerConnectionHandler<ErrorType> {
         &self,
         _client_info: &DoIPClientConnectionInfo,
         vin: &[u8; 17],
-    ) -> Result<Option<VehicleIdentificationResponse>, ErrorType> {
+    ) -> Result<Option<VehicleIdentificationResponse>, Error> {
         // If the request is directed to us, respond with our identification
-        if Self::get_vin() == *vin {
+        if self.get_vin() == *vin {
             Ok(Some(VehicleIdentificationResponse {
-                entity_id: Self::get_entity_id(),
-                logical_address: Self::get_logical_address(),
-                vin: Self::get_vin(),
-                group_id: Self::get_group_id(),
+                entity_id: self.get_entity_id(),
+                logical_address: self.get_logical_address(),
+                vin: self.get_vin(),
+                group_id: self.get_group_id(),
                 further_action: FurtherActionRequired::NoFurtherActionRequired,
                 vin_gid_sync_status: VinGidSyncStatus::Synchronized,
             }))
@@ -143,14 +126,16 @@ pub trait DoIPServerConnectionHandler<ErrorType> {
             Ok(None)
         }
     }
+
     /// Respond to an Alive Check request
     async fn alive_check(
         &self,
         client_info: &DoIPClientConnectionInfo,
-    ) -> Result<AliveCheckResponse, ErrorType> {
-        Ok(AliveCheckResponse {
-            source_address: client_info.logical_address,
-        })
+    ) -> Result<DoIPMessage<WriteDefinitions>, Error> {
+        Ok(DoIPMessage::<WriteDefinitions>::alive_check_response(
+            self.protocol_version(),
+            client_info.logical_address,
+        ))
     }
 
     /// Respond to a diagnostic power mode information request
@@ -159,29 +144,42 @@ pub trait DoIPServerConnectionHandler<ErrorType> {
     async fn diagnostic_power_mode_information(
         &self,
         _client_info: &DoIPClientConnectionInfo,
-    ) -> Result<DiagnosticPowerModeCode, ErrorType> {
+    ) -> Result<DiagnosticPowerModeCode, Error> {
         Ok(DiagnosticPowerModeCode::NotSupported)
+    }
+
+    fn protocol_version(&self) -> ProtocolVersion {
+        ProtocolVersion::V2012
     }
 }
 
-pub struct DoIPServer<T: DoIPServerConnectionHandler<DoIPServerError>> {
+pub struct DoIPServer<R, S, T> {
     connection_handler: Arc<T>,
     active_connections: AtomicUsize,
+    _phantom_r: std::marker::PhantomData<R>,
+    _phantom_s: std::marker::PhantomData<S>,
 }
 
-impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPServer<T> {
-    pub fn new(connection_handler: T) -> Result<Self, DoIPServerError> {
+impl<R, S, T> DoIPServer<R, S, T>
+where
+    R: SingleValueWireFormat,
+    S: SingleValueWireFormat,
+    T: DoIPServerConnectionHandler<R, S> + Sync,
+{
+    pub fn new(connection_handler: T) -> Result<Self, Error> {
         // TODO: Validate the provided handler
         Ok(DoIPServer {
             connection_handler: Arc::new(connection_handler),
             active_connections: AtomicUsize::new(0),
+            _phantom_r: std::marker::PhantomData,
+            _phantom_s: std::marker::PhantomData,
         })
     }
 
-    pub async fn run_server(&self) -> Result<(), DoIPServerError> {
+    pub async fn run_server(&self) -> Result<(), Error> {
         // TODO: Vehicle Announcement over UDP
 
-        let tcp_listener = TcpListener::bind(("0.0.0.0", SERVER_TCP_PORT)).await?;
+        let tcp_listener = TcpListener::bind(("0.0.0.0", TCP_PORT)).await?;
         loop {
             match tcp_listener.accept().await {
                 Ok((tcp_stream, client_socket_addr)) => {
@@ -204,19 +202,20 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
         &self,
         client_socket_addr: SocketAddr,
         tcp_stream: TcpStream,
-    ) -> Result<(), DoIPServerError> {
+    ) -> Result<(), Error> {
         let _currently_open_sockets = self.active_connections.fetch_add(1, Ordering::Relaxed);
-
-        let mut client_message_stream = Framed::new(tcp_stream, DoIPMessageCodec {});
+        let (rx, tx) = tcp_stream.into_split();
+        let mut read_stream = FramedRead::new(rx, DoIPMessageCodec::<R>::new());
+        let mut write_sink = FramedWrite::new(tx, DoIPMessageCodec::<S>::new());
 
         loop {
-            match client_message_stream.next().await {
+            match read_stream.next().await {
                 Some(Ok(message)) => {
                     let response = self
                         .handle_client_message(client_socket_addr, message)
                         .await?;
 
-                    client_message_stream.send(&response).await?;
+                    write_sink.send(&response).await?;
                 }
                 Some(Err(codec_error)) => {
                     panic!("Client, decoding error source: {client_socket_addr}, {codec_error}")
@@ -233,59 +232,38 @@ impl<T: DoIPServerConnectionHandler<DoIPServerError> + std::marker::Sync> DoIPSe
     async fn handle_client_message(
         &self,
         client_socket_addr: SocketAddr,
-        message: DoIPMessage,
-    ) -> Result<DoIPMessage, DoIPServerError> {
+        request_message: DoIPMessage<R>,
+    ) -> Result<DoIPMessage<S>, Error> {
         // TODO: Need to handle active sockets by adding clients to a map
         // client count should come from that map, as well as the logical address missing below
         let connection_info = DoIPClientConnectionInfo {
             ip_address: client_socket_addr.ip(),
             logical_address: 0x0000, // TODO fix this constant
         };
-        let mut response_payload = Vec::new();
-        let response: Result<(PayloadType, Vec<u8>), DoIPServerError> = match message
-            .header
-            .payload_type
-        {
-            PayloadType::AliveCheckRequest => {
-                let response = self
-                    .connection_handler
-                    .alive_check(&connection_info)
-                    .await?;
-                response.write(&mut response_payload)?;
 
-                Ok((PayloadType::AliveCheckResponse, response_payload))
+        match request_message.payload {
+            Payload::AliveCheckRequest => {
+                self.connection_handler.alive_check(&connection_info).await
             }
-            PayloadType::RoutingActivationRequest => {
-                let request = RoutingActivationRequest::read(&mut message.payload.as_slice())?;
-                let source_address = request.source_address;
-                let response = self
-                    .connection_handler
-                    .routing_activation(&connection_info, source_address, request.activation_type)
-                    .await?;
-
-                response.write(&mut response_payload)?;
-
-                Ok((PayloadType::RoutingActivationResponse, response_payload))
+            Payload::DiagnosticMessage(diagnostic_message) => {
+                self.connection_handler
+                    .diagnostic_message(&diagnostic_message)
+                    .await
             }
-            PayloadType::DoIPEntityStatusRequest => {
-                let response = EntityStatusResponse {
-                    node_type: EntityStatusNodeType::DoIPNode,
-                    max_concurrent_tcp_sockets: u8::MAX,
-                    open_tcp_sockets: self.active_connections.load(Ordering::Relaxed) as u8,
-                    max_data_size: u32::MAX,
-                };
-                response.write(&mut response_payload)?;
-                Ok((PayloadType::DoIPEntityStatusResponse, response_payload))
+            Payload::EntityStatusRequest => {
+                todo!("Entity Status Request is not yet supported!")
             }
-            // TODO add remaining
-            _ => Err(DoIPServerError::UnsupportedMessageTypeError(
-                message.header.payload_type,
+            Payload::RoutingActivationRequest(request) => {
+                self.connection_handler.routing_activation(&request).await
+            }
+            Payload::RoutingActivationResponse(_routing_activation_response) => todo!(),
+            Payload::VehicleIdentificationRequest => {
+                todo!("Vehicle Identification Request is not yet supported")
+            }
+            Payload::VehicleIdentificationResponse(_vehicle_identification_response) => todo!(),
+            _ => Err(Error::UnexpectedMessageType(
+                request_message.header.payload_type,
             )),
-        };
-
-        let (payload_type, payload) = response?;
-
-        let header = DoIPHeader::new(ProtocolVersion::V2012, payload_type, payload.len() as u32);
-        Ok(DoIPMessage { header, payload })
+        }
     }
 }

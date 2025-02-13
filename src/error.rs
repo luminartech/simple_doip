@@ -1,11 +1,13 @@
-use crate::messages::{header::PayloadType, message_error::DoIPMessageError, nack::NackCode};
+use crate::messages::{DoIPMessageError, NackCode, PayloadType};
 
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum DoIPClientError {
+pub enum Error {
     #[error(transparent)]
     NetworkError(#[from] tokio::io::Error),
+    #[error("Connection closed by remote host")]
+    ConnectionClosed,
     #[error(transparent)]
     MessageError(#[from] DoIPMessageError),
     #[error("Invalid logical address for client: {0:#06x}")]

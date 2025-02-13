@@ -61,19 +61,13 @@ pub struct DiagnosticMessageAck {
 }
 
 impl DiagnosticMessageAck {
-    pub fn read<T: Read>(reader: &mut T, payload_length: usize) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
         let source_address = reader.read_u16::<BigEndian>()?;
 
         let target_address = reader.read_u16::<BigEndian>()?;
         let ack_code = reader.read_u8()?.into();
-        let previous_message_data_len = payload_length - 5; // 4 == source + target address
-        let mut previous_message_data;
-        if previous_message_data_len > 0 {
-            previous_message_data = Vec::with_capacity(previous_message_data_len);
-            reader.read_exact(&mut previous_message_data)?;
-        } else {
-            previous_message_data = Vec::new();
-        }
+        let mut previous_message_data = Vec::new();
+        reader.read_to_end(&mut previous_message_data)?;
 
         Ok(Self {
             source_address,

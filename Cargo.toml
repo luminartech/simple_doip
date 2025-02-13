@@ -7,6 +7,7 @@ edition = "2021"
 futures.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, optional = true, features = ["time"] }
+uds_protocol = { path = "../uds_protocol" }
 
 async-trait = "0.1"
 bytes = "1"
@@ -18,10 +19,11 @@ tokio-util = { version = "0.7.12", optional = true, features = [
 
 [dev-dependencies]
 anyhow = "1"
+doip = { path = ".", features = ["client", "server"] }
 
 
 [features]
-default = ["client", "server"]
+default = []
 codec = ["dep:tokio", "dep:tokio-util"]
 client = ["codec"]
 server = ["codec"]

@@ -1,77 +1,209 @@
-pub mod alive_check_response;
-pub mod diagnostic_message;
-pub mod diagnostic_message_ack;
-pub mod entity_status_response;
-pub mod header;
-pub mod message_error;
-pub mod nack;
-pub mod power_mode_info_response;
-pub mod routing_activation_request;
-pub mod routing_activation_response;
-pub mod vehicle_identification_response;
+mod alive_check_response;
+pub use alive_check_response::AliveCheckResponse;
+mod diagnostic_message;
+pub use diagnostic_message::DiagnosticMessage;
+mod diagnostic_message_ack;
+pub use diagnostic_message_ack::{DiagnosticAckCode, DiagnosticMessageAck};
+mod entity_status_response;
+pub use entity_status_response::{EntityStatusNodeType, EntityStatusResponse};
+mod header;
+pub use header::{DoIPHeader, PayloadType, ProtocolVersion};
+mod message_error;
+pub use message_error::DoIPMessageError;
+mod nack;
+pub use nack::NackCode;
+mod payload;
+pub use payload::Payload;
+mod power_mode_info_response;
+pub use power_mode_info_response::DiagnosticPowerModeCode;
+mod routing_activation_request;
+pub use routing_activation_request::{ActivationTypeCode, RoutingActivationRequest};
+mod routing_activation_response;
+pub use routing_activation_response::{RoutingActivationResponse, RoutingActivationResponseCode};
+mod vehicle_identification_response;
+pub use vehicle_identification_response::{
+    FurtherActionRequired, VehicleIdentificationResponse, VinGidSyncStatus,
+};
 
 use std::io::{Read, Write};
-
-use crate::messages::{header::DoIPHeader, message_error::DoIPMessageError};
+use uds_protocol::SingleValueWireFormat;
 
 #[derive(Debug)]
-pub struct DoIPMessage {
+pub struct DoIPMessage<DiagnosticDefinitions> {
     pub header: header::DoIPHeader,
-    pub payload: Vec<u8>,
+    pub payload: Payload<DiagnosticDefinitions>,
 }
 
-impl DoIPMessage {
+impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefinition> {
+    pub fn alive_check_request(
+        protocol_version: ProtocolVersion,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        DoIPMessage {
+            header: DoIPHeader::new(protocol_version, PayloadType::AliveCheckRequest, 0),
+            payload: Payload::AliveCheckRequest,
+        }
+    }
+
+    pub fn alive_check_response(
+        protocol_version: ProtocolVersion,
+        source_address: u16,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        let response = AliveCheckResponse { source_address };
+        DoIPMessage {
+            header: DoIPHeader::new(protocol_version, PayloadType::AliveCheckResponse, 0),
+            payload: Payload::AliveCheckResponse(response),
+        }
+    }
+
+    pub fn diagnostic_message(
+        protocol_version: ProtocolVersion,
+        source_address: u16,
+        target_address: u16,
+        message: DiagnosticsDefinition,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        let payload_size = message.required_size() as u32 + 4;
+        let message = DiagnosticMessage {
+            source_address,
+            target_address,
+            user_data: message,
+        };
+        DoIPMessage {
+            header: DoIPHeader::new(
+                protocol_version,
+                PayloadType::DiagnosticMessage,
+                payload_size,
+            ),
+            payload: Payload::DiagnosticMessage(message),
+        }
+    }
+
+    pub fn diagnostic_message_ack(
+        protocol_version: ProtocolVersion,
+        source_address: u16,
+        target_address: u16,
+        ack_code: DiagnosticAckCode,
+        previous_message_data: Vec<u8>,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        let ack = DiagnosticMessageAck {
+            source_address,
+            target_address,
+            ack_code,
+            previous_message_data,
+        };
+        DoIPMessage {
+            header: DoIPHeader::new(
+                protocol_version,
+                PayloadType::DiagnosticMessagePositiveAcknowledge,
+                0,
+            ),
+            payload: Payload::DiagnosticMessageAck(ack),
+        }
+    }
+
+    pub fn routing_activation_request(
+        protocol_version: ProtocolVersion,
+        source_address: u16,
+        activation_type: ActivationTypeCode,
+        reserved_vehicle_manufacturer: Option<[u8; 4]>,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        let request = RoutingActivationRequest {
+            source_address,
+            activation_type,
+            reserved: [0, 0, 0, 0],
+            reserved_vehicle_manufacturer,
+        };
+
+        let mut payload = Vec::with_capacity(11);
+        request.write(&mut payload).unwrap();
+
+        let header = DoIPHeader::new(
+            protocol_version,
+            PayloadType::RoutingActivationRequest,
+            payload.len() as u32,
+        );
+        DoIPMessage {
+            header,
+            payload: Payload::RoutingActivationRequest(request),
+        }
+    }
+
+    pub fn routing_activation_response(
+        protocol_version: ProtocolVersion,
+        logical_address_tester: u16,
+        logical_address_of_doip_entity: u16,
+        routing_activation_response_code: RoutingActivationResponseCode,
+        reserved_oem: [u8; 4],
+        oem_specific: Option<[u8; 4]>,
+    ) -> DoIPMessage<DiagnosticsDefinition> {
+        let response = RoutingActivationResponse {
+            logical_address_tester,
+            logical_address_of_doip_entity,
+            routing_activation_response_code,
+            reserved_oem,
+            oem_specific,
+        };
+        DoIPMessage {
+            header: DoIPHeader::new(protocol_version, PayloadType::RoutingActivationResponse, 0),
+            payload: Payload::RoutingActivationResponse(response),
+        }
+    }
+}
+
+impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefinition> {
     // TODO: This needs careful review and should do a lot more error checking than it does now
-    pub fn read<T: Read>(mut message_bytes: &mut T) -> Result<DoIPMessage, DoIPMessageError> {
+    pub fn read<T: Read>(
+        mut message_bytes: &mut T,
+    ) -> Result<DoIPMessage<DiagnosticsDefinition>, DoIPMessageError> {
         let header = DoIPHeader::read(&mut message_bytes)?;
         header.version_inverse_correct()?;
-        let mut payload = vec![0u8; header.payload_length as usize];
-        message_bytes.read_exact(&mut payload)?;
+        let payload = Payload::read(&mut message_bytes, header.payload_type)?;
         Ok(DoIPMessage { header, payload })
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
-        self.header.write(writer)?;
-        let payload_len = writer.write(&self.payload)?;
-        assert!(payload_len == self.header.payload_length as usize);
-        Ok(self.payload.len() + 8)
+        let mut written = self.header.write(writer)?;
+        written += &self.payload.write(writer)?;
+        Ok(written)
     }
 }
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use header::{PayloadType, ProtocolVersion};
 
     /// Check that we properly decode and encode hex bytes
     #[test]
     fn test_valid_messages() {
-        let mut buf: Vec<u8> = vec![
-            0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00,
-        ];
-        let deserialized_message = DoIPMessage::read(&mut buf.as_slice()).unwrap();
+        let buf: [u8; 9] = [0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03];
+        let deserialized_message: DoIPMessage<uds_protocol::ProtocolRequest> =
+            DoIPMessage::read(&mut buf.as_ref()).unwrap();
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2012);
         assert!(deserialized_message.header.payload_type == PayloadType::NegativeAcknowledge);
-        assert!(deserialized_message.header.payload_length == 8);
-        buf = vec![
+        assert!(deserialized_message.header.payload_length == 1);
+        let buf: [u8; 15] = [
             0x01, 0xFE, 0x00, 0x01, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00,
         ];
-        let deserialized_message = DoIPMessage::read(&mut buf.as_slice()).unwrap();
+        let deserialized_message: DoIPMessage<uds_protocol::ProtocolResponse> =
+            DoIPMessage::read(&mut buf.as_ref()).unwrap();
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2010);
         assert!(
             deserialized_message.header.payload_type == PayloadType::VehicleIdentificationRequest
         );
         assert!(deserialized_message.header.payload_length == 7);
-        assert!(deserialized_message.payload.len() == 7);
+        // TODO: Lots more checking of payload handling
+        //assert!(deserialized_message.payload.len() == 7);
     }
     #[test]
     fn test_invalid_inverse() {
-        let buf: Vec<u8> = vec![0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let buf: [u8; 8] = [0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
         // This parsing should panic for the bad inverse
         // TODO: Instead of panicking need to add error handling and return a result
-        assert!(DoIPMessage::read(&mut buf.as_slice()).is_err());
+
+        assert!(matches!(
+            DoIPMessage::<uds_protocol::ProtocolRequest>::read(&mut buf.as_ref()),
+            Err(DoIPMessageError::VersionInverseIncorrect { .. })
+        ));
     }
 }

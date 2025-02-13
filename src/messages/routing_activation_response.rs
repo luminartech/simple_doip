@@ -96,7 +96,7 @@ pub struct RoutingActivationResponse {
 }
 
 impl RoutingActivationResponse {
-    pub fn read<T: Read>(reader: &mut T, payload_length: usize) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
         let logical_address_tester = reader.read_u16::<BigEndian>()?;
         let logical_address_of_doip_entity = reader.read_u16::<BigEndian>()?;
         let routing_activation_response_code_byte = reader.read_u8()?;
@@ -105,14 +105,12 @@ impl RoutingActivationResponse {
 
         let mut reserved_oem = [0x00u8; 4];
         reader.read_exact(&mut reserved_oem)?;
-
-        let oem_specific = if payload_length == 13 {
-            let mut oem_specific = [0x00u8; 4];
-            reader.read_exact(&mut oem_specific)?;
-            Some(oem_specific)
-        } else {
-            None
+        let mut oem_specific = [0x00u8; 4];
+        let oem_specific = match reader.read_exact(&mut oem_specific) {
+            Ok(()) => Some(oem_specific),
+            Err(_) => None,
         };
+
         Ok(RoutingActivationResponse {
             logical_address_tester,
             logical_address_of_doip_entity,
