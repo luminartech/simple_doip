@@ -48,10 +48,10 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DoIPMessage<DiagnosticsDefini
         protocol_version: ProtocolVersion,
         source_address: u16,
     ) -> DoIPMessage<DiagnosticsDefinition> {
-        let respnse = AliveCheckResponse { source_address };
+        let response = AliveCheckResponse { source_address };
         DoIPMessage {
             header: DoIPHeader::new(protocol_version, PayloadType::AliveCheckResponse, 0),
-            payload: Payload::AliveCheckResponse(respnse),
+            payload: Payload::AliveCheckResponse(response),
         }
     }
 
