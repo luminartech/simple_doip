@@ -1,8 +1,8 @@
 use crate::{
     message_codec::DoIPMessageCodec,
     messages::{
-        ActivationTypeCode, AliveCheckResponse, DoIPHeader, DoIPMessage, Payload, PayloadType,
-        ProtocolVersion, RoutingActivationResponse,
+        ActivationTypeCode, AliveCheckResponse, DoIPHeader, DoIPMessage, DoIPMessageError, Payload,
+        PayloadType, ProtocolVersion, RoutingActivationResponse,
     },
     Error,
 };
@@ -171,6 +171,13 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
             Some(result) => match result {
                 Ok(message) => Some(Ok(message)),
                 Err(error) => {
+                    if let DoIPMessageError::UdsProtocol(uds_protocol::Error::IoError(err)) = &error
+                    {
+                        if err.kind() == std::io::ErrorKind::UnexpectedEof {
+                            return None;
+                        }
+                    }
+
                     println!("Error reading message: {:?}", error);
                     Some(Err(Error::from(error)))
                 }
