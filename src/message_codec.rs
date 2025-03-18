@@ -2,19 +2,19 @@ use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 use uds_protocol::SingleValueWireFormat;
 
-use crate::messages::{DoIPHeader, DoIPMessage, DoIPMessageError, Payload};
+use crate::messages::{Header, Message, MessageError, Payload};
 
-pub struct DoIPMessageCodec<DiagnosticsDefinition> {
+pub struct MessageCodec<DiagnosticsDefinition> {
     _diagnostics_definition: std::marker::PhantomData<DiagnosticsDefinition>,
 }
 
-impl<DiagnosticsDefinition> DoIPMessageCodec<DiagnosticsDefinition> {
+impl<DiagnosticsDefinition> MessageCodec<DiagnosticsDefinition> {
     pub fn new() -> Self {
         Self::default()
     }
 }
 
-impl<DiagnosticsDefinition> Default for DoIPMessageCodec<DiagnosticsDefinition> {
+impl<DiagnosticsDefinition> Default for MessageCodec<DiagnosticsDefinition> {
     fn default() -> Self {
         Self {
             _diagnostics_definition: std::marker::PhantomData,
@@ -23,10 +23,10 @@ impl<DiagnosticsDefinition> Default for DoIPMessageCodec<DiagnosticsDefinition> 
 }
 
 impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder
-    for DoIPMessageCodec<DiagnosticsDefinition>
+    for MessageCodec<DiagnosticsDefinition>
 {
-    type Item = DoIPMessage<DiagnosticsDefinition>;
-    type Error = DoIPMessageError;
+    type Item = Message<DiagnosticsDefinition>;
+    type Error = MessageError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if src.len() < 8 {
@@ -35,7 +35,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder
         // Peel off the header from the rx buffer
         let mut header_bytes = [0u8; 8];
         header_bytes.copy_from_slice(&src[0..8]);
-        if let Ok(header) = DoIPHeader::read(&mut header_bytes.as_slice()) {
+        if let Ok(header) = Header::read(&mut header_bytes.as_slice()) {
             let message_length = header.payload_length as usize + 8;
             if message_length > src.len() {
                 // We haven't received the full message yet, put the header back
@@ -49,7 +49,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder
                     &mut payload_bytes.as_ref(),
                     header.payload_type,
                 )?;
-                Ok(Some(DoIPMessage { header, payload }))
+                Ok(Some(Message { header, payload }))
             }
         } else {
             // We don't have a valid header, put the header back
@@ -59,14 +59,14 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder
     }
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> Encoder<&DoIPMessage<DiagnosticsDefinition>>
-    for DoIPMessageCodec<DiagnosticsDefinition>
+impl<DiagnosticsDefinition: SingleValueWireFormat> Encoder<&Message<DiagnosticsDefinition>>
+    for MessageCodec<DiagnosticsDefinition>
 {
-    type Error = DoIPMessageError;
+    type Error = MessageError;
 
     fn encode(
         &mut self,
-        message: &DoIPMessage<DiagnosticsDefinition>,
+        message: &Message<DiagnosticsDefinition>,
         dst: &mut BytesMut,
     ) -> Result<(), Self::Error> {
         message.write(&mut dst.writer())?;

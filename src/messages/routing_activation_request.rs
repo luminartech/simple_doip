@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use super::message_error::DoIPMessageError;
+use super::message_error::MessageError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActivationTypeCode {
@@ -53,7 +53,7 @@ pub struct RoutingActivationRequest {
 }
 
 impl RoutingActivationRequest {
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
         let source_address = reader.read_u16::<BigEndian>()?;
         let activation_type = ActivationTypeCode::from(reader.read_u8()?);
 
@@ -70,7 +70,7 @@ impl RoutingActivationRequest {
         })
     }
     // TODO: Investigate if we should write the optional vehicle manufacturer specific data if none
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u16::<BigEndian>(self.source_address)?;
         writer.write_u8(self.activation_type.into())?;
         writer.write_all(&self.reserved)?;

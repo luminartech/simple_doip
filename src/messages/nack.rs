@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use byteorder::{ReadBytesExt, WriteBytesExt};
 
-use super::message_error::DoIPMessageError;
+use super::message_error::MessageError;
 
 /// Negative Acknowledgement payload
 /// Only sent by the server except in development
@@ -47,10 +47,10 @@ impl From<NackCode> for u8 {
 
 /// Nack read/write
 impl NackCode {
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
         Ok(reader.read_u8()?.into())
     }
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u8((*self).into())?;
         Ok(1)
     }

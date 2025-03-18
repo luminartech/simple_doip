@@ -1,7 +1,7 @@
 use std::net::{IpAddr, SocketAddr};
 
 use doip::{
-    client::{DoIPClient, DoIPClientOptions},
+    client::{Client, DoIPClientOptions},
     messages::{ActivationTypeCode, ProtocolVersion},
     TCP_PORT,
 };
@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
         client_logical_address: 0x0E01,
         protocol_version: ProtocolVersion::V2012,
     };
-    let mut client = DoIPClient::<ProtocolRequest, ProtocolResponse>::connect(options).await?;
+    let mut client = Client::<ProtocolRequest, ProtocolResponse>::connect(options).await?;
     client
         .request_routing_activation(ActivationTypeCode::Default, None)
         .await?;

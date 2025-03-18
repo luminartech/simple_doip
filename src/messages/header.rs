@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use super::message_error::DoIPMessageError;
+use super::message_error::MessageError;
 
 /// DoIP Protocol Version
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -143,7 +143,7 @@ impl From<PayloadType> for u16 {
 
 /// DoIP Message Header
 #[derive(Debug)]
-pub struct DoIPHeader {
+pub struct Header {
     /// DoIP Protocol Version
     pub protocol_version: ProtocolVersion,
     /// Bitwise inverse of protocol_version for verification
@@ -155,38 +155,38 @@ pub struct DoIPHeader {
 }
 
 /// DoIP Message Header
-impl DoIPHeader {
+impl Header {
     pub fn new(
         protocol_version: ProtocolVersion,
         payload_type: PayloadType,
         payload_length: u32,
     ) -> Self {
         let protocol_version_byte: u8 = protocol_version.into();
-        DoIPHeader {
+        Header {
             protocol_version,
             inverse_protocol_version: protocol_version_byte ^ 0xFF,
             payload_type,
             payload_length,
         }
     }
-    pub(crate) fn version_inverse_correct(&self) -> Result<(), DoIPMessageError> {
+    pub(crate) fn version_inverse_correct(&self) -> Result<(), MessageError> {
         let protocol_version: u8 = self.protocol_version.into();
         let expected = protocol_version ^ 0xFF;
         if expected == self.inverse_protocol_version {
             Ok(())
         } else {
-            Err(DoIPMessageError::VersionInverseIncorrect {
+            Err(MessageError::VersionInverseIncorrect {
                 expected,
                 value: self.inverse_protocol_version,
             })
         }
     }
-    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<DoIPHeader, DoIPMessageError> {
+    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Header, MessageError> {
         let protocol_version = reader.read_u8()?.into();
         let inverse_protocol_version = reader.read_u8()?;
         let payload_type = reader.read_u16::<BigEndian>()?.into();
         let payload_length = reader.read_u32::<BigEndian>()?;
-        let header = DoIPHeader {
+        let header = Header {
             protocol_version,
             inverse_protocol_version,
             payload_type,
@@ -195,7 +195,7 @@ impl DoIPHeader {
         header.version_inverse_correct()?;
         Ok(header)
     }
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u8(self.protocol_version.into())?;
         writer.write_u8(self.inverse_protocol_version)?;
         let payload_type: u16 = self.payload_type.into();

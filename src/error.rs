@@ -1,4 +1,4 @@
-use crate::messages::{DoIPMessageError, NackCode, PayloadType};
+use crate::messages::{MessageError, NackCode, PayloadType};
 
 use thiserror::Error;
 
@@ -9,7 +9,7 @@ pub enum Error {
     #[error("Connection closed by remote host")]
     ConnectionClosed,
     #[error(transparent)]
-    MessageError(#[from] DoIPMessageError),
+    MessageError(#[from] MessageError),
     #[error("Invalid logical address for client: {0:#06x}")]
     InvalidClientLogicalAddress(u16),
     #[error(transparent)]

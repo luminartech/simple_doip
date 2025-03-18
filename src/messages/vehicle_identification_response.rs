@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use super::message_error::DoIPMessageError;
+use super::message_error::MessageError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FurtherActionRequired {
@@ -81,7 +81,7 @@ pub struct VehicleIdentificationResponse {
 }
 
 impl VehicleIdentificationResponse {
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
         let mut vin = [0x00; 17];
         reader.read_exact(&mut vin)?;
 
@@ -116,7 +116,7 @@ impl VehicleIdentificationResponse {
         })
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_all(&self.vin)?;
         writer.write_u16::<BigEndian>(self.logical_address)?;
         writer.write_all(&self.entity_id)?;
