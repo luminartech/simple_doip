@@ -14,9 +14,9 @@ pub enum ProtocolVersion {
     V2012,
     /// ISO 13400-2:2019
     V2019,
-    /// DoIP Future Spec Reserved
+    /// ClientFuture Spec Reserved
     ReservedFuture(u8),
-    /// DoiP Version Value for Vehicle Identification Request
+    /// ClientVersion Value for Vehicle Identification Request
     VehicleIdentificationRequest,
 }
 
@@ -49,43 +49,43 @@ impl From<ProtocolVersion> for u8 {
 /// DoIP Message Payload Type
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PayloadType {
-    /// DoIP Negative Acknowledge
+    /// Negative Acknowledge
     /// Ignore packets with multi- or broadcast address as source IP address
-    /// One DoIP message per UDP datagram
+    /// One message per UDP datagram
     NegativeAcknowledge,
-    /// DoIP Vehicle Identification Request
+    /// ClientVehicle Identification Request
     VehicleIdentificationRequest,
-    /// DoIP Vehicle Identification Request with Entity ID (EID)
+    /// ClientVehicle Identification Request with Entity ID (EID)
     VehicleIdentificationRequestWithEID,
-    /// DoIP Vehicle Identification Request with Vehicle Identification Number (VIN)
+    /// ClientVehicle Identification Request with Vehicle Identification Number (VIN)
     VehicleIdentificationRequestWithVIN,
-    /// DoIP Vehicle Announcement Message
+    /// ClientVehicle Announcement Message
     VehicleAnnouncement,
-    /// DoIP Routing Activation Request Message
+    /// ClientRouting Activation Request Message
     RoutingActivationRequest,
-    /// DoIP Routing Activation Response Message
+    /// ClientRouting Activation Response Message
     RoutingActivationResponse,
-    /// DoIP Alive Check Request Message
+    /// ClientAlive Check Request Message
     AliveCheckRequest,
-    /// DoIP Alive Check Response Message
+    /// ClientAlive Check Response Message
     AliveCheckResponse,
-    /// DoIP Entity Status Request Message
+    /// ClientEntity Status Request Message
     DoIPEntityStatusRequest,
-    /// DoIP Entity Status Response Message
+    /// ClientEntity Status Response Message
     DoIPEntityStatusResponse,
-    /// DoIP Diagnostic Power Mode Info Request Message
+    /// ClientDiagnostic Power Mode Info Request Message
     DiagnosticPowerModeInfoRequest,
-    /// DoIP Diagnostic Power Mode Info Response Message
+    /// ClientDiagnostic Power Mode Info Response Message
     DiagnosticPowerModeInfoResponse,
-    /// DoIP Diagnostic Message
+    /// ClientDiagnostic Message
     DiagnosticMessage,
-    /// DoIP Diagnostic Message Positive Acknowledge
+    /// ClientDiagnostic Message Positive Acknowledge
     DiagnosticMessagePositiveAcknowledge,
-    /// DoIP Diagnostic Message Negative Acknowledge
+    /// ClientDiagnostic Message Negative Acknowledge
     DiagnosticMessageNegativeAcknowledge,
-    /// DoIP Spec Reserved
+    /// ClientSpec Reserved
     Reserved(u16),
-    /// DoIP Spec Reserved for Vehicle Manufacturer
+    /// ClientSpec Reserved for Vehicle Manufacturer
     ReservedVehicleManufacturer(u16),
 }
 
@@ -144,17 +144,16 @@ impl From<PayloadType> for u16 {
 /// DoIP Message Header
 #[derive(Debug)]
 pub struct Header {
-    /// DoIP Protocol Version
+    /// ClientProtocol Version
     pub protocol_version: ProtocolVersion,
     /// Bitwise inverse of protocol_version for verification
     pub inverse_protocol_version: u8,
-    /// DoIP Payload Type
+    /// ClientPayload Type
     pub payload_type: PayloadType,
     /// Length of payload byte array, does not include header.
     pub payload_length: u32,
 }
 
-/// DoIP Message Header
 impl Header {
     pub fn new(
         protocol_version: ProtocolVersion,

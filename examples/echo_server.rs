@@ -87,14 +87,14 @@ impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandle
     ///
     async fn routing_activation(
         &self,
-        _client_info: &DoIPClientConnectionInfo,
+        _client_info: &ClientConnectionInfo,
         source_address: u16,
         _activation_type: ActivationTypeCode,
     ) -> Result<RoutingActivationResponse, Error>
 
     async fn diagnostic_message(
         &self,
-        _client_info: &DoIPClientConnectionInfo,
+        _client_info: &ClientConnectionInfo,
         source_address: u16,
         target_address: u16,
         user_data: Vec<u8>,
