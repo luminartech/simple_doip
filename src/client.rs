@@ -162,17 +162,14 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
         Ok(())
     }
 
-    pub async fn read_tcp_message(
-        &mut self,
-    ) -> Option<Result<Message<ReadDefinitions>, Error>> {
+    pub async fn read_tcp_message(&mut self) -> Option<Result<Message<ReadDefinitions>, Error>> {
         // Unwrap here is to unwrap the option, not the result
         match self.read_stream.next().await {
             None => None,
             Some(result) => match result {
                 Ok(message) => Some(Ok(message)),
                 Err(error) => {
-                    if let MessageError::UdsProtocol(uds_protocol::Error::IoError(err)) = &error
-                    {
+                    if let MessageError::UdsProtocol(uds_protocol::Error::IoError(err)) = &error {
                         if err.kind() == std::io::ErrorKind::UnexpectedEof {
                             return None;
                         }

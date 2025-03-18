@@ -4,7 +4,7 @@ use uds_protocol::SingleValueWireFormat;
 
 use crate::messages::{
     AliveCheckResponse, DiagnosticMessage, DiagnosticMessageAck, DiagnosticPowerModeCode,
-    MessageError, EntityStatusResponse, PayloadType, RoutingActivationResponse,
+    EntityStatusResponse, MessageError, PayloadType, RoutingActivationResponse,
     VehicleIdentificationResponse,
 };
 

@@ -1,7 +1,7 @@
 use crate::{
     message_codec::MessageCodec,
     messages::{
-        DiagnosticMessage, DiagnosticPowerModeCode, Message, FurtherActionRequired, Payload,
+        DiagnosticMessage, DiagnosticPowerModeCode, FurtherActionRequired, Message, Payload,
         ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse, VinGidSyncStatus,
     },
     Error, TCP_PORT,

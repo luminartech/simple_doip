@@ -22,9 +22,7 @@ impl<DiagnosticsDefinition> Default for MessageCodec<DiagnosticsDefinition> {
     }
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder
-    for MessageCodec<DiagnosticsDefinition>
-{
+impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder for MessageCodec<DiagnosticsDefinition> {
     type Item = Message<DiagnosticsDefinition>;
     type Error = MessageError;
 
