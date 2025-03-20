@@ -14,9 +14,9 @@ pub enum ProtocolVersion {
     V2012,
     /// ISO 13400-2:2019
     V2019,
-    /// ClientFuture Spec Reserved
+    /// Client Future Spec Reserved
     ReservedFuture(u8),
-    /// ClientVersion Value for Vehicle Identification Request
+    /// Client Version Value for Vehicle Identification Request
     VehicleIdentificationRequest,
 }
 
@@ -53,39 +53,39 @@ pub enum PayloadType {
     /// Ignore packets with multi- or broadcast address as source IP address
     /// One message per UDP datagram
     NegativeAcknowledge,
-    /// ClientVehicle Identification Request
+    /// Client Vehicle Identification Request
     VehicleIdentificationRequest,
-    /// ClientVehicle Identification Request with Entity ID (EID)
+    /// Client Vehicle Identification Request with Entity ID (EID)
     VehicleIdentificationRequestWithEID,
-    /// ClientVehicle Identification Request with Vehicle Identification Number (VIN)
+    /// Client Vehicle Identification Request with Vehicle Identification Number (VIN)
     VehicleIdentificationRequestWithVIN,
-    /// ClientVehicle Announcement Message
+    /// Client Vehicle Announcement Message
     VehicleAnnouncement,
-    /// ClientRouting Activation Request Message
+    /// Client Routing Activation Request Message
     RoutingActivationRequest,
-    /// ClientRouting Activation Response Message
+    /// Client Routing Activation Response Message
     RoutingActivationResponse,
-    /// ClientAlive Check Request Message
+    /// Client Alive Check Request Message
     AliveCheckRequest,
-    /// ClientAlive Check Response Message
+    /// Client Alive Check Response Message
     AliveCheckResponse,
-    /// ClientEntity Status Request Message
+    /// Client Entity Status Request Message
     DoIPEntityStatusRequest,
-    /// ClientEntity Status Response Message
+    /// Client Entity Status Response Message
     DoIPEntityStatusResponse,
-    /// ClientDiagnostic Power Mode Info Request Message
+    /// Client Diagnostic Power Mode Info Request Message
     DiagnosticPowerModeInfoRequest,
-    /// ClientDiagnostic Power Mode Info Response Message
+    /// Client Diagnostic Power Mode Info Response Message
     DiagnosticPowerModeInfoResponse,
-    /// ClientDiagnostic Message
+    /// Client Diagnostic Message
     DiagnosticMessage,
-    /// ClientDiagnostic Message Positive Acknowledge
+    /// Client Diagnostic Message Positive Acknowledge
     DiagnosticMessagePositiveAcknowledge,
-    /// ClientDiagnostic Message Negative Acknowledge
+    /// Client Diagnostic Message Negative Acknowledge
     DiagnosticMessageNegativeAcknowledge,
-    /// ClientSpec Reserved
+    /// Client Spec Reserved
     Reserved(u16),
-    /// ClientSpec Reserved for Vehicle Manufacturer
+    /// Client Spec Reserved for Vehicle Manufacturer
     ReservedVehicleManufacturer(u16),
 }
 
@@ -144,11 +144,11 @@ impl From<PayloadType> for u16 {
 /// DoIP Message Header
 #[derive(Debug)]
 pub struct Header {
-    /// ClientProtocol Version
+    /// Client Protocol Version
     pub protocol_version: ProtocolVersion,
     /// Bitwise inverse of protocol_version for verification
     pub inverse_protocol_version: u8,
-    /// ClientPayload Type
+    /// Client Payload Type
     pub payload_type: PayloadType,
     /// Length of payload byte array, does not include header.
     pub payload_length: u32,
