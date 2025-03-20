@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use super::message_error::DoIPMessageError;
+use super::message_error::MessageError;
 
 /// DoIP Protocol Version
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -14,9 +14,9 @@ pub enum ProtocolVersion {
     V2012,
     /// ISO 13400-2:2019
     V2019,
-    /// DoIP Future Spec Reserved
+    /// Client Future Spec Reserved
     ReservedFuture(u8),
-    /// DoiP Version Value for Vehicle Identification Request
+    /// Client Version Value for Vehicle Identification Request
     VehicleIdentificationRequest,
 }
 
@@ -49,43 +49,43 @@ impl From<ProtocolVersion> for u8 {
 /// DoIP Message Payload Type
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PayloadType {
-    /// DoIP Negative Acknowledge
+    /// Negative Acknowledge
     /// Ignore packets with multi- or broadcast address as source IP address
-    /// One DoIP message per UDP datagram
+    /// One message per UDP datagram
     NegativeAcknowledge,
-    /// DoIP Vehicle Identification Request
+    /// Client Vehicle Identification Request
     VehicleIdentificationRequest,
-    /// DoIP Vehicle Identification Request with Entity ID (EID)
+    /// Client Vehicle Identification Request with Entity ID (EID)
     VehicleIdentificationRequestWithEID,
-    /// DoIP Vehicle Identification Request with Vehicle Identification Number (VIN)
+    /// Client Vehicle Identification Request with Vehicle Identification Number (VIN)
     VehicleIdentificationRequestWithVIN,
-    /// DoIP Vehicle Announcement Message
+    /// Client Vehicle Announcement Message
     VehicleAnnouncement,
-    /// DoIP Routing Activation Request Message
+    /// Client Routing Activation Request Message
     RoutingActivationRequest,
-    /// DoIP Routing Activation Response Message
+    /// Client Routing Activation Response Message
     RoutingActivationResponse,
-    /// DoIP Alive Check Request Message
+    /// Client Alive Check Request Message
     AliveCheckRequest,
-    /// DoIP Alive Check Response Message
+    /// Client Alive Check Response Message
     AliveCheckResponse,
-    /// DoIP Entity Status Request Message
+    /// Client Entity Status Request Message
     DoIPEntityStatusRequest,
-    /// DoIP Entity Status Response Message
+    /// Client Entity Status Response Message
     DoIPEntityStatusResponse,
-    /// DoIP Diagnostic Power Mode Info Request Message
+    /// Client Diagnostic Power Mode Info Request Message
     DiagnosticPowerModeInfoRequest,
-    /// DoIP Diagnostic Power Mode Info Response Message
+    /// Client Diagnostic Power Mode Info Response Message
     DiagnosticPowerModeInfoResponse,
-    /// DoIP Diagnostic Message
+    /// Client Diagnostic Message
     DiagnosticMessage,
-    /// DoIP Diagnostic Message Positive Acknowledge
+    /// Client Diagnostic Message Positive Acknowledge
     DiagnosticMessagePositiveAcknowledge,
-    /// DoIP Diagnostic Message Negative Acknowledge
+    /// Client Diagnostic Message Negative Acknowledge
     DiagnosticMessageNegativeAcknowledge,
-    /// DoIP Spec Reserved
+    /// Client Spec Reserved
     Reserved(u16),
-    /// DoIP Spec Reserved for Vehicle Manufacturer
+    /// Client Spec Reserved for Vehicle Manufacturer
     ReservedVehicleManufacturer(u16),
 }
 
@@ -143,50 +143,49 @@ impl From<PayloadType> for u16 {
 
 /// DoIP Message Header
 #[derive(Debug)]
-pub struct DoIPHeader {
-    /// DoIP Protocol Version
+pub struct Header {
+    /// Client Protocol Version
     pub protocol_version: ProtocolVersion,
     /// Bitwise inverse of protocol_version for verification
     pub inverse_protocol_version: u8,
-    /// DoIP Payload Type
+    /// Client Payload Type
     pub payload_type: PayloadType,
     /// Length of payload byte array, does not include header.
     pub payload_length: u32,
 }
 
-/// DoIP Message Header
-impl DoIPHeader {
+impl Header {
     pub fn new(
         protocol_version: ProtocolVersion,
         payload_type: PayloadType,
         payload_length: u32,
     ) -> Self {
         let protocol_version_byte: u8 = protocol_version.into();
-        DoIPHeader {
+        Header {
             protocol_version,
             inverse_protocol_version: protocol_version_byte ^ 0xFF,
             payload_type,
             payload_length,
         }
     }
-    pub(crate) fn version_inverse_correct(&self) -> Result<(), DoIPMessageError> {
+    pub(crate) fn version_inverse_correct(&self) -> Result<(), MessageError> {
         let protocol_version: u8 = self.protocol_version.into();
         let expected = protocol_version ^ 0xFF;
         if expected == self.inverse_protocol_version {
             Ok(())
         } else {
-            Err(DoIPMessageError::VersionInverseIncorrect {
+            Err(MessageError::VersionInverseIncorrect {
                 expected,
                 value: self.inverse_protocol_version,
             })
         }
     }
-    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<DoIPHeader, DoIPMessageError> {
+    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Header, MessageError> {
         let protocol_version = reader.read_u8()?.into();
         let inverse_protocol_version = reader.read_u8()?;
         let payload_type = reader.read_u16::<BigEndian>()?.into();
         let payload_length = reader.read_u32::<BigEndian>()?;
-        let header = DoIPHeader {
+        let header = Header {
             protocol_version,
             inverse_protocol_version,
             payload_type,
@@ -195,7 +194,7 @@ impl DoIPHeader {
         header.version_inverse_correct()?;
         Ok(header)
     }
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u8(self.protocol_version.into())?;
         writer.write_u8(self.inverse_protocol_version)?;
         let payload_type: u16 = self.payload_type.into();

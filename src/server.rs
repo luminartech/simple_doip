@@ -1,7 +1,7 @@
 use crate::{
-    message_codec::DoIPMessageCodec,
+    message_codec::MessageCodec,
     messages::{
-        DiagnosticMessage, DiagnosticPowerModeCode, DoIPMessage, FurtherActionRequired, Payload,
+        DiagnosticMessage, DiagnosticPowerModeCode, FurtherActionRequired, Message, Payload,
         ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse, VinGidSyncStatus,
     },
     Error, TCP_PORT,
@@ -19,7 +19,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use uds_protocol::SingleValueWireFormat;
 
-pub struct DoIPClientConnectionInfo {
+pub struct ClientConnectionInfo {
     /// Client IP address
     pub ip_address: IpAddr,
     /// Client logical address
@@ -29,7 +29,7 @@ pub struct DoIPClientConnectionInfo {
 /// Implement this trait to create a custom DoIP server.
 /// Most protocol functions have a simple, de=fault implementation
 #[async_trait]
-pub trait DoIPServerConnectionHandler<
+pub trait ServerConnectionHandler<
     ReadDefinitions: SingleValueWireFormat,
     WriteDefinitions: SingleValueWireFormat,
 >
@@ -54,12 +54,12 @@ pub trait DoIPServerConnectionHandler<
     async fn routing_activation(
         &self,
         request: &RoutingActivationRequest,
-    ) -> Result<DoIPMessage<WriteDefinitions>, Error>;
+    ) -> Result<Message<WriteDefinitions>, Error>;
 
     async fn diagnostic_message(
         &self,
         message: &DiagnosticMessage<ReadDefinitions>,
-    ) -> Result<DoIPMessage<WriteDefinitions>, Error>;
+    ) -> Result<Message<WriteDefinitions>, Error>;
 
     // Optional Functions
     // These functions *may* be overridden to provide custom behavior
@@ -68,7 +68,7 @@ pub trait DoIPServerConnectionHandler<
     /// Respond to an Identification request with the identity parameters provided by the trait implementer
     fn received_vehicle_identification_request(
         &self,
-        _client_info: &DoIPClientConnectionInfo,
+        _client_info: &ClientConnectionInfo,
     ) -> Result<VehicleIdentificationResponse, Error> {
         Ok(VehicleIdentificationResponse {
             entity_id: self.get_entity_id(),
@@ -84,7 +84,7 @@ pub trait DoIPServerConnectionHandler<
     /// The default implementation returns none if the request is not directed to the server in question
     fn vehicle_identification_with_eid(
         &self,
-        _client_info: &DoIPClientConnectionInfo,
+        _client_info: &ClientConnectionInfo,
         eid: &[u8; 6],
     ) -> Result<Option<VehicleIdentificationResponse>, Error> {
         if self.get_entity_id() == *eid {
@@ -108,7 +108,7 @@ pub trait DoIPServerConnectionHandler<
     /// The default implementation returns none if the request is not directed to the server in question
     fn vehicle_identification_with_vin(
         &self,
-        _client_info: &DoIPClientConnectionInfo,
+        _client_info: &ClientConnectionInfo,
         vin: &[u8; 17],
     ) -> Result<Option<VehicleIdentificationResponse>, Error> {
         // If the request is directed to us, respond with our identification
@@ -130,9 +130,9 @@ pub trait DoIPServerConnectionHandler<
     /// Respond to an Alive Check request
     async fn alive_check(
         &self,
-        client_info: &DoIPClientConnectionInfo,
-    ) -> Result<DoIPMessage<WriteDefinitions>, Error> {
-        Ok(DoIPMessage::<WriteDefinitions>::alive_check_response(
+        client_info: &ClientConnectionInfo,
+    ) -> Result<Message<WriteDefinitions>, Error> {
+        Ok(Message::<WriteDefinitions>::alive_check_response(
             self.protocol_version(),
             client_info.logical_address,
         ))
@@ -143,7 +143,7 @@ pub trait DoIPServerConnectionHandler<
     /// so the default implementation returns `NotSupported`
     async fn diagnostic_power_mode_information(
         &self,
-        _client_info: &DoIPClientConnectionInfo,
+        _client_info: &ClientConnectionInfo,
     ) -> Result<DiagnosticPowerModeCode, Error> {
         Ok(DiagnosticPowerModeCode::NotSupported)
     }
@@ -153,22 +153,22 @@ pub trait DoIPServerConnectionHandler<
     }
 }
 
-pub struct DoIPServer<R, S, T> {
+pub struct Server<R, S, T> {
     connection_handler: Arc<T>,
     active_connections: AtomicUsize,
     _phantom_r: std::marker::PhantomData<R>,
     _phantom_s: std::marker::PhantomData<S>,
 }
 
-impl<R, S, T> DoIPServer<R, S, T>
+impl<R, S, T> Server<R, S, T>
 where
     R: SingleValueWireFormat,
     S: SingleValueWireFormat,
-    T: DoIPServerConnectionHandler<R, S> + Sync,
+    T: ServerConnectionHandler<R, S> + Sync,
 {
     pub fn new(connection_handler: T) -> Result<Self, Error> {
         // TODO: Validate the provided handler
-        Ok(DoIPServer {
+        Ok(Server {
             connection_handler: Arc::new(connection_handler),
             active_connections: AtomicUsize::new(0),
             _phantom_r: std::marker::PhantomData,
@@ -205,8 +205,8 @@ where
     ) -> Result<(), Error> {
         let _currently_open_sockets = self.active_connections.fetch_add(1, Ordering::Relaxed);
         let (rx, tx) = tcp_stream.into_split();
-        let mut read_stream = FramedRead::new(rx, DoIPMessageCodec::<R>::new());
-        let mut write_sink = FramedWrite::new(tx, DoIPMessageCodec::<S>::new());
+        let mut read_stream = FramedRead::new(rx, MessageCodec::<R>::new());
+        let mut write_sink = FramedWrite::new(tx, MessageCodec::<S>::new());
 
         loop {
             match read_stream.next().await {
@@ -232,11 +232,11 @@ where
     async fn handle_client_message(
         &self,
         client_socket_addr: SocketAddr,
-        request_message: DoIPMessage<R>,
-    ) -> Result<DoIPMessage<S>, Error> {
+        request_message: Message<R>,
+    ) -> Result<Message<S>, Error> {
         // TODO: Need to handle active sockets by adding clients to a map
         // client count should come from that map, as well as the logical address missing below
-        let connection_info = DoIPClientConnectionInfo {
+        let connection_info = ClientConnectionInfo {
             ip_address: client_socket_addr.ip(),
             logical_address: 0x0000, // TODO fix this constant
         };

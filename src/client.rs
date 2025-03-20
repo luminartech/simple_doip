@@ -1,7 +1,7 @@
 use crate::{
-    message_codec::DoIPMessageCodec,
+    message_codec::MessageCodec,
     messages::{
-        ActivationTypeCode, AliveCheckResponse, DoIPHeader, DoIPMessage, DoIPMessageError, Payload,
+        ActivationTypeCode, AliveCheckResponse, Header, Message, MessageError, Payload,
         PayloadType, ProtocolVersion, RoutingActivationResponse,
     },
     Error,
@@ -22,7 +22,7 @@ use uds_protocol::SingleValueWireFormat;
 /// DoIP client options used to specify connection info
 /// Derive `Serialize` and `Deserialize` for use in config files
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DoIPClientOptions {
+pub struct ClientOptions {
     /// Server IP address and port
     pub server_address: SocketAddr,
     /// Target logical addresses, uniquely identifies the ECU to be diagnosed.
@@ -44,18 +44,18 @@ pub enum AddressType {
     Physical,
 }
 
-pub struct DoIPClient<ReadDefinitions, WriteDefinitions> {
-    pub client_options: DoIPClientOptions,
-    read_stream: FramedRead<OwnedReadHalf, DoIPMessageCodec<ReadDefinitions>>,
-    write_sink: FramedWrite<OwnedWriteHalf, DoIPMessageCodec<WriteDefinitions>>,
+pub struct Client<ReadDefinitions, WriteDefinitions> {
+    pub client_options: ClientOptions,
+    read_stream: FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>,
+    write_sink: FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>,
 }
 
 impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFormat>
-    DoIPClient<ReadDefinitions, WriteDefinitions>
+    Client<ReadDefinitions, WriteDefinitions>
 {
     /// Create a DoIP connection.
     /// The target port defaults to [`SERVER_TCP_PORT`].
-    pub async fn connect(client_options: DoIPClientOptions) -> Result<Self, Error> {
+    pub async fn connect(client_options: ClientOptions) -> Result<Self, Error> {
         if client_options.client_logical_address < 0x0E00
             || client_options.client_logical_address > 0x0FFF
         {
@@ -79,8 +79,8 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
         )
         .await??;
         let (rx, tx) = tcp_stream.into_split();
-        let read_stream = FramedRead::new(rx, DoIPMessageCodec::<ReadDefinitions>::new());
-        let write_sink = FramedWrite::new(tx, DoIPMessageCodec::<WriteDefinitions>::new());
+        let read_stream = FramedRead::new(rx, MessageCodec::<ReadDefinitions>::new());
+        let write_sink = FramedWrite::new(tx, MessageCodec::<WriteDefinitions>::new());
 
         Ok(Self {
             client_options,
@@ -100,7 +100,7 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
         activation_type: ActivationTypeCode,
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
     ) -> Result<RoutingActivationResponse, Error> {
-        let message = DoIPMessage::<WriteDefinitions>::routing_activation_request(
+        let message = Message::<WriteDefinitions>::routing_activation_request(
             self.client_options.protocol_version,
             self.client_options.client_logical_address,
             activation_type,
@@ -124,13 +124,13 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
     }
 
     pub async fn request_alive_check(&mut self) -> Result<AliveCheckResponse, Error> {
-        let header = DoIPHeader::new(
+        let header = Header::new(
             self.client_options.protocol_version,
             PayloadType::AliveCheckRequest,
             0,
         );
         let payload = Payload::<WriteDefinitions>::AliveCheckRequest;
-        let message = DoIPMessage { header, payload };
+        let message = Message { header, payload };
         self.write_sink.send(&message).await?;
 
         let response_message = self.read_tcp_message().await.unwrap()?;
@@ -148,7 +148,7 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
         address_type: AddressType,
         user_data: WriteDefinitions,
     ) -> Result<(), Error> {
-        let message = DoIPMessage::<WriteDefinitions>::diagnostic_message(
+        let message = Message::<WriteDefinitions>::diagnostic_message(
             self.client_options.protocol_version,
             self.client_options.client_logical_address,
             match address_type {
@@ -162,17 +162,14 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
         Ok(())
     }
 
-    pub async fn read_tcp_message(
-        &mut self,
-    ) -> Option<Result<DoIPMessage<ReadDefinitions>, Error>> {
+    pub async fn read_tcp_message(&mut self) -> Option<Result<Message<ReadDefinitions>, Error>> {
         // Unwrap here is to unwrap the option, not the result
         match self.read_stream.next().await {
             None => None,
             Some(result) => match result {
                 Ok(message) => Some(Ok(message)),
                 Err(error) => {
-                    if let DoIPMessageError::UdsProtocol(uds_protocol::Error::IoError(err)) = &error
-                    {
+                    if let MessageError::UdsProtocol(uds_protocol::Error::IoError(err)) = &error {
                         if err.kind() == std::io::ErrorKind::UnexpectedEof {
                             return None;
                         }

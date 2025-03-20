@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use uds_protocol::SingleValueWireFormat;
 
-use super::message_error::DoIPMessageError;
+use super::message_error::MessageError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiagnosticMessage<DiagnosticsDefinition> {
@@ -13,7 +13,7 @@ pub struct DiagnosticMessage<DiagnosticsDefinition> {
 }
 
 impl<DiagnosticsDefinition: SingleValueWireFormat> DiagnosticMessage<DiagnosticsDefinition> {
-    pub fn read<R: Read>(reader: &mut R) -> Result<Self, DoIPMessageError> {
+    pub fn read<R: Read>(reader: &mut R) -> Result<Self, MessageError> {
         let source_address = reader.read_u16::<BigEndian>()?;
         let target_address = reader.read_u16::<BigEndian>()?;
         let user_data = DiagnosticsDefinition::from_reader(reader)?;
@@ -25,7 +25,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> DiagnosticMessage<Diagnostics
         })
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u16::<BigEndian>(self.source_address)?;
         writer.write_u16::<BigEndian>(self.target_address)?;
         Ok(4 + self.user_data.to_writer(writer)?)

@@ -4,7 +4,7 @@ use uds_protocol::SingleValueWireFormat;
 
 use crate::messages::{
     AliveCheckResponse, DiagnosticMessage, DiagnosticMessageAck, DiagnosticPowerModeCode,
-    DoIPMessageError, EntityStatusResponse, PayloadType, RoutingActivationResponse,
+    EntityStatusResponse, MessageError, PayloadType, RoutingActivationResponse,
     VehicleIdentificationResponse,
 };
 
@@ -33,7 +33,7 @@ impl<DiagnosticsDefinitions: SingleValueWireFormat> Payload<DiagnosticsDefinitio
     pub fn read<R: Read>(
         mut payload_bytes: &mut R,
         payload_type: PayloadType,
-    ) -> Result<Self, DoIPMessageError> {
+    ) -> Result<Self, MessageError> {
         Ok(match payload_type {
             PayloadType::AliveCheckResponse => {
                 Self::AliveCheckResponse(AliveCheckResponse::read(&mut payload_bytes)?)
@@ -66,7 +66,7 @@ impl<DiagnosticsDefinitions: SingleValueWireFormat> Payload<DiagnosticsDefinitio
         })
     }
 
-    pub fn write<W: Write>(&self, writer: &mut W) -> Result<usize, DoIPMessageError> {
+    pub fn write<W: Write>(&self, writer: &mut W) -> Result<usize, MessageError> {
         Ok(match self {
             Payload::DoIPNack(nack) => nack.write(writer)?,
             Payload::AliveCheckRequest => 0,

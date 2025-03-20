@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use doip::{
     messages::{
-        DiagnosticAckCode, DiagnosticMessage, DoIPMessage, RoutingActivationRequest,
+        DiagnosticAckCode, DiagnosticMessage, Message, RoutingActivationRequest,
         RoutingActivationResponseCode,
     },
-    server::{DoIPServer, DoIPServerConnectionHandler},
+    server::{Server, ServerConnectionHandler},
     Error,
 };
 use uds_protocol::{ProtocolRequest, ProtocolResponse, WireFormat};
@@ -12,7 +12,7 @@ use uds_protocol::{ProtocolRequest, ProtocolResponse, WireFormat};
 struct ServerHandler {}
 
 #[async_trait]
-impl DoIPServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandler {
+impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandler {
     fn get_vin(&self) -> [u8; 17] {
         [0x00; 17]
     }
@@ -32,12 +32,12 @@ impl DoIPServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHa
     async fn routing_activation(
         &self,
         request: &RoutingActivationRequest,
-    ) -> Result<DoIPMessage<ProtocolResponse>, Error> {
+    ) -> Result<Message<ProtocolResponse>, Error> {
         println!(
             "Routing activation request from 0x{:04X}",
             request.source_address
         );
-        Ok(DoIPMessage::routing_activation_response(
+        Ok(Message::routing_activation_response(
             self.protocol_version(),
             request.source_address,
             self.get_logical_address(),
@@ -69,13 +69,13 @@ impl DoIPServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHa
     async fn diagnostic_message(
         &self,
         message: &DiagnosticMessage<ProtocolRequest>,
-    ) -> Result<DoIPMessage<ProtocolResponse>, Error> {
+    ) -> Result<Message<ProtocolResponse>, Error> {
         let mut previous_message_data = Vec::with_capacity(message.user_data.required_size());
         message
             .user_data
             .to_writer(&mut previous_message_data)
             .unwrap();
-        Ok(DoIPMessage::diagnostic_message_ack(
+        Ok(Message::diagnostic_message_ack(
             self.protocol_version(),
             message.source_address,
             message.target_address,
@@ -87,14 +87,14 @@ impl DoIPServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHa
     ///
     async fn routing_activation(
         &self,
-        _client_info: &DoIPClientConnectionInfo,
+        _client_info: &ClientConnectionInfo,
         source_address: u16,
         _activation_type: ActivationTypeCode,
     ) -> Result<RoutingActivationResponse, Error>
 
     async fn diagnostic_message(
         &self,
-        _client_info: &DoIPClientConnectionInfo,
+        _client_info: &ClientConnectionInfo,
         source_address: u16,
         target_address: u16,
         user_data: Vec<u8>,
@@ -112,7 +112,7 @@ impl DoIPServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHa
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let handler = ServerHandler {};
-    let server = DoIPServer::new(handler)?;
+    let server = Server::new(handler)?;
 
     server.run_server().await?;
 

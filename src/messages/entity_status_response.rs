@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 
-use super::message_error::DoIPMessageError;
+use super::message_error::MessageError;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EntityStatusNodeType {
@@ -42,7 +42,7 @@ pub struct EntityStatusResponse {
 }
 
 impl EntityStatusResponse {
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, DoIPMessageError> {
+    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
         let node_type = EntityStatusNodeType::from(reader.read_u8()?);
         let max_concurrent_tcp_sockets = reader.read_u8()?;
         let open_tcp_sockets = reader.read_u8()?;
@@ -55,7 +55,7 @@ impl EntityStatusResponse {
         })
     }
 
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, DoIPMessageError> {
+    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u8(self.node_type.into())?;
         writer.write_u8(self.max_concurrent_tcp_sockets)?;
         writer.write_u8(self.open_tcp_sockets)?;
