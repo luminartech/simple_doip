@@ -28,3 +28,19 @@ pub const TCP_PORT: u16 = 13400;
 
 /// TODO: Implement TLS support
 pub const TCP_TLS_PORT: u16 = 3496;
+
+// DoIP timing and communication parameters
+
+/// Initial inactivity timeout in seconds for TCP connections directly after a TCP_DATA socket is established. Timeout is 2 seconds.
+///
+/// Must complete routing activation within this time otherwise the socket is closed by the DoIP entity
+pub const TCP_TIMEOUT_INITIAL_INACTIVITY: u32 = 2;
+
+/// General inactivity timeout for TCP connections. Timeout is 300 seconds (5 minutes).
+///
+/// If no data is sent or received for this duration, the connection is closed by the DoIP entity
+pub const TCP_TIMEOUT_GENERAL_INACTIVITY: u32 = 300; // seconds (5 minutes)
+
+/// Alive check for the maximum amount of time an entity waits for an alive check response after having
+/// made an alive check request. Timeout is 5 seconds.
+pub const TCP_TIMEOUT_ALIVE_CHECK: u32 = 5;
