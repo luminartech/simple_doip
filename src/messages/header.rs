@@ -6,18 +6,19 @@ use super::message_error::MessageError;
 
 /// DoIP Protocol Version
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
 pub enum ProtocolVersion {
-    Reserved,
+    Reserved = 0x00,
     /// ISO 13400-2:2010
-    V2010,
+    V2010 = 0x01,
     /// ISO 13400-2:2012
-    V2012,
+    V2012 = 0x02,
     /// ISO 13400-2:2019
-    V2019,
+    V2019 = 0x03,
     /// Client Future Spec Reserved
     ReservedFuture(u8),
     /// Client Version Value for Vehicle Identification Request
-    VehicleIdentificationRequest,
+    VehicleIdentificationRequest = 0xFE,
 }
 
 impl From<u8> for ProtocolVersion {
@@ -48,41 +49,42 @@ impl From<ProtocolVersion> for u8 {
 
 /// DoIP Message Payload Type
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
 pub enum PayloadType {
     /// Negative Acknowledge
     /// Ignore packets with multi- or broadcast address as source IP address
     /// One message per UDP datagram
-    NegativeAcknowledge,
+    NegativeAcknowledge = 0x0000,
     /// Client Vehicle Identification Request
-    VehicleIdentificationRequest,
+    VehicleIdentificationRequest = 0x0001,
     /// Client Vehicle Identification Request with Entity ID (EID)
-    VehicleIdentificationRequestWithEID,
+    VehicleIdentificationRequestWithEID = 0x0002,
     /// Client Vehicle Identification Request with Vehicle Identification Number (VIN)
-    VehicleIdentificationRequestWithVIN,
+    VehicleIdentificationRequestWithVIN = 0x0003,
     /// Client Vehicle Announcement Message
-    VehicleAnnouncement,
+    VehicleAnnouncement = 0x0004,
     /// Client Routing Activation Request Message
-    RoutingActivationRequest,
+    RoutingActivationRequest = 0x0005,
     /// Client Routing Activation Response Message
-    RoutingActivationResponse,
+    RoutingActivationResponse = 0x0006,
     /// Client Alive Check Request Message
-    AliveCheckRequest,
+    AliveCheckRequest = 0x0007,
     /// Client Alive Check Response Message
-    AliveCheckResponse,
+    AliveCheckResponse = 0x0008,
     /// Client Entity Status Request Message
-    DoIPEntityStatusRequest,
+    DoIPEntityStatusRequest = 0x4001,
     /// Client Entity Status Response Message
-    DoIPEntityStatusResponse,
+    DoIPEntityStatusResponse = 0x4002,
     /// Client Diagnostic Power Mode Info Request Message
-    DiagnosticPowerModeInfoRequest,
+    DiagnosticPowerModeInfoRequest = 0x4003,
     /// Client Diagnostic Power Mode Info Response Message
-    DiagnosticPowerModeInfoResponse,
+    DiagnosticPowerModeInfoResponse = 0x4004,
     /// Client Diagnostic Message
-    DiagnosticMessage,
+    DiagnosticMessage = 0x8001,
     /// Client Diagnostic Message Positive Acknowledge
-    DiagnosticMessagePositiveAcknowledge,
+    DiagnosticMessagePositiveAcknowledge = 0x8002,
     /// Client Diagnostic Message Negative Acknowledge
-    DiagnosticMessageNegativeAcknowledge,
+    DiagnosticMessageNegativeAcknowledge = 0x8003,
     /// Client Spec Reserved
     Reserved(u16),
     /// Client Spec Reserved for Vehicle Manufacturer
@@ -168,6 +170,8 @@ impl Header {
             payload_length,
         }
     }
+    /// Checks that the inverse value of the protocol version is correct
+    /// to ensure a properly formatted DOIP message is received
     pub(crate) fn version_inverse_correct(&self) -> Result<(), MessageError> {
         let protocol_version: u8 = self.protocol_version.into();
         let expected = protocol_version ^ 0xFF;
