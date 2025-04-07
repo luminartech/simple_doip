@@ -7,11 +7,15 @@
 //! ## Design
 //!
 
+pub mod traits;
+
 pub mod messages;
 
-/// The client feature enables
 #[cfg(feature = "client")]
 pub mod client;
+/// The client feature enables
+#[cfg(feature = "client")]
+pub mod client_inner;
 #[cfg(any(feature = "client", feature = "server"))]
 mod error;
 #[cfg(any(feature = "client", feature = "server"))]
@@ -28,6 +32,8 @@ pub const TCP_PORT: u16 = 13400;
 
 /// TODO: Implement TLS support
 pub const TCP_TLS_PORT: u16 = 3496;
+
+pub const LIDAR_LOGICAL_ADDRESS: u16 = 0xE400;
 
 // DoIP timing and communication parameters
 
