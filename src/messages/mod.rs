@@ -26,7 +26,7 @@ pub use vehicle_identification_response::{
 };
 
 use std::io::{Read, Write};
-use uds_protocol::SingleValueWireFormat;
+use uds_protocol::WireFormat;
 
 #[derive(Debug)]
 pub struct Message<DiagnosticDefinitions> {
@@ -34,7 +34,7 @@ pub struct Message<DiagnosticDefinitions> {
     pub payload: Payload<DiagnosticDefinitions>,
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition> {
+impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
     pub fn alive_check_request(
         protocol_version: ProtocolVersion,
     ) -> Message<DiagnosticsDefinition> {
@@ -149,7 +149,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition
     }
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition> {
+impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
     // TODO: This needs careful review and should do a lot more error checking than it does now
     pub fn read<T: Read>(
         mut message_bytes: &mut T,

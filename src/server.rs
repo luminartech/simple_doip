@@ -17,7 +17,7 @@ use std::{
 };
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
-use uds_protocol::SingleValueWireFormat;
+use uds_protocol::WireFormat;
 
 pub struct ClientConnectionInfo {
     /// Client IP address
@@ -27,13 +27,9 @@ pub struct ClientConnectionInfo {
 }
 /// Trait for handling DoIP connections as a server.
 /// Implement this trait to create a custom DoIP server.
-/// Most protocol functions have a simple, de=fault implementation
+/// Most protocol functions have a simple, default implementation
 #[async_trait]
-pub trait ServerConnectionHandler<
-    ReadDefinitions: SingleValueWireFormat,
-    WriteDefinitions: SingleValueWireFormat,
->
-{
+pub trait ServerConnectionHandler<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat> {
     // Required Functions
     // These functions must be implemented by the server implementation
 
@@ -162,8 +158,8 @@ pub struct Server<R, S, T> {
 
 impl<R, S, T> Server<R, S, T>
 where
-    R: SingleValueWireFormat,
-    S: SingleValueWireFormat,
+    R: WireFormat,
+    S: WireFormat,
     T: ServerConnectionHandler<R, S> + Sync,
 {
     pub fn new(connection_handler: T) -> Result<Self, Error> {

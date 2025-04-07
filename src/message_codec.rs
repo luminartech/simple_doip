@@ -1,6 +1,6 @@
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
-use uds_protocol::SingleValueWireFormat;
+use uds_protocol::WireFormat;
 
 use crate::messages::{Header, Message, MessageError, Payload};
 
@@ -22,7 +22,7 @@ impl<DiagnosticsDefinition> Default for MessageCodec<DiagnosticsDefinition> {
     }
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder for MessageCodec<DiagnosticsDefinition> {
+impl<DiagnosticsDefinition: WireFormat> Decoder for MessageCodec<DiagnosticsDefinition> {
     type Item = Message<DiagnosticsDefinition>;
     type Error = MessageError;
 
@@ -57,7 +57,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder for MessageCodec<Diag
     }
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> Encoder<&Message<DiagnosticsDefinition>>
+impl<DiagnosticsDefinition: WireFormat> Encoder<&Message<DiagnosticsDefinition>>
     for MessageCodec<DiagnosticsDefinition>
 {
     type Error = MessageError;

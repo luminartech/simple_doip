@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 
-use uds_protocol::SingleValueWireFormat;
+use uds_protocol::WireFormat;
 
 use crate::messages::{
     AliveCheckResponse, DiagnosticMessage, DiagnosticMessageAck, DiagnosticPowerModeCode,
@@ -29,7 +29,7 @@ pub enum Payload<DiagnosticsDefinition> {
     VehicleIdentificationResponse(VehicleIdentificationResponse),
 }
 
-impl<DiagnosticsDefinitions: SingleValueWireFormat> Payload<DiagnosticsDefinitions> {
+impl<DiagnosticsDefinitions: WireFormat> Payload<DiagnosticsDefinitions> {
     pub fn read<R: Read>(
         mut payload_bytes: &mut R,
         payload_type: PayloadType,

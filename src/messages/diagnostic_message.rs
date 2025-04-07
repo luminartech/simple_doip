@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use uds_protocol::SingleValueWireFormat;
+use uds_protocol::WireFormat;
 
 use super::message_error::MessageError;
 
@@ -12,11 +12,12 @@ pub struct DiagnosticMessage<DiagnosticsDefinition> {
     pub user_data: DiagnosticsDefinition,
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> DiagnosticMessage<DiagnosticsDefinition> {
+impl<DiagnosticsDefinition: WireFormat> DiagnosticMessage<DiagnosticsDefinition> {
     pub fn read<R: Read>(reader: &mut R) -> Result<Self, MessageError> {
         let source_address = reader.read_u16::<BigEndian>()?;
         let target_address = reader.read_u16::<BigEndian>()?;
-        let user_data = DiagnosticsDefinition::from_reader(reader)?;
+        let user_data = DiagnosticsDefinition::option_from_reader(reader)?
+            .expect("Diagnostics Messages should never be empty");
 
         Ok(Self {
             source_address,

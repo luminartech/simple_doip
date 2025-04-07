@@ -4,6 +4,7 @@ use crate::{
         ActivationTypeCode, AliveCheckResponse, Header, Message, MessageError, Payload,
         PayloadType, ProtocolVersion, RoutingActivationResponse,
     },
+    traits::WirePayload,
     Error,
 };
 
@@ -50,7 +51,7 @@ pub struct Client<ReadDefinitions, WriteDefinitions> {
     write_sink: FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>,
 }
 
-impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFormat>
+impl<ReadDefinitions: WirePayload + 'static, WriteDefinitions: WirePayload + 'static>
     Client<ReadDefinitions, WriteDefinitions>
 {
     /// Create a DoIP connection.
