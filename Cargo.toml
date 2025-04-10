@@ -16,6 +16,9 @@ tokio-util = { version = "0.7.12", optional = true, features = [
     "net",
     "codec",
 ] }
+tracing.workspace = true
+tracing-subscriber = "0.3"
+
 
 [dev-dependencies]
 anyhow = "1"
