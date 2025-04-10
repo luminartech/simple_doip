@@ -7,18 +7,23 @@ use tokio::{
         TcpSocket,
     },
     select,
+    sync::mpsc,
 };
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 use tracing::debug;
 use uds_protocol::WireFormat;
 
-use crate::messages::*;
+use crate::{client, messages::*};
 use crate::{client::ClientOptions, message_codec::MessageCodec, Error};
 
 /// Buffer size for the TCP socket
 const BUFFER_SIZE: u32 = 1024 * 64;
 
+pub(super) enum Control<ReadDefinitions> {
+    UDSMessage(Message<ReadDefinitions>),
+    RoutingActivation,
+}
 /// Inner client responsible for the handling of the connection details,
 /// including creating 2 channels for sending and receiving messages.
 /// it manages its inner state asynchronously, only propagating the
@@ -28,23 +33,44 @@ const BUFFER_SIZE: u32 = 1024 * 64;
 ///
 pub(super) struct Inner<ReadDefinitions, WriteDefinitions> {
     client_options: ClientOptions,
-    read_stream: FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>,
-    write_sink: FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>,
+    /// MPSC Receiver used to receive control messages from outer client
+    control_receiver: mpsc::Receiver<FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>>,
+    /// MPSC Sender used to send updates to outer client
+    update_sender: mpsc::Sender<FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>>,
+
+    /// active request in flight (if it exists) in case the connection is lost
+    active_request: Option<Control<ReadDefinitions>>,
 }
 
 impl<ReadDefinitions, WriteDefinitions> Inner<ReadDefinitions, WriteDefinitions>
 where
-    ReadDefinitions: WireFormat + std::fmt::Debug + 'static + std::marker::Send,
-    WriteDefinitions: WireFormat + std::fmt::Debug + 'static + std::marker::Send,
+    ReadDefinitions: WireFormat + std::fmt::Debug + 'static + Send,
+    WriteDefinitions: WireFormat + std::fmt::Debug + 'static + Send,
 {
-    /// Create a new inner client.
-    /// TODO: Does this need to be a Result? A constructor?
-    pub async fn new(
+    /// Spawns the inner client to run in the background and returns the send and recieve channels
+    pub async fn spawn(
+        client_options: ClientOptions,
+    ) -> (
+        mpsc::Sender<FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>>,
+        mpsc::Receiver<FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>>,
+    ) {
+        let (control_sender, control_receiver) = mpsc::channel(16);
+        let (update_sender, update_receiver) = mpsc::channel(16);
+        let inner = Inner {
+            client_options,
+            active_request: None,
+            control_receiver,
+            update_sender,
+        };
+        inner.run();
+        (control_sender, update_receiver)
+    }
+    pub async fn connect(
         client_options: ClientOptions,
     ) -> Result<
         (
-            FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>,
-            FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>,
+            mpsc::Sender<FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>>,
+            mpsc::Receiver<FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>>,
         ),
         Error,
     > {
@@ -77,11 +103,6 @@ where
         let read_stream = FramedRead::new(rx, MessageCodec::new());
         let write_sink = FramedWrite::new(tx, MessageCodec::new());
         Ok((read_stream, write_sink))
-    }
-
-    /// Connect to the server.
-    pub async fn connect(&mut self) -> Result<(), Error> {
-        todo!();
     }
 
     /// Reconnect to the server in case the connection is lost.
@@ -165,29 +186,36 @@ where
         }
     }
 
+    async fn handle_control_message(&mut self) {
+        todo!()
+    }
+
     fn run(mut self) {
         tokio::spawn(async move {
             debug!("Starting DOIP inner client loop");
             loop {
                 let Self {
-                    read_stream,
-                    write_sink,
+                    control_receiver,
+                    update_sender,
                     ..
                 } = &mut self;
 
                 // Read a message from the read stream
                 select! {
-                    Some(message) = read_stream.next() => {
-                        match message {
-                            Ok(msg) => {
-                                debug!("Received message: {:?}", msg);
-                            }
-                            Err(e) => {
-                                debug!("Error reading message: {:?}", e);
-                            }
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(125)) => {}
+                    // Receive a control message
+                    ctrl = control_receiver.recv() => {
+                        if let Some(ctrl) = ctrl {
+                            assert!(self.active_request.is_none());
+                            // debug!("Received control message: {:?}", ctrl);
+                            self.active_request = Some(ctrl);
+                        } else {
+                            // The sender has been dropped, so we should exit
+                            break;
                         }
                     }
                 }
+                self.handle_control_message().await;
             }
         });
     }

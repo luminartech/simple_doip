@@ -15,11 +15,15 @@ use std::{
     net::{IpAddr, SocketAddr},
     time::Duration,
 };
-use tokio::net::{
-    tcp::{OwnedReadHalf, OwnedWriteHalf},
-    TcpSocket,
+use tokio::{
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpSocket,
+    },
+    sync::mpsc,
 };
 use tokio_util::codec::{FramedRead, FramedWrite};
+use tracing::{info, trace};
 
 /// DoIP client options used to specify connection info
 /// Derive `Serialize` and `Deserialize` for use in config files
@@ -47,32 +51,46 @@ pub enum AddressType {
 }
 
 /// Follows the Facade pattern, providing a simplified interface to the client
+#[derive(Debug)]
 pub struct Client<ReadDefinitions, WriteDefinitions> {
     pub client_options: ClientOptions,
-    read_stream: FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>,
-    write_sink: FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>,
+    /// Sends messages from the user to the inner client
+    control_sender: mpsc::Sender<FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>>,
+    /// Receives messages from the inner client to the user
+    update_receiver: mpsc::Receiver<FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>>,
 }
 
 impl<ReadDefinitions: WirePayload + 'static, WriteDefinitions: WirePayload + 'static>
     Client<ReadDefinitions, WriteDefinitions>
 {
     /// Create a DoIP connection.
-    /// The target port defaults to [`SERVER_TCP_PORT`].
+    /// The target port defaults to [`crate::TCP_PORT`].
     pub async fn connect(client_options: ClientOptions) -> Result<Self, Error> {
-        let (read_stream, write_sink) =
-            Inner::<ReadDefinitions, WriteDefinitions>::new(client_options).await?;
-
+        let (control_sender, update_receiver) =
+            Inner::<ReadDefinitions, WriteDefinitions>::spawn(client_options).await;
         Ok(Self {
             client_options,
-            read_stream,
-            write_sink,
+            control_sender,
+            update_receiver,
         })
     }
 
+    /// Returns an Option of a Response if there was one in flight when the client or server disconnected
+    pub async fn reconnect(&mut self) -> Result<Option<Message<WriteDefinitions>>, Error> {
+        todo!("Reconnect not implemented yet");
+    }
+
     pub async fn close(&mut self) -> Result<(), Error> {
-        self.write_sink.flush().await?;
-        self.write_sink.close().await?;
+        // self.write_sink.flush().await?;
+        // self.write_sink.close().await?;
         Ok(())
+    }
+
+    /// Automatically send UDS tester present's to the server
+    /// This is useful for keeping the connection alive as a set and forget
+    pub async fn auto_tester_present(send_tester_present: bool) {
+        trace!("Auto tester present: {}", send_tester_present);
+        todo!("Auto tester present not implemented yet");
     }
 
     pub async fn diagnostic_message(
@@ -90,7 +108,31 @@ impl<ReadDefinitions: WirePayload + 'static, WriteDefinitions: WirePayload + 'st
             user_data,
         );
         // Send the message
-        self.write_sink.send(&message).await?;
+        self.send_control_message(&message).await?;
         Ok(())
+    }
+
+    /// Send a request to the server and wait for a response
+    async fn send_control_message(
+        &mut self,
+        control: Message<ReadDefinitions>,
+    ) -> Result<Response, Error> {
+        // Create new request and response channels to await the response of
+        let (control_message, response_sender) = ControlMessage::new(control);
+        self.control_sender.send(control_message).await.unwrap();
+        response_sender.await.unwrap();
+    }
+
+    pub async fn shut_down(self) {
+        let Self {
+            control_sender,
+            mut update_receiver,
+            ..
+        } = self;
+        drop(control_sender);
+        info!("Shutting Down SOME/IP client");
+        while update_receiver.recv().await.is_some() {
+            info!(".");
+        }
     }
 }
