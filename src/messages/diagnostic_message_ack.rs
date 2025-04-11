@@ -4,17 +4,22 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::message_error::MessageError;
 
+/// Diagnostic Acknowledgement Codes
+///
+/// These codes are used to indicate the status of a diagnostic message
+/// sent from a tester to a DoIP server.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
 pub enum DiagnosticAckCode {
-    RoutingConfirmationAck,
+    RoutingConfirmationAck = 0x00,
     Reserved(u8),
-    InvalidSourceAddress,
-    UnknownTargetAddress,
-    DiagnosticMessageTooLarge,
-    OutOfMemory,
-    TargetUnreachable,
-    UnknownNetwork,
-    TransportProtocolError,
+    InvalidSourceAddress = 0x02,
+    UnknownTargetAddress = 0x03,
+    DiagnosticMessageTooLarge = 0x04,
+    OutOfMemory = 0x05,
+    TargetUnreachable = 0x06,
+    UnknownNetwork = 0x07,
+    TransportProtocolError = 0x08,
 }
 
 impl From<u8> for DiagnosticAckCode {

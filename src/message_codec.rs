@@ -4,6 +4,9 @@ use uds_protocol::WireFormat;
 
 use crate::messages::{Header, Message, MessageError, Payload};
 
+/// Codec for the DoIP messages, used to encode and decode messages from
+/// the TCP stream
+#[derive(Debug)]
 pub struct MessageCodec<DiagnosticsDefinition> {
     _diagnostics_definition: std::marker::PhantomData<DiagnosticsDefinition>,
 }
