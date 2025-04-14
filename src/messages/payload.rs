@@ -10,6 +10,8 @@ use crate::messages::{
 
 use super::{NackCode, RoutingActivationRequest};
 
+/// Maps [PayloadType] to the corresponding `Payload` type when reading and writing
+/// messages. This is the main payload type for DoIP messages.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Payload<DiagnosticsDefinition> {
