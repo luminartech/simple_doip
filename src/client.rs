@@ -115,12 +115,12 @@ impl<ReadDefinitions: WirePayload + 'static, WriteDefinitions: WirePayload + 'st
     /// Send a request to the server and wait for a response
     async fn send_control_message(
         &mut self,
-        control: Message<ReadDefinitions>,
-    ) -> Result<Response, Error> {
+        control: &Message<WriteDefinitions>,
+    ) -> Result<Message<ReadDefinitions>, Error> {
         // Create new request and response channels to await the response of
         let (control_message, response_sender) = ControlMessage::new(control);
         self.control_sender.send(control_message).await.unwrap();
-        response_sender.await.unwrap();
+        response_sender.await
     }
 
     pub async fn shut_down(self) {

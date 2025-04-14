@@ -11,6 +11,8 @@ pub mod traits;
 
 pub mod messages;
 
+pub mod socket_manager;
+
 #[cfg(feature = "client")]
 pub mod client;
 /// The client feature enables
@@ -28,7 +30,15 @@ pub mod server;
 
 /// Default TCP port for DoIP
 /// This is the port used for unencrypted connections
+/// Used for:
+///  * Vehicle information services
+///  * Control commands
+///
 pub const TCP_PORT: u16 = 13400;
+
+/// Default UDP port for DoIP
+/// This is the port used for discovery
+pub const UDP_DISCOVERY_PORT: u16 = 13400;
 
 /// TODO: Implement TLS support
 pub const TCP_TLS_PORT: u16 = 3496;

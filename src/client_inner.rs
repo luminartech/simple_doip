@@ -24,6 +24,14 @@ pub(super) enum Control<ReadDefinitions> {
     UDSMessage(Message<ReadDefinitions>),
     RoutingActivation,
 }
+
+/// Results of a Control message
+#[derive(Debug)]
+pub enum ControlResponse {
+    Success,
+    SocketBind(u16),
+}
+
 /// Inner client responsible for the handling of the connection details,
 /// including creating 2 channels for sending and receiving messages.
 /// it manages its inner state asynchronously, only propagating the
