@@ -73,50 +73,6 @@ where
         inner.run();
         (control_sender, update_receiver)
     }
-    pub async fn connect(
-        client_options: ClientOptions,
-    ) -> Result<
-        (
-            mpsc::Sender<FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>>,
-            mpsc::Receiver<FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>>,
-        ),
-        Error,
-    > {
-        if client_options.client_logical_address < 0x0E00
-            || client_options.client_logical_address > 0x0FFF
-        {
-            // How does the inner client deal with errors? Should they bubble up to the outer client?
-
-            return Err(Error::InvalidClientLogicalAddress(
-                client_options.client_logical_address,
-            ));
-        }
-        let tcp_socket = match client_options.server_address {
-            SocketAddr::V4(_) => TcpSocket::new_v4().unwrap(),
-            SocketAddr::V6(_) => TcpSocket::new_v6().unwrap(),
-        };
-
-        tcp_socket.set_reuseaddr(true)?;
-        tcp_socket.set_recv_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_nodelay(false)?;
-        let tcp_stream = tokio::time::timeout(
-            Duration::from_millis(5100),
-            tcp_socket.connect(client_options.server_address),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        let (rx, tx) = tcp_stream.into_split();
-        let read_stream = FramedRead::new(rx, MessageCodec::new());
-        let write_sink = FramedWrite::new(tx, MessageCodec::new());
-        Ok((read_stream, write_sink))
-    }
-
-    /// Reconnect to the server in case the connection is lost.
-    pub async fn reconnect(&mut self) -> Result<(), Error> {
-        todo!();
-    }
 
     /// Close the connection.
     pub async fn close(&mut self) -> Result<(), Error> {
