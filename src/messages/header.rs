@@ -1,3 +1,7 @@
+//! Represents the header of a DoIP message
+//!
+//! Will check the protocol version and inverse protocol version to ensure
+//! the message is valid.
 use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -18,7 +22,22 @@ pub enum ProtocolVersion {
     /// Client Future Spec Reserved
     ReservedFuture(u8),
     /// Client Version Value for Vehicle Identification Request
-    VehicleIdentificationRequest = 0xFE,
+    VehicleIdentificationRequest = 0xFF,
+}
+
+impl ProtocolVersion {
+    /// Returns the expected inverse value of the protocol version
+    /// for verification of the message
+    pub fn inverse(&self) -> u8 {
+        match self {
+            ProtocolVersion::Reserved => 0xFF,
+            ProtocolVersion::V2010 => 0xFE,
+            ProtocolVersion::V2012 => 0xFD,
+            ProtocolVersion::V2019 => 0xFC,
+            ProtocolVersion::ReservedFuture(value) => !value,
+            ProtocolVersion::VehicleIdentificationRequest => 0x00,
+        }
+    }
 }
 
 impl From<u8> for ProtocolVersion {
@@ -144,6 +163,12 @@ impl From<PayloadType> for u16 {
 }
 
 /// DoIP Message Header
+///
+/// The header is 8 bytes long and contains the following fields:
+/// * [ProtocolVersion] (1 byte)
+/// * Inverse Protocol Version (1 byte)
+/// * [PayloadType] (2 bytes)
+/// * Payload Length (4 bytes)
 #[derive(Debug)]
 pub struct Header {
     /// Client Protocol Version
@@ -162,10 +187,10 @@ impl Header {
         payload_type: PayloadType,
         payload_length: u32,
     ) -> Self {
-        let protocol_version_byte: u8 = protocol_version.into();
+        let inverse_protocol_version = protocol_version.inverse();
         Header {
             protocol_version,
-            inverse_protocol_version: protocol_version_byte ^ 0xFF,
+            inverse_protocol_version,
             payload_type,
             payload_length,
         }
@@ -173,8 +198,7 @@ impl Header {
     /// Checks that the inverse value of the protocol version is correct
     /// to ensure a properly formatted DOIP message is received
     pub(crate) fn version_inverse_correct(&self) -> Result<(), MessageError> {
-        let protocol_version: u8 = self.protocol_version.into();
-        let expected = protocol_version ^ 0xFF;
+        let expected = self.protocol_version.inverse();
         if expected == self.inverse_protocol_version {
             Ok(())
         } else {
