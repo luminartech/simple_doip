@@ -22,4 +22,8 @@ pub enum Error {
     ValueOutOfRange(#[from] std::num::TryFromIntError),
     #[error("Received Nack with code: {0:?}")]
     NackReceived(NackCode),
+    #[error("Socket not bound")]
+    SocketNotBound,
+    #[error("Socket closed unexpectedly")]
+    SocketClosedUnexpectedly,
 }

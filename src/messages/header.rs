@@ -169,7 +169,7 @@ impl From<PayloadType> for u16 {
 /// * Inverse Protocol Version (1 byte)
 /// * [PayloadType] (2 bytes)
 /// * Payload Length (4 bytes)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Header {
     /// Client Protocol Version
     pub protocol_version: ProtocolVersion,

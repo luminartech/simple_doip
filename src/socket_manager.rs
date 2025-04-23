@@ -1,3 +1,8 @@
+//! The SocketManager is responsible for managing the socket connection and
+//! handling the messages sent and received over the socket.
+//!
+//! It is responsible for binding the socket, sending and receiving messages,
+//! and shutting down the socket when it is no longer needed.
 use std::{
     net::{Ipv4Addr, SocketAddr},
     time::Duration,
@@ -17,8 +22,10 @@ use tracing::{error, info, trace};
 use uds_protocol::WireFormat;
 
 use crate::{
-    client::ClientOptions, client_inner::ControlResponse, message_codec::MessageCodec,
-    messages::Message, Error, TCP_PORT,
+    client::ClientOptions,
+    message_codec::MessageCodec,
+    messages::{Message, MessageError},
+    Error, TCP_PORT,
 };
 
 // TODO: Move this to a config file
@@ -27,7 +34,10 @@ const BUFFER_SIZE: u32 = 1024 * 64;
 
 #[derive(Debug)]
 pub struct SocketManager<ReadDefinitions, WriteDefinitions> {
-    receiver: mpsc::Receiver<Result<Message<ReadDefinitions>, Error>>,
+    /// Receiver used to receive messages from the socket
+    /// This is the channel that the socket manager uses to send messages back up to the client
+    receiver: mpsc::Receiver<Result<Message<ReadDefinitions>, MessageError>>,
+    /// Sender used to send messages to the socket
     sender: mpsc::Sender<Message<WriteDefinitions>>,
     local_port: u16,
     session_id: u16,
@@ -41,7 +51,7 @@ where
     /// Creates a new SocketManager instance
     ///
     /// Binds a UDP socket for discovery
-    pub async fn bind_discovery(interface: Ipv4Addr) -> Result<Self, Error> {
+    pub async fn bind_discovery(_interface: Ipv4Addr) -> Result<Self, Error> {
         unimplemented!("UDP discovery not implemented yet");
         // let (rx_tx, rx_rx) = mpsc::channel(16);
         // let (tx_tx, tx_rx) = mpsc::channel(16);
@@ -104,20 +114,28 @@ where
     }
 
     /// Send a message to the target address
-    pub async fn send(
-        &mut self,
-        message: Message<WriteDefinitions>,
-    ) -> Result<ControlResponse, Error> {
-        if let Err(e) = self.sender.send(message).await {
+    pub async fn send(&mut self, message: Message<WriteDefinitions>) -> Result<(), Error> {
+        self.sender.send(message).await.map_err(|e| {
             error!("Failed to send message: {}", e);
-        }
+            Error::ConnectionClosed
+        })?;
         self.session_id += 1;
-        Ok(ControlResponse::Success)
+        Ok(())
     }
 
     /// Receive a message from the receiver/Request channel
-    pub async fn receive(&mut self) -> Option<Result<Message<ReadDefinitions>, Error>> {
+    pub async fn receive(&mut self) -> Option<Result<Message<ReadDefinitions>, MessageError>> {
         self.receiver.recv().await
+    }
+
+    /// Receive a message with a timeout
+    pub async fn receive_timeout(
+        &mut self,
+        timeout: Duration,
+    ) -> Option<Result<Message<ReadDefinitions>, MessageError>> {
+        tokio::time::timeout(timeout, self.receiver.recv())
+            .await
+            .unwrap()
     }
 
     pub fn session_id(&self) -> u16 {
@@ -147,7 +165,7 @@ where
 
     /// Spawn the socket loop to get messages from the socket
     fn spawn_socket_loop(
-        rx_tx: mpsc::Sender<Result<Message<ReadDefinitions>, Error>>,
+        rx_tx: mpsc::Sender<Result<Message<ReadDefinitions>, MessageError>>,
         mut tx_rx: mpsc::Receiver<Message<WriteDefinitions>>,
         mut socket_read_stream: FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>,
         mut socket_write_sink: FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>,
@@ -163,8 +181,7 @@ where
                                 error!("Error decoding message: {:?}", e)
                             }
                             Some(message) => {
-                                let message = message.map_err(|e| Error::from(e));
-                                trace!("Received: {:?}", message);
+                                trace!("Received response from socket: {:?}", message);
                                 match rx_tx.send( message ).await {
                                     Ok(_) => {}
                                     Err(_) => {
@@ -185,8 +202,14 @@ where
                     message = tx_rx.recv() => {
                         match message {
                             Some(message) => {
-                                trace!("Sending: {:?}", message);
-                                socket_write_sink.send(&message).await.unwrap();
+                                trace!("Sending request to socket: {:?}", message);
+                                match socket_write_sink.send(&message).await {
+                                    Ok(_) => {}
+                                    Err(e) => {
+                                        error!("Error sending message to socket: {:?}", e);
+                                        break;
+                                    }
+                                }
                             }
                             None => {
                                 info!("Socket Dropping");

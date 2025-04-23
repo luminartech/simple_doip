@@ -1,7 +1,6 @@
+use crate::{client_inner::ControlMessage, messages::RoutingActivationRequest};
 use crate::{
-    client,
     client_inner::Inner,
-    message_codec::MessageCodec,
     messages::{
         ActivationTypeCode, AliveCheckResponse, Header, Message, MessageError, Payload,
         PayloadType, ProtocolVersion, RoutingActivationResponse,
@@ -10,19 +9,8 @@ use crate::{
     Error,
 };
 
-use futures::{SinkExt, StreamExt};
-use std::{
-    net::{IpAddr, SocketAddr},
-    time::Duration,
-};
-use tokio::{
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpSocket,
-    },
-    sync::mpsc,
-};
-use tokio_util::codec::{FramedRead, FramedWrite};
+use std::net::{IpAddr, SocketAddr};
+use tokio::sync::{mpsc, oneshot};
 use tracing::{info, trace};
 
 /// DoIP client options used to specify connection info
@@ -55,19 +43,20 @@ pub enum AddressType {
 pub struct Client<ReadDefinitions, WriteDefinitions> {
     pub client_options: ClientOptions,
     /// Sends messages from the user to the inner client
-    control_sender: mpsc::Sender<FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>>,
+    control_sender: mpsc::Sender<ControlMessage<ReadDefinitions, WriteDefinitions>>,
     /// Receives messages from the inner client to the user
-    update_receiver: mpsc::Receiver<FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>>,
+    update_receiver: mpsc::Receiver<Result<Message<ReadDefinitions>, MessageError>>,
 }
 
-impl<ReadDefinitions: WirePayload + 'static, WriteDefinitions: WirePayload + 'static>
-    Client<ReadDefinitions, WriteDefinitions>
+impl<
+        ReadDefinitions: WirePayload + 'static + Sync + Send + Clone,
+        WriteDefinitions: WirePayload + 'static + Sync + Send + Clone,
+    > Client<ReadDefinitions, WriteDefinitions>
 {
     /// Create a DoIP connection.
     /// The target port defaults to [`crate::TCP_PORT`].
     pub async fn connect(client_options: ClientOptions) -> Result<Self, Error> {
-        let (control_sender, update_receiver) =
-            Inner::<ReadDefinitions, WriteDefinitions>::spawn(client_options).await;
+        let (control_sender, update_receiver) = Inner::spawn(client_options);
         Ok(Self {
             client_options,
             control_sender,
@@ -78,12 +67,6 @@ impl<ReadDefinitions: WirePayload + 'static, WriteDefinitions: WirePayload + 'st
     /// Returns an Option of a Response if there was one in flight when the client or server disconnected
     pub async fn reconnect(&mut self) -> Result<Option<Message<WriteDefinitions>>, Error> {
         todo!("Reconnect not implemented yet");
-    }
-
-    pub async fn close(&mut self) -> Result<(), Error> {
-        // self.write_sink.flush().await?;
-        // self.write_sink.close().await?;
-        Ok(())
     }
 
     /// Automatically send UDS tester present's to the server
@@ -108,19 +91,29 @@ impl<ReadDefinitions: WirePayload + 'static, WriteDefinitions: WirePayload + 'st
             user_data,
         );
         // Send the message
-        self.send_control_message(&message).await?;
-        Ok(())
+        let response = self.send_message(&message).await;
+        match response {
+            Ok(response) => {
+                // Send the response to the update channel
+                Ok(())
+            }
+            Err(err) => {
+                // Send the error to the update channel
+                Ok(())
+                // self.update_receiver.send(Err(err)).await.unwrap();
+            }
+        }
     }
 
-    /// Send a request to the server and wait for a response
-    async fn send_control_message(
+    /// Send a request to the server and wait for a response (which is returned)
+    async fn send_message(
         &mut self,
         control: &Message<WriteDefinitions>,
     ) -> Result<Message<ReadDefinitions>, Error> {
         // Create new request and response channels to await the response of
-        let (control_message, response_sender) = ControlMessage::new(control);
-        self.control_sender.send(control_message).await.unwrap();
-        response_sender.await
+        let (response, message) = ControlMessage::send_request(control);
+        self.control_sender.send(message).await.unwrap();
+        response.await.unwrap()
     }
 
     pub async fn shut_down(self) {
@@ -130,7 +123,7 @@ impl<ReadDefinitions: WirePayload + 'static, WriteDefinitions: WirePayload + 'st
             ..
         } = self;
         drop(control_sender);
-        info!("Shutting Down SOME/IP client");
+        info!("Shutting Down DOIP client");
         while update_receiver.recv().await.is_some() {
             info!(".");
         }
