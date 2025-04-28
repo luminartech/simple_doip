@@ -1,4 +1,7 @@
-use crate::messages::{MessageError, NackCode, PayloadType};
+use crate::{
+    messages::{MessageError, NackCode, PayloadType},
+    LogicalAddress,
+};
 
 use thiserror::Error;
 
@@ -11,7 +14,7 @@ pub enum Error {
     #[error(transparent)]
     MessageError(#[from] MessageError),
     #[error("Invalid logical address for client: {0:#06x}")]
-    InvalidClientLogicalAddress(u16),
+    InvalidClientLogicalAddress(LogicalAddress),
     #[error(transparent)]
     ConnectionTimeout(#[from] tokio::time::error::Elapsed),
     #[error("Unexpected Ack message: {0:?}")]

@@ -28,6 +28,10 @@ pub mod message_codec;
 #[cfg(feature = "server")]
 pub mod server;
 
+pub mod logical_address;
+use logical_address::LogicalAddress;
+use tokio::time;
+
 /// Default TCP port for DoIP
 /// This is the port used for unencrypted connections
 /// Used for:
@@ -43,20 +47,21 @@ pub const UDP_DISCOVERY_PORT: u16 = 13400;
 /// TODO: Implement TLS support
 pub const TCP_TLS_PORT: u16 = 3496;
 
-pub const LIDAR_LOGICAL_ADDRESS: u16 = 0xE400;
+/// Is this always the address?
+pub const LIDAR_LOGICAL_ADDRESS: LogicalAddress = LogicalAddress(0xE400);
 
 // DoIP timing and communication parameters
 
 /// Initial inactivity timeout in seconds for TCP connections directly after a TCP_DATA socket is established. Timeout is 2 seconds.
 ///
 /// Must complete routing activation within this time otherwise the socket is closed by the DoIP entity
-pub const TCP_TIMEOUT_INITIAL_INACTIVITY: u32 = 2;
+pub const TCP_TIMEOUT_INITIAL_INACTIVITY: time::Duration = time::Duration::from_secs(2);
 
 /// General inactivity timeout for TCP connections. Timeout is 300 seconds (5 minutes).
 ///
 /// If no data is sent or received for this duration, the connection is closed by the DoIP entity
-pub const TCP_TIMEOUT_GENERAL_INACTIVITY: u32 = 300; // seconds (5 minutes)
+pub const TCP_TIMEOUT_GENERAL_INACTIVITY: time::Duration = time::Duration::from_secs(300);
 
 /// Alive check for the maximum amount of time an entity waits for an alive check response after having
 /// made an alive check request. Timeout is 5 seconds.
-pub const TCP_TIMEOUT_ALIVE_CHECK: u32 = 5;
+pub const TCP_TIMEOUT_ALIVE_CHECK: time::Duration = time::Duration::from_secs(5);

@@ -73,8 +73,9 @@ where
     ///
     /// TCP socket is bound to the specified address
     pub async fn bind(client_options: ClientOptions) -> Result<Self, Error> {
-        if client_options.client_logical_address < 0x0E00
-            || client_options.client_logical_address > 0x0FFF
+        if !client_options
+            .client_logical_address
+            .is_valid_client_address()
         {
             return Err(Error::InvalidClientLogicalAddress(
                 client_options.client_logical_address,

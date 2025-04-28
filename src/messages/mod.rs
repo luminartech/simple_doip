@@ -28,6 +28,8 @@ pub use vehicle_identification_response::{
 use std::io::{Read, Write};
 use uds_protocol::WireFormat;
 
+use crate::LogicalAddress;
+
 /// Message contains the payload and header info of a DoIP message
 /// The payload is a generic type that implements the WireFormat trait
 /// The header is a fixed size struct that contains the protocol version, payload type, and payload length
@@ -49,7 +51,7 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
 
     pub fn alive_check_response(
         protocol_version: ProtocolVersion,
-        source_address: u16,
+        source_address: LogicalAddress,
     ) -> Message<DiagnosticsDefinition> {
         let response = AliveCheckResponse { source_address };
         Message {
@@ -60,8 +62,8 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
 
     pub fn diagnostic_message(
         protocol_version: ProtocolVersion,
-        source_address: u16,
-        target_address: u16,
+        source_address: LogicalAddress,
+        target_address: LogicalAddress,
         message: DiagnosticsDefinition,
     ) -> Message<DiagnosticsDefinition> {
         let payload_size = message.required_size() as u32 + 4;
@@ -82,8 +84,8 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
 
     pub fn diagnostic_message_ack(
         protocol_version: ProtocolVersion,
-        source_address: u16,
-        target_address: u16,
+        source_address: LogicalAddress,
+        target_address: LogicalAddress,
         ack_code: DiagnosticAckCode,
         previous_message_data: Vec<u8>,
     ) -> Message<DiagnosticsDefinition> {
@@ -105,7 +107,7 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
 
     pub fn routing_activation_request(
         protocol_version: ProtocolVersion,
-        source_address: u16,
+        source_address: LogicalAddress,
         activation_type: ActivationTypeCode,
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
     ) -> Message<DiagnosticsDefinition> {

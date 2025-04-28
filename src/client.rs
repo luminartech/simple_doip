@@ -6,7 +6,7 @@ use crate::{
         PayloadType, ProtocolVersion, RoutingActivationResponse,
     },
     traits::WirePayload,
-    Error,
+    Error, LogicalAddress,
 };
 
 use std::net::{IpAddr, SocketAddr};
@@ -21,13 +21,13 @@ pub struct ClientOptions {
     pub server_address: SocketAddr,
     /// Target logical addresses, uniquely identifies the ECU to be diagnosed.
     /// Valid range: 0x0001 - 0x0DFF
-    pub server_logical_address: u16,
-    /// Valid range: 0x0001 - 0x0DFF
-    pub server_physical_address: u16,
+    pub server_logical_address: LogicalAddress,
+    /// (Logical address) Valid range: 0x0001 - 0x0DFF
+    pub server_physical_address: LogicalAddress,
     /// Local ip address to bind the TCP and UDP sockets to, e.g. `0.0.0.0`. The port is randomly chosen.
     pub client_address: IpAddr,
     /// Valid range: 0x0E00 - 0x0FFF
-    pub client_logical_address: u16,
+    pub client_logical_address: LogicalAddress,
     /// Which protocol version the client should
     pub protocol_version: ProtocolVersion,
 }

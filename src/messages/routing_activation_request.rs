@@ -2,6 +2,8 @@ use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
+use crate::LogicalAddress;
+
 use super::message_error::MessageError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,7 +48,7 @@ impl From<ActivationTypeCode> for u8 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RoutingActivationRequest {
     /// Address of DoIP entity that requests routing activation.
-    pub source_address: u16,
+    pub source_address: LogicalAddress,
     pub activation_type: ActivationTypeCode,
     pub reserved: [u8; 4],
     pub reserved_vehicle_manufacturer: Option<[u8; 4]>,
@@ -54,7 +56,7 @@ pub struct RoutingActivationRequest {
 
 impl RoutingActivationRequest {
     pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        let source_address = reader.read_u16::<BigEndian>()?;
+        let source_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
         let activation_type = ActivationTypeCode::from(reader.read_u8()?);
 
         let mut reserved = [0x00; 4];
@@ -71,7 +73,7 @@ impl RoutingActivationRequest {
     }
     // TODO: Investigate if we should write the optional vehicle manufacturer specific data if none
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_u16::<BigEndian>(self.source_address)?;
+        writer.write_u16::<BigEndian>(self.source_address.into())?;
         writer.write_u8(self.activation_type.into())?;
         writer.write_all(&self.reserved)?;
         if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {
