@@ -25,7 +25,7 @@ use crate::{
     client::ClientOptions,
     message_codec::MessageCodec,
     messages::{Message, MessageError},
-    Error, TCP_PORT,
+    Error, TCP_PORT, TCP_TIMEOUT_GENERAL_INACTIVITY,
 };
 
 // TODO: Move this to a config file
@@ -172,8 +172,16 @@ where
         mut socket_write_sink: FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>,
     ) {
         tokio::spawn(async move {
+            // General TCP activity timeout
+            // this is used to close the socket if there is no activity for a while
+            let mut last_activity = tokio::time::Instant::now();
+
             loop {
                 select! {
+                    _ = tokio::time::sleep_until(last_activity + TCP_TIMEOUT_GENERAL_INACTIVITY) => {
+                        info!("General inactivity timeout reached, closing socket");
+                        break;
+                    }
                     // Once there is information in the Response/Read stream we'll do work on it
                     // and send it along to the receiver on the other end
                     result = socket_read_stream.next() => {
@@ -182,6 +190,8 @@ where
                                 error!("Error decoding message: {:?}", e)
                             }
                             Some(message) => {
+                                // Update the last activity time
+                                last_activity = tokio::time::Instant::now();
                                 trace!("Received response from socket: {:?}", message);
                                 match rx_tx.send( message ).await {
                                     Ok(_) => {}
@@ -203,6 +213,9 @@ where
                     message = tx_rx.recv() => {
                         match message {
                             Some(message) => {
+                                // Update the last activity time
+                                last_activity = tokio::time::Instant::now();
+
                                 trace!("Sending request to socket: {:?}", message);
                                 match socket_write_sink.send(&message).await {
                                     Ok(_) => {}
