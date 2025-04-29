@@ -16,6 +16,15 @@ use crate::{messages::*, socket_manager::SocketManager};
 /// Messages used to control the DOIP entities
 #[derive(Debug)]
 pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
+    AliveCheckRequest(
+        Message<WriteDefinitions>,
+        oneshot::Sender<Result<AliveCheckResponse, Error>>,
+    ),
+    /// No oneshot needed, the response is sent
+    /// and does not need to be awaited
+    AliveCheckResponse(Message<WriteDefinitions>),
+
+    BindSocket(oneshot::Sender<Result<(), Error>>),
     UDSMessage(
         Message<WriteDefinitions>,
         oneshot::Sender<Result<Message<ReadDefinitions>, Error>>,
@@ -56,6 +65,12 @@ impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
     ) {
         let (sender, receiver) = oneshot::channel();
         (receiver, Self::UDSMessage(message.clone(), sender))
+    }
+
+    /// Builder for the bind socket message
+    pub fn create_bind_socket_message() -> (oneshot::Receiver<Result<(), Error>>, Self) {
+        let (sender, receiver) = oneshot::channel();
+        (receiver, Self::BindSocket(sender))
     }
 }
 /// Inner client responsible for the handling of the connection details,
@@ -167,7 +182,7 @@ where
         //     .map_err(|_| Error::SocketNotBound)
     }
 
-    /// UDS Tester Present AKA Alive check is an inner client only function.
+    /// Alive check is an inner client only function.
     /// It is used to check if the server is alive and responding without bothering the user with the details
     async fn request_alive_check(&mut self) -> Result<AliveCheckResponse, Error> {
         if self.tcp_data_socket.is_none() {
@@ -200,6 +215,22 @@ where
         }
     }
 
+    /// Sned an alive check response, can be sent regardless of if there was a request
+    async fn send_alive_check_response(&mut self) -> Result<(), Error> {
+        if self.tcp_data_socket.is_none() {
+            return Err(Error::SocketNotBound);
+        }
+        // Send to the tcp_data_socket
+        self.tcp_data_socket
+            .as_mut()
+            .unwrap()
+            .send(Message::alive_check_response(
+                self.client_options.protocol_version,
+                self.client_options.client_logical_address,
+            ))
+            .await
+    }
+
     async fn receive_socket(
         socket_manager: &mut Option<SocketManager<ReadDefinitions, WriteDefinitions>>,
     ) -> Result<Message<ReadDefinitions>, Error> {
@@ -217,6 +248,21 @@ where
     async fn handle_control_message(&mut self) {
         if let Some(active_request) = self.active_request.take() {
             match active_request {
+                ControlMessage::AliveCheckRequest(message, response) => {
+                    if response.send(self.request_alive_check().await).is_err() {
+                        debug!("Failed to send alive check response");
+                    }
+                }
+                ControlMessage::AliveCheckResponse(message) => {
+                    // Don't really have to handle the alive check response
+                    // it's intended to keep the connection alive and that is handled in the socket manager
+                    debug!("Received alive check response: {:?}", message);
+                }
+                ControlMessage::BindSocket(response) => {
+                    if response.send(self.bind_socket().await).is_err() {
+                        debug!("Failed to send bind socket response");
+                    }
+                }
                 ControlMessage::RoutingActivation(request, response) => {
                     // let response = self
                     //     .request_routing_activation(activation_type, reserved_vehicle_manufacturer)
@@ -269,6 +315,7 @@ where
                     update_sender,
                     tcp_data_socket,
                     active_request,
+                    client_options,
                     run,
                     ..
                 } = &mut self;
@@ -295,6 +342,26 @@ where
                         trace!("Received message from socket: {:?}", message);
                         match message {
                             Ok(received_message) => {
+                                match received_message.payload {
+                                    Payload::AliveCheckRequest => {
+                                        trace!("Received Alive Check Request");
+                                        // Send the alive check response automatically
+                                        tcp_data_socket
+                                            .as_mut()
+                                            .unwrap()
+                                            .send(Message::alive_check_response(
+                                                client_options.protocol_version,
+                                                client_options.client_logical_address,
+                                            ))
+                                            .await;
+                                    }
+                                    Payload::DiagnosticMessageAck(_) => {
+                                        trace!("Received Diagnostic Message Ack, waiting for full response");
+                                    }
+                                    _ => {
+                                        trace!("Received message: {:?}", received_message);
+                                    }
+                                }
                                 if let Some(active) = active_request.take() {
                                     // If the active request is an AwaitResponse that matches the received message,
                                     // send the response to the update channel
@@ -326,10 +393,9 @@ where
                             Err(e) => {
                                 debug!("Error receiving message from socket: {:?}", e);
                                 // Handle the error
+                            }
                         }
                     }
-                    }
-
                 }
                 self.handle_control_message().await;
             }
