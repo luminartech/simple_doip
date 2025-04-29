@@ -10,7 +10,7 @@ use tokio::{
 use tracing::{debug, info, trace};
 use uds_protocol::WireFormat;
 
-use crate::{client::ClientOptions, Error};
+use crate::{client::ClientOptions, connection_state::ConnectionState, Error};
 use crate::{messages::*, socket_manager::SocketManager};
 
 /// Messages used to control the DOIP entities
@@ -78,6 +78,9 @@ pub(super) struct Inner<ReadDefinitions, WriteDefinitions> {
     /// Socket manager for TCP data socket if bound
     tcp_data_socket: Option<SocketManager<ReadDefinitions, WriteDefinitions>>,
 
+    /// Represents the DoIP connection state of the socket
+    connection_state: ConnectionState,
+
     /// Whether to keep the inner client running
     ///
     /// This is used to gracefully shut down the inner client
@@ -105,6 +108,7 @@ where
             update_sender,
             active_request: None,
             tcp_data_socket: None,
+            connection_state: ConnectionState::Listen,
             run: true,
         };
         inner.run();
@@ -118,6 +122,7 @@ where
         } else {
             // Bind the socket
             let socket_manager = SocketManager::bind(self.client_options.clone()).await?;
+            self.connection_state = ConnectionState::Initialized;
             self.tcp_data_socket = Some(socket_manager);
             // Send the socket bind message to the control channel
             Ok(())
@@ -141,6 +146,12 @@ where
         activation_type: ActivationTypeCode,
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
     ) -> Result<(), Error> {
+        if self.connection_state != ConnectionState::Initialized {
+            return Err(Error::InvalidConnectionState(
+                self.connection_state,
+                ConnectionState::Initialized,
+            ));
+        }
         let message = Message::<WriteDefinitions>::routing_activation_request(
             self.client_options.protocol_version,
             self.client_options.client_logical_address,

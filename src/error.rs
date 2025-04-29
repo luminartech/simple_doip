@@ -1,4 +1,5 @@
 use crate::{
+    connection_state::ConnectionState,
     messages::{MessageError, NackCode, PayloadType},
     LogicalAddress,
 };
@@ -29,4 +30,6 @@ pub enum Error {
     SocketNotBound,
     #[error("Socket closed unexpectedly")]
     SocketClosedUnexpectedly,
+    #[error("Connection state is incorrect: \nactual - {0:?}\nexpected - {1:?}")]
+    InvalidConnectionState(ConnectionState, ConnectionState),
 }

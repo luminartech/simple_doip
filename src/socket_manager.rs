@@ -18,13 +18,14 @@ use tokio::{
     sync::mpsc,
 };
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{error, info, trace};
+use tracing::{error, info, trace, warn};
 use uds_protocol::WireFormat;
 
 use crate::{
     client::ClientOptions,
+    logical_address::LogicalAddress,
     message_codec::MessageCodec,
-    messages::{Message, MessageError},
+    messages::{Message, MessageError, PayloadType},
     Error, TCP_PORT, TCP_TIMEOUT_GENERAL_INACTIVITY,
 };
 
@@ -32,6 +33,8 @@ use crate::{
 /// Buffer size for the TCP socket
 const BUFFER_SIZE: u32 = 1024 * 64;
 
+/// 1-to-1 mapping of the socket manager to the client (currently)
+/// There is only one socket manager per client.
 #[derive(Debug)]
 pub struct SocketManager<ReadDefinitions, WriteDefinitions> {
     /// Receiver used to receive messages from the socket
@@ -41,6 +44,8 @@ pub struct SocketManager<ReadDefinitions, WriteDefinitions> {
     sender: mpsc::Sender<Message<WriteDefinitions>>,
     local_port: u16,
     session_id: u16,
+    /// The source address of the client connected to the socket
+    source_address: Option<LogicalAddress>,
 }
 
 impl<ReadDefinitions, WriteDefinitions> SocketManager<ReadDefinitions, WriteDefinitions>
@@ -107,6 +112,7 @@ where
         Self::spawn_socket_loop(rx_tx, tx_rx, socket_read_stream, socket_write_sink);
 
         Ok(Self {
+            source_address: Some(client_options.client_logical_address),
             receiver: rx_rx,
             sender: tx_tx,
             local_port: TCP_PORT, // TODO: Double check this
@@ -180,6 +186,8 @@ where
                 select! {
                     _ = tokio::time::sleep_until(last_activity + TCP_TIMEOUT_GENERAL_INACTIVITY) => {
                         info!("General inactivity timeout reached, closing socket");
+                        // TODO: Do we need to send an update message to update the connection state?
+                        // or should the connection state be located in the socket manager?
                         break;
                     }
                     // Once there is information in the Response/Read stream we'll do work on it

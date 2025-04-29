@@ -28,6 +28,7 @@ pub mod message_codec;
 #[cfg(feature = "server")]
 pub mod server;
 
+pub mod connection_state;
 pub mod logical_address;
 use logical_address::LogicalAddress;
 use tokio::time;
