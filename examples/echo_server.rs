@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use doip::{
+    logical_address::LogicalAddress,
     messages::{
         DiagnosticAckCode, DiagnosticMessage, Message, RoutingActivationRequest,
         RoutingActivationResponseCode,
@@ -7,6 +8,7 @@ use doip::{
     server::{Server, ServerConnectionHandler},
     Error,
 };
+use tracing::debug;
 use uds_protocol::{ProtocolRequest, ProtocolResponse, WireFormat};
 
 struct ServerHandler {}
@@ -17,8 +19,8 @@ impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandle
         [0x00; 17]
     }
 
-    fn get_logical_address(&self) -> u16 {
-        0x0001
+    fn get_logical_address(&self) -> LogicalAddress {
+        LogicalAddress(0x0001)
     }
 
     fn get_entity_id(&self) -> [u8; 6] {
@@ -34,9 +36,11 @@ impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandle
         request: &RoutingActivationRequest,
     ) -> Result<Message<ProtocolResponse>, Error> {
         println!(
-            "Routing activation request from 0x{:04X}",
+            "Routing activation request from {:?}",
             request.source_address
         );
+        // 3.DoIP-090 NL
+        // If source_address (SA) is not assigned to TCP_DATA sockets
         Ok(Message::routing_activation_response(
             self.protocol_version(),
             request.source_address,
@@ -70,6 +74,10 @@ impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandle
         &self,
         message: &DiagnosticMessage<ProtocolRequest>,
     ) -> Result<Message<ProtocolResponse>, Error> {
+        debug!(
+            "Received diagnostic message from {:?} to {:?}",
+            message.source_address, message.target_address
+        );
         let mut previous_message_data = Vec::with_capacity(message.user_data.required_size());
         message
             .user_data
@@ -111,6 +119,11 @@ impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandle
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_line_number(true)
+        .with_max_level(tracing::Level::TRACE)
+        .init();
+
     let handler = ServerHandler {};
     let server = Server::new(handler)?;
 

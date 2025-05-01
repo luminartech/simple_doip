@@ -58,6 +58,11 @@ impl Into<u16> for LogicalAddress {
         self.0
     }
 }
+impl Into<LogicalAddress> for u16 {
+    fn into(self) -> LogicalAddress {
+        LogicalAddress(self)
+    }
+}
 impl PartialOrd<u16> for LogicalAddress {
     fn partial_cmp(&self, other: &u16) -> Option<std::cmp::Ordering> {
         self.0.partial_cmp(other)

@@ -24,7 +24,7 @@ pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
     /// and does not need to be awaited
     AliveCheckResponse(Message<WriteDefinitions>),
 
-    BindSocket(oneshot::Sender<Result<(), Error>>),
+    BindSocket(oneshot::Sender<Result<u16, Error>>),
     UDSMessage(
         Message<WriteDefinitions>,
         oneshot::Sender<Result<Message<ReadDefinitions>, Error>>,
@@ -68,7 +68,7 @@ impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
     }
 
     /// Builder for the bind socket message
-    pub fn create_bind_socket_message() -> (oneshot::Receiver<Result<(), Error>>, Self) {
+    pub fn create_bind_socket_message() -> (oneshot::Receiver<Result<u16, Error>>, Self) {
         let (sender, receiver) = oneshot::channel();
         (receiver, Self::BindSocket(sender))
     }
@@ -130,20 +130,24 @@ where
         (control_sender, update_receiver)
     }
 
-    async fn bind_socket(&mut self) -> Result<(), Error> {
+    /// Binds the unicast socket to the specified address
+    async fn bind_socket(&mut self) -> Result<u16, Error> {
         // Check if the socket is already bound
-        if let Some(_socket) = &self.tcp_data_socket {
-            return Ok(());
+        if let Some(socket) = &self.tcp_data_socket {
+            return Ok(socket.port());
         } else {
             // Bind the socket
             let socket_manager = SocketManager::bind(self.client_options.clone()).await?;
             self.connection_state = ConnectionState::Initialized;
+            let port = socket_manager.port();
             self.tcp_data_socket = Some(socket_manager);
             // Send the socket bind message to the control channel
-            Ok(())
+            Ok(port)
         }
     }
 
+    /// Unbind the socket
+    /// This is used to gracefully shut down the socket manager
     async fn unbind_socket(&mut self) -> Result<(), Error> {
         // Check if the socket is already bound
         if let Some(socket_manager) = self.tcp_data_socket.take() {
@@ -346,7 +350,7 @@ where
                                     Payload::AliveCheckRequest => {
                                         trace!("Received Alive Check Request");
                                         // Send the alive check response automatically
-                                        tcp_data_socket
+                                        let _ = tcp_data_socket
                                             .as_mut()
                                             .unwrap()
                                             .send(Message::alive_check_response(
@@ -393,6 +397,7 @@ where
                             Err(e) => {
                                 debug!("Error receiving message from socket: {:?}", e);
                                 // Handle the error
+                                break;
                             }
                         }
                     }

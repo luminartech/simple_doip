@@ -7,9 +7,10 @@ edition = "2021"
 futures.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, optional = true, features = [
-    "rt",
-    "time",
     "macros",
+    "rt",
+    "rt-multi-thread",
+    "time",
 ] }
 uds_protocol = { path = "../uds_protocol" }
 
@@ -21,7 +22,7 @@ tokio-util = { version = "0.7.12", optional = true, features = [
     "codec",
 ] }
 tracing.workspace = true
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
 
 [dev-dependencies]
 anyhow = "1"

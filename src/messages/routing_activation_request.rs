@@ -1,4 +1,8 @@
-use std::io::{Read, Write};
+use core::fmt;
+use std::{
+    fmt::UpperHex,
+    io::{Read, Write},
+};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
@@ -44,14 +48,41 @@ impl From<ActivationTypeCode> for u8 {
         }
     }
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+impl UpperHex for ActivationTypeCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let val: u8 = (*self).into();
+        let val = format!("{:02X}", val);
+        f.write_str(&val)
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RoutingActivationRequest {
     /// Address of DoIP entity that requests routing activation.
     pub source_address: LogicalAddress,
     pub activation_type: ActivationTypeCode,
     pub reserved: [u8; 4],
     pub reserved_vehicle_manufacturer: Option<[u8; 4]>,
+}
+
+impl fmt::Debug for RoutingActivationRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RoutingActivationRequest")
+            .field(
+                "source_address",
+                &format_args!("{:#X}", &self.source_address),
+            )
+            .field("activation_type", &self.activation_type)
+            .field("reserved", &self.reserved)
+            .field(
+                "reserved_vehicle_manufacturer",
+                &self.reserved_vehicle_manufacturer,
+            )
+            .field(
+                "raw",
+                &format_args!("{:#X} {:#X}", &self.source_address, &self.activation_type),
+            )
+            .finish()
+    }
 }
 
 impl RoutingActivationRequest {
@@ -78,7 +109,8 @@ impl RoutingActivationRequest {
         writer.write_all(&self.reserved)?;
         if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {
             writer.write_all(&reserved_vehicle_manufacturer)?;
+            return Ok(11);
         }
-        Ok(11)
+        Ok(7)
     }
 }

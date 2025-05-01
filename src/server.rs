@@ -1,4 +1,5 @@
 use crate::{
+    logical_address::LogicalAddress,
     message_codec::MessageCodec,
     messages::{
         DiagnosticMessage, DiagnosticPowerModeCode, FurtherActionRequired, Message, Payload,
@@ -23,7 +24,7 @@ pub struct ClientConnectionInfo {
     /// Client IP address
     pub ip_address: IpAddr,
     /// Client logical address
-    pub logical_address: u16,
+    pub logical_address: LogicalAddress,
 }
 /// Trait for handling DoIP connections as a server.
 /// Implement this trait to create a custom DoIP server.
@@ -37,7 +38,7 @@ pub trait ServerConnectionHandler<ReadDefinitions: WireFormat, WriteDefinitions:
     fn get_vin(&self) -> [u8; 17];
 
     /// Get the ECU logical address for this server
-    fn get_logical_address(&self) -> u16;
+    fn get_logical_address(&self) -> LogicalAddress;
 
     /// Get the unique entity ID for this server
     /// This is usually the MAC address of the network interface.
@@ -234,7 +235,7 @@ where
         // client count should come from that map, as well as the logical address missing below
         let connection_info = ClientConnectionInfo {
             ip_address: client_socket_addr.ip(),
-            logical_address: 0x0000, // TODO fix this constant
+            logical_address: LogicalAddress(0x0000), // TODO fix this constant
         };
 
         match request_message.payload {

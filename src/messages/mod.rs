@@ -40,6 +40,31 @@ pub struct Message<DiagnosticDefinitions> {
 }
 
 impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
+    pub fn is_response(&self, payload_type: PayloadType) -> bool {
+        match self.header.payload_type {
+            PayloadType::RoutingActivationRequest => {
+                payload_type == PayloadType::RoutingActivationResponse
+            }
+            PayloadType::AliveCheckRequest => payload_type == PayloadType::AliveCheckResponse,
+            PayloadType::DiagnosticMessage => {
+                payload_type == PayloadType::DiagnosticMessageNegativeAcknowledge
+                    || payload_type == PayloadType::DiagnosticMessagePositiveAcknowledge
+            }
+            PayloadType::DoIPEntityStatusRequest => {
+                payload_type == PayloadType::DoIPEntityStatusResponse
+            }
+            PayloadType::DiagnosticPowerModeInfoRequest => {
+                payload_type == PayloadType::DiagnosticPowerModeInfoResponse
+            }
+            PayloadType::VehicleIdentificationRequest
+            | PayloadType::VehicleIdentificationRequestWithEID
+            | PayloadType::VehicleIdentificationRequestWithVIN => {
+                payload_type == PayloadType::VehicleAnnouncement
+            }
+            _ => false,
+        }
+    }
+
     pub fn alive_check_request(
         protocol_version: ProtocolVersion,
     ) -> Message<DiagnosticsDefinition> {
@@ -134,8 +159,8 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
 
     pub fn routing_activation_response(
         protocol_version: ProtocolVersion,
-        logical_address_tester: u16,
-        logical_address_of_doip_entity: u16,
+        logical_address_tester: LogicalAddress,
+        logical_address_of_doip_entity: LogicalAddress,
         routing_activation_response_code: RoutingActivationResponseCode,
         reserved_oem: [u8; 4],
         oem_specific: Option<[u8; 4]>,
@@ -148,7 +173,8 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
             oem_specific,
         };
         Message {
-            header: Header::new(protocol_version, PayloadType::RoutingActivationResponse, 0),
+            // TODO: Check the payload length
+            header: Header::new(protocol_version, PayloadType::RoutingActivationResponse, 9),
             payload: Payload::RoutingActivationResponse(response),
         }
     }

@@ -64,6 +64,12 @@ impl<
         })
     }
 
+    pub async fn bind_socket(&mut self) -> Result<u16, Error> {
+        let (response, message) = ControlMessage::create_bind_socket_message();
+        self.control_sender.send(message).await.unwrap();
+        response.await.unwrap()
+    }
+
     /// Returns an Option of a Response if there was one in flight when the client or server disconnected
     pub async fn reconnect(&mut self) -> Result<Option<Message<WriteDefinitions>>, Error> {
         todo!("Reconnect not implemented yet");
