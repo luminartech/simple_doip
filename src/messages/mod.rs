@@ -124,7 +124,7 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
             header: Header::new(
                 protocol_version,
                 PayloadType::DiagnosticMessagePositiveAcknowledge,
-                0,
+                5 + ack.previous_message_data.len() as u32,
             ),
             payload: Payload::DiagnosticMessageAck(ack),
         }
