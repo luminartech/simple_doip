@@ -1,3 +1,4 @@
+use core::fmt;
 use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -59,7 +60,7 @@ impl From<DiagnosticAckCode> for u8 {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct DiagnosticMessageAck {
     pub source_address: LogicalAddress,
     pub target_address: LogicalAddress,
@@ -90,5 +91,23 @@ impl DiagnosticMessageAck {
         writer.write_u8(self.ack_code.into())?;
         writer.write_all(&self.previous_message_data)?;
         Ok(5 + self.previous_message_data.len())
+    }
+}
+
+impl fmt::Debug for DiagnosticMessageAck {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DiagnosticMessageAck")
+            .field("source_address", &self.source_address)
+            .field("target_address", &self.target_address)
+            .field("ack_code", &self.ack_code)
+            .field(
+                "previous_message_data",
+                &format_args!(
+                    "({} bytes): {:#04X?}",
+                    self.previous_message_data.len(),
+                    self.previous_message_data
+                ),
+            )
+            .finish()
     }
 }

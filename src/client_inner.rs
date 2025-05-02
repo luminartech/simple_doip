@@ -140,6 +140,7 @@ where
             let socket_manager = SocketManager::bind(self.client_options.clone()).await?;
             self.connection_state = ConnectionState::Initialized;
             let port = socket_manager.port();
+            debug!("Bound socket to port: {}", port);
             self.tcp_data_socket = Some(socket_manager);
             // Send the socket bind message to the control channel
             Ok(port)

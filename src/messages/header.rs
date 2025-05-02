@@ -2,14 +2,17 @@
 //!
 //! Will check the protocol version and inverse protocol version to ensure
 //! the message is valid.
-use std::io::{Read, Write};
+use std::{
+    fmt::Debug,
+    io::{Read, Write},
+};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::message_error::MessageError;
 
 /// DoIP Protocol Version
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, strum::Display)]
 #[repr(u8)]
 pub enum ProtocolVersion {
     Reserved = 0x00,
@@ -66,8 +69,16 @@ impl From<ProtocolVersion> for u8 {
     }
 }
 
+impl Debug for ProtocolVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let val: u8 = (*self).into();
+        let val = format!("{} ({:#04X})", *self, val);
+        f.write_str(&val)
+    }
+}
+
 /// DoIP Message Payload Type
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, strum::Display)]
 #[repr(u16)]
 pub enum PayloadType {
     /// Negative Acknowledge
@@ -162,6 +173,14 @@ impl From<PayloadType> for u16 {
     }
 }
 
+impl Debug for PayloadType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let val: u16 = (*self).into();
+        let val = format!("{} ({:#04X})", *self, val);
+        f.write_str(&val)
+    }
+}
+
 /// DoIP Message Header
 ///
 /// The header is 8 bytes long and contains the following fields:
@@ -169,7 +188,7 @@ impl From<PayloadType> for u16 {
 /// * Inverse Protocol Version (1 byte)
 /// * [PayloadType] (2 bytes)
 /// * Payload Length (4 bytes)
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Header {
     /// Client Protocol Version
     pub protocol_version: ProtocolVersion,
@@ -229,5 +248,19 @@ impl Header {
         writer.write_u16::<BigEndian>(payload_type)?;
         writer.write_u32::<BigEndian>(self.payload_length)?;
         Ok(8)
+    }
+}
+
+impl Debug for Header {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Header")
+            .field("Version", &self.protocol_version)
+            .field(
+                "inverse_protocol_version",
+                &format_args!("{:#X}", self.inverse_protocol_version),
+            )
+            .field("payload_type", &self.payload_type)
+            .field("payload_length", &self.payload_length)
+            .finish()
     }
 }

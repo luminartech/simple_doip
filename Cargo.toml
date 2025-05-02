@@ -17,6 +17,7 @@ uds_protocol = { path = "../uds_protocol" }
 async-trait = "0.1"
 bytes = "1"
 byteorder = "1"
+strum = { workspace = true, features = ["derive"] }
 tokio-util = { version = "0.7.12", optional = true, features = [
     "net",
     "codec",
