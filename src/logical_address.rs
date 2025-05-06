@@ -1,4 +1,4 @@
-use std::fmt::{LowerHex, UpperHex};
+use std::fmt::{Debug, Display, LowerHex, UpperHex};
 
 use tracing::info;
 
@@ -38,7 +38,12 @@ impl LogicalAddress {
     }
 }
 
-impl std::fmt::Debug for LogicalAddress {
+impl Display for LogicalAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#06X}", self.0)
+    }
+}
+impl Debug for LogicalAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:#06X}", self.0)
     }
@@ -53,14 +58,14 @@ impl LowerHex for LogicalAddress {
         LowerHex::fmt(&self.0, f)
     }
 }
-impl Into<u16> for LogicalAddress {
-    fn into(self) -> u16 {
-        self.0
+impl From<u16> for LogicalAddress {
+    fn from(addr: u16) -> Self {
+        LogicalAddress(addr)
     }
 }
-impl Into<LogicalAddress> for u16 {
-    fn into(self) -> LogicalAddress {
-        LogicalAddress(self)
+impl From<LogicalAddress> for u16 {
+    fn from(addr: LogicalAddress) -> Self {
+        addr.0
     }
 }
 impl PartialOrd<u16> for LogicalAddress {
