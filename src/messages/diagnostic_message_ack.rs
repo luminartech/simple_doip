@@ -1,5 +1,8 @@
 use core::fmt;
-use std::io::{Read, Write};
+use std::{
+    fmt::Debug,
+    io::{Read, Write},
+};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
@@ -11,11 +14,17 @@ use super::message_error::MessageError;
 ///
 /// These codes are used to indicate the status of a diagnostic message
 /// sent from a tester to a DoIP server.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Contains both positive and negative acknowledgement codes.
+#[derive(Clone, Copy, PartialEq, Eq, strum::Display)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum DiagnosticAckCode {
+    /// Positive acknowledgement only
     RoutingConfirmationAck = 0x00,
+    /// 0x01 is reserved for both positive and negative acknowledgements
     Reserved(u8),
+    /// Negative acknowledgements
     InvalidSourceAddress = 0x02,
     UnknownTargetAddress = 0x03,
     DiagnosticMessageTooLarge = 0x04,
@@ -23,6 +32,18 @@ pub enum DiagnosticAckCode {
     TargetUnreachable = 0x06,
     UnknownNetwork = 0x07,
     TransportProtocolError = 0x08,
+}
+
+impl DiagnosticAckCode {
+    /// Returns true if the code is a positive acknowledgement
+    pub fn is_positive_ack(&self) -> bool {
+        matches!(self, DiagnosticAckCode::RoutingConfirmationAck)
+    }
+
+    /// Returns true if the code is a negative acknowledgement
+    pub fn is_negative_ack(&self) -> bool {
+        !self.is_positive_ack()
+    }
 }
 
 impl From<u8> for DiagnosticAckCode {
@@ -57,6 +78,12 @@ impl From<DiagnosticAckCode> for u8 {
             UnknownNetwork => 0x07,
             TransportProtocolError => 0x08,
         }
+    }
+}
+
+impl Debug for DiagnosticAckCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}({:#04X})", self, u8::from(*self))
     }
 }
 
@@ -109,5 +136,21 @@ impl fmt::Debug for DiagnosticMessageAck {
                 ),
             )
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_print() {
+        let ack = DiagnosticMessageAck {
+            source_address: LogicalAddress(0x1234),
+            target_address: LogicalAddress(0x5678),
+            ack_code: DiagnosticAckCode::Reserved(8),
+            previous_message_data: vec![0x01, 0x02, 0x03],
+        };
+        println!("{:?}", ack);
     }
 }
