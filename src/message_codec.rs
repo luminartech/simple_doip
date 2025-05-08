@@ -1,5 +1,6 @@
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
+use tracing::info;
 use uds_protocol::WireFormat;
 
 use crate::messages::{Header, Message, MessageError, Payload};
@@ -54,7 +55,7 @@ impl<DiagnosticsDefinition: WireFormat> Decoder for MessageCodec<DiagnosticsDefi
             }
         } else {
             // We don't have a valid header, put the header back
-            println!("{src:X}");
+            info!("{src:X}");
             Ok(None)
         }
     }

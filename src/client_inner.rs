@@ -1,8 +1,9 @@
 //! User → Client → control_sender → Inner → SocketManager.sender → TCP Socket → Server
 //! User ← Client ← update_receiver ← Inner ← SocketManager.receiver ← TCP Socket ← Server
-use std::{future, io::Read};
+use std::future;
 
 use tokio::{
+    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
     select,
     sync::{mpsc, oneshot},
 };
@@ -16,22 +17,25 @@ use crate::{messages::*, socket_manager::SocketManager};
 /// Messages used to control the DOIP entities
 #[derive(Debug)]
 pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
-    AliveCheckRequest(
-        Message<WriteDefinitions>,
-        oneshot::Sender<Result<AliveCheckResponse, Error>>,
-    ),
+    /// No payload
+    AliveCheckRequest(oneshot::Sender<Result<(), Error>>),
+    AliveCheckResponse(Message<ReadDefinitions>),
     /// No oneshot needed, the response is sent
     /// and does not need to be awaited
-    AliveCheckResponse(Message<WriteDefinitions>),
+    SendNoResponse(Message<WriteDefinitions>),
 
-    BindSocket(oneshot::Sender<Result<u16, Error>>),
+    BindSocket(
+        (OwnedReadHalf, OwnedWriteHalf),
+        oneshot::Sender<Result<u16, Error>>,
+    ),
+    UnbindSocket(oneshot::Sender<Result<(), Error>>),
     UDSMessage(
         Message<WriteDefinitions>,
         oneshot::Sender<Result<Message<ReadDefinitions>, Error>>,
     ),
     RoutingActivation(
-        RoutingActivationRequest,
-        oneshot::Sender<Result<Message<WriteDefinitions>, Error>>,
+        Message<WriteDefinitions>,
+        oneshot::Sender<Result<Message<ReadDefinitions>, Error>>,
     ),
     AwaitResponse(
         /// the Request message that was sent
@@ -44,35 +48,49 @@ pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
 impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
     ControlMessage<ReadDefinitions, WriteDefinitions>
 {
-    pub fn send_routing_activation_request(
-        message: &RoutingActivationRequest,
-    ) -> (
-        oneshot::Receiver<Result<Message<WriteDefinitions>, Error>>,
-        Self,
-    ) {
+    /// Helper method to create control messages with oneshot channels
+    fn create_oneshot<T>(
+        factory: impl FnOnce(oneshot::Sender<Result<T, Error>>) -> Self,
+    ) -> (oneshot::Receiver<Result<T, Error>>, Self) {
         let (sender, receiver) = oneshot::channel();
-        (receiver, Self::RoutingActivation(message.clone(), sender))
+        (receiver, factory(sender))
     }
-    /// Takes in a UDS Message Request (WriteDefintions == Request)
-    /// Returns:
-    /// * a oneshot receiver for the UDS Response (ReadDefinitions == Response)
-    /// * a ControlMessage to be sent to the inner client
-    pub fn send_request(
+
+    pub fn create_routing_activation_message(
         message: &Message<WriteDefinitions>,
     ) -> (
         oneshot::Receiver<Result<Message<ReadDefinitions>, Error>>,
         Self,
     ) {
-        let (sender, receiver) = oneshot::channel();
-        (receiver, Self::UDSMessage(message.clone(), sender))
+        trace!(message = "RoutingActivationRequest");
+        Self::create_oneshot(|sender| Self::RoutingActivation(message.clone(), sender))
+    }
+    /// Takes in a UDS Message Request (WriteDefinitions == Request)
+    /// Returns:
+    /// * a oneshot receiver for the UDS Response (ReadDefinitions == Response)
+    /// * a ControlMessage to be sent to the inner client
+    pub fn create_message(
+        message: &Message<WriteDefinitions>,
+    ) -> (
+        oneshot::Receiver<Result<Message<ReadDefinitions>, Error>>,
+        Self,
+    ) {
+        Self::create_oneshot(|sender| Self::UDSMessage(message.clone(), sender))
     }
 
     /// Builder for the bind socket message
-    pub fn create_bind_socket_message() -> (oneshot::Receiver<Result<u16, Error>>, Self) {
-        let (sender, receiver) = oneshot::channel();
-        (receiver, Self::BindSocket(sender))
+    pub fn create_bind_socket_message(
+        rx: OwnedReadHalf,
+        tx: OwnedWriteHalf,
+    ) -> (oneshot::Receiver<Result<u16, Error>>, Self) {
+        Self::create_oneshot(|sender| Self::BindSocket((rx, tx), sender))
+    }
+
+    pub fn create_unbind_socket_message() -> (oneshot::Receiver<Result<(), Error>>, Self) {
+        Self::create_oneshot(Self::UnbindSocket)
     }
 }
+
 /// Inner client responsible for the handling of the connection details,
 /// including creating 2 channels for sending and receiving messages.
 /// it manages its inner state asynchronously, only propagating the
@@ -115,6 +133,7 @@ where
         mpsc::Sender<ControlMessage<ReadDefinitions, WriteDefinitions>>,
         mpsc::Receiver<Result<Message<ReadDefinitions>, MessageError>>,
     ) {
+        trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);
         let (update_sender, update_receiver) = mpsc::channel(16);
         let inner = Inner {
@@ -131,13 +150,14 @@ where
     }
 
     /// Binds the unicast socket to the specified address
-    async fn bind_socket(&mut self) -> Result<u16, Error> {
+    async fn bind_socket(&mut self, rx: OwnedReadHalf, tx: OwnedWriteHalf) -> Result<u16, Error> {
         // Check if the socket is already bound
         if let Some(socket) = &self.tcp_data_socket {
             return Ok(socket.port());
         } else {
             // Bind the socket
-            let socket_manager = SocketManager::bind(self.client_options.clone()).await?;
+            let socket_manager =
+                SocketManager::with_stream(self.client_options.clone(), rx, tx).await?;
             self.connection_state = ConnectionState::Initialized;
             let port = socket_manager.port();
             debug!("Bound socket to port: {}", port);
@@ -160,67 +180,7 @@ where
         }
     }
 
-    /// DOIP Routing Activation Request
-    async fn request_routing_activation(
-        &mut self,
-        activation_type: ActivationTypeCode,
-        reserved_vehicle_manufacturer: Option<[u8; 4]>,
-    ) -> Result<(), Error> {
-        if self.connection_state != ConnectionState::Initialized {
-            return Err(Error::InvalidConnectionState(
-                self.connection_state,
-                ConnectionState::Initialized,
-            ));
-        }
-        let message = Message::<WriteDefinitions>::routing_activation_request(
-            self.client_options.protocol_version,
-            self.client_options.client_logical_address,
-            activation_type,
-            reserved_vehicle_manufacturer,
-        );
-        todo!("Send the message to the server");
-        Ok(())
-        // Send the message via update_sender
-        // self.update_sender
-        //     .send(Ok(message))
-        //     .await
-        //     .map_err(|_| Error::SocketNotBound)
-    }
-
-    /// Alive check is an inner client only function.
-    /// It is used to check if the server is alive and responding without bothering the user with the details
-    async fn request_alive_check(&mut self) -> Result<AliveCheckResponse, Error> {
-        if self.tcp_data_socket.is_none() {
-            return Err(Error::SocketNotBound);
-        }
-        let header = Header::new(
-            self.client_options.protocol_version,
-            PayloadType::AliveCheckRequest,
-            0,
-        );
-        let payload = Payload::<WriteDefinitions>::AliveCheckRequest;
-        let message = Message { header, payload };
-
-        let (response, message) =
-            ControlMessage::<ReadDefinitions, WriteDefinitions>::send_request(&message);
-
-        let response_message = self
-            .tcp_data_socket
-            .as_mut()
-            .unwrap()
-            .receive()
-            .await
-            .unwrap()?;
-        if let Payload::AliveCheckResponse(response_payload) = response_message.payload {
-            Ok(response_payload)
-        } else {
-            Err(Error::UnexpectedMessageType(
-                response_message.header.payload_type,
-            ))
-        }
-    }
-
-    /// Sned an alive check response, can be sent regardless of if there was a request
+    /// Send an alive check response, can be sent regardless of if there was a request
     async fn send_alive_check_response(&mut self) -> Result<(), Error> {
         if self.tcp_data_socket.is_none() {
             return Err(Error::SocketNotBound);
@@ -250,32 +210,80 @@ where
         }
     }
 
+    /// Handle the [Inner::active_request] that was set in the [Inner::run] loop.
+    ///
+    /// The `response` is a oneshot channel that is used to (generally) send the response back to the facade client
+    ///
+    /// ### Diagnostic Acks:
+    /// * will not be sent to the user
+    /// * will be handled internally
     async fn handle_control_message(&mut self) {
         if let Some(active_request) = self.active_request.take() {
             match active_request {
-                ControlMessage::AliveCheckRequest(message, response) => {
-                    if response.send(self.request_alive_check().await).is_err() {
+                ControlMessage::AliveCheckRequest(response) => {
+                    let send_result = self
+                        .tcp_data_socket
+                        .as_mut()
+                        .unwrap()
+                        .send(Message::alive_check_request(
+                            self.client_options.protocol_version,
+                        ))
+                        .await;
+                    if response.send(send_result).is_err() {
                         debug!("Failed to send alive check response");
                     }
                 }
                 ControlMessage::AliveCheckResponse(message) => {
+                    let _ = self
+                        .tcp_data_socket
+                        .as_mut()
+                        .unwrap()
+                        .send(Message::alive_check_response(
+                            self.client_options.protocol_version,
+                            self.client_options.client_logical_address,
+                        ))
+                        .await;
                     // Don't really have to handle the alive check response
                     // it's intended to keep the connection alive and that is handled in the socket manager
                     debug!("Received alive check response: {:?}", message);
                 }
-                ControlMessage::BindSocket(response) => {
-                    if response.send(self.bind_socket().await).is_err() {
+                ControlMessage::SendNoResponse(message) => {
+                    // Send the message to the socket
+                    let send_result = self
+                        .tcp_data_socket
+                        .as_mut()
+                        .unwrap()
+                        .send(message.clone())
+                        .await;
+                    if send_result.is_err() {
+                        debug!("Failed to send message: {:?}", message);
+                    }
+                }
+                ControlMessage::BindSocket((rx, tx), response) => {
+                    if response.send(self.bind_socket(rx, tx).await).is_err() {
                         debug!("Failed to send bind socket response");
                     }
                 }
-                ControlMessage::RoutingActivation(request, response) => {
-                    // let response = self
-                    //     .request_routing_activation(activation_type, reserved_vehicle_manufacturer)
-                    //     .await;
-                    // response.send()
-                    // if let Err(e) = response {
-                    //     debug!("Failed to handle routing activation request: {:?}", e);
-                    // }
+                ControlMessage::UnbindSocket(response) => {
+                    if response.send(self.unbind_socket().await).is_err() {
+                        debug!("Failed to send unbind socket response");
+                    }
+                }
+                ControlMessage::RoutingActivation(message, response) => {
+                    let send_result = self
+                        .tcp_data_socket
+                        .as_mut()
+                        .unwrap()
+                        .send(message.clone())
+                        .await;
+                    // Await for the response through the run loop
+                    match send_result {
+                        Ok(_) => {
+                            self.active_request =
+                                Some(ControlMessage::AwaitResponse(message.to_owned(), response))
+                        }
+                        Err(_) => todo!(),
+                    };
                 }
                 ControlMessage::UDSMessage(message, response) => {
                     if self.tcp_data_socket.is_none() {
@@ -372,7 +380,9 @@ where
                                     // send the response to the update channel
                                     if let ControlMessage::AwaitResponse(request_message, response) = active {
                                         trace!("Received response for request: {:?}", request_message);
-                                        if received_message.header.payload_type == request_message.header.payload_type {
+                                        if request_message.is_response(received_message.header.payload_type) {
+                                            debug!("Received expected response, sending to the update channel");
+                                        // if received_message.header.payload_type == request_message.header.payload_type {
                                             if response.send(Ok(received_message)).is_err() {
                                                 // The receiver has been dropped, so we should exit
                                                 break;

@@ -1,27 +1,56 @@
-use std::net::{IpAddr, SocketAddr};
-
 use doip::{
     client::{Client, ClientOptions},
     logical_address::LogicalAddress,
     messages::{ActivationTypeCode, ProtocolVersion},
+    socket_manager::{Connector, ConnectorSocket},
     LIDAR_LOGICAL_ADDRESS, TCP_PORT,
 };
+use std::net::{IpAddr, SocketAddr};
+use tracing::info;
+use tracing_subscriber;
 use uds_protocol::{ProtocolRequest, ProtocolResponse};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let options = ClientOptions {
-        server_address: SocketAddr::from(([127, 0, 0, 1], TCP_PORT)),
+    tracing_subscriber::fmt()
+        .with_line_number(true)
+        .with_max_level(tracing::Level::TRACE)
+        .init();
+
+    info!("Starting DOIP client");
+    let local_server: IpAddr = "127.0.0.1".parse()?;
+
+    let custom_options = ClientOptions {
+        server_address: SocketAddr::from((local_server, TCP_PORT)),
         server_logical_address: LIDAR_LOGICAL_ADDRESS,
         server_physical_address: LogicalAddress(0x4010),
         client_address: IpAddr::from([0, 0, 0, 0]),
         client_logical_address: LogicalAddress(0x0E01),
         protocol_version: ProtocolVersion::V2012,
+        routing_activation_options: Some(doip::client::RoutingActivationOptions {
+            activation_type: ActivationTypeCode::Default,
+            oem_specific: None,
+        }),
     };
-    let mut client = Client::<ProtocolRequest, ProtocolResponse>::connect(options).await?;
-    client
-        .request_routing_activation(ActivationTypeCode::Default, None)
+
+    let mut client = Client::<ProtocolResponse, ProtocolRequest>::connect(custom_options).await?;
+    let connector = ConnectorSocket {
+        addr: custom_options.server_address,
+    };
+    let (rx, tx) = connector.establish_connection().await?;
+    let port = client.bind_socket(rx, tx).await?;
+
+    info!("Bound to port: {}", port);
+
+    let request = ProtocolRequest::diagnostic_session_control(
+        false,
+        uds_protocol::DiagnosticSessionType::ExtendedDiagnosticSession,
+    );
+
+    let resp = client
+        .send_diagnostic_message(doip::client::AddressType::Physical, request)
         .await?;
+    info!("Sent diagnostic message and received response {:#?}", resp);
     client.shut_down().await;
     Ok(())
 }

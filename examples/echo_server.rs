@@ -8,7 +8,7 @@ use doip::{
     server::{Server, ServerConnectionHandler},
     Error,
 };
-use tracing::debug;
+use tracing::{debug, info};
 use uds_protocol::{ProtocolRequest, ProtocolResponse, WireFormat};
 
 struct ServerHandler {}
@@ -35,7 +35,7 @@ impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandle
         &self,
         request: &RoutingActivationRequest,
     ) -> Result<Message<ProtocolResponse>, Error> {
-        println!(
+        info!(
             "Routing activation request from {:?}",
             request.source_address
         );

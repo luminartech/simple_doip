@@ -18,6 +18,7 @@ use std::{
 };
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
+use tracing::{error, warn};
 use uds_protocol::WireFormat;
 
 pub struct ClientConnectionInfo {
@@ -184,7 +185,7 @@ where
                         .handle_client_connection(client_socket_addr, tcp_stream)
                         .await
                     {
-                        println!("Client error: {client_error}");
+                        error!("Client error: {client_error}");
                     }
                 }
                 Err(accept_error) => {
@@ -218,7 +219,7 @@ where
                     panic!("Client, decoding error source: {client_socket_addr}, {codec_error}")
                 }
                 None => {
-                    println!("Client stream closed, client addr: {client_socket_addr}");
+                    warn!("Client stream closed, client addr: {client_socket_addr}");
                     self.active_connections.fetch_sub(1, Ordering::Relaxed);
                     return Ok(());
                 }

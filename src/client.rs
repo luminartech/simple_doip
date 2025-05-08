@@ -8,10 +8,30 @@ use crate::{
     traits::WirePayload,
     Error, LogicalAddress,
 };
-
 use std::net::{IpAddr, SocketAddr};
-use tokio::sync::{mpsc, oneshot};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::sync::mpsc;
 use tracing::{info, trace};
+
+#[derive(Debug, strum::Display)]
+/// Send updates to the user
+pub enum ClientUpdate<ReadDefinitions> {
+    /// Unicase message from the server
+    Unicast(Message<ReadDefinitions>),
+    /// Inner DoIP client error
+    Error(Error),
+}
+
+/// Activation options for the routing activation request
+///
+/// This is used to determine which type of routing activation request to send
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RoutingActivationOptions {
+    /// Activation type code
+    pub activation_type: ActivationTypeCode,
+    /// OEM specific data
+    pub oem_specific: Option<[u8; 4]>,
+}
 
 /// DoIP client options used to specify connection info
 /// Derive `Serialize` and `Deserialize` for use in config files
@@ -30,6 +50,8 @@ pub struct ClientOptions {
     pub client_logical_address: LogicalAddress,
     /// Which protocol version the client should
     pub protocol_version: ProtocolVersion,
+    /// The activation type to use when sending the routing activation request
+    pub routing_activation_options: Option<RoutingActivationOptions>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,6 +61,9 @@ pub enum AddressType {
 }
 
 /// Follows the Facade pattern, providing a simplified interface to the client
+///
+/// The client is the main entry point for the user to interact with the DoIP protocol.
+/// It provides a simplified interface to the underlying client implementation.
 #[derive(Debug)]
 pub struct Client<ReadDefinitions, WriteDefinitions> {
     pub client_options: ClientOptions,
@@ -53,10 +78,26 @@ impl<
         WriteDefinitions: WirePayload + 'static + Sync + Send + Clone,
     > Client<ReadDefinitions, WriteDefinitions>
 {
-    /// Create a DoIP connection.
+    /// Create a DoIP connection, and automatically send a routing activation request if the client options specify it
     /// The target port defaults to [`crate::TCP_PORT`].
     pub async fn connect(client_options: ClientOptions) -> Result<Self, Error> {
         let (control_sender, update_receiver) = Inner::spawn(client_options);
+
+        // Automatically send a routing activation request if the client options specify it
+        if let Some(routing_activation_options) = client_options.routing_activation_options {
+            let message = Message::<WriteDefinitions>::routing_activation_request(
+                client_options.protocol_version,
+                client_options.client_logical_address,
+                routing_activation_options.activation_type,
+                routing_activation_options.oem_specific,
+            );
+
+            // Send the message and wait for a response
+            let (response, message) = ControlMessage::create_message(&message);
+            control_sender.send(message).await.unwrap();
+            let _ = response.await;
+        }
+
         Ok(Self {
             client_options,
             control_sender,
@@ -64,8 +105,22 @@ impl<
         })
     }
 
-    pub async fn bind_socket(&mut self) -> Result<u16, Error> {
-        let (response, message) = ControlMessage::create_bind_socket_message();
+    /// Bind the socket to a local address and port.
+    ///
+    /// * ISO-13400 clients will bind to the local address and port of the server
+    pub async fn bind_socket(
+        &mut self,
+        rx: OwnedReadHalf,
+        tx: OwnedWriteHalf,
+    ) -> Result<u16, Error> {
+        let (response, message) = ControlMessage::create_bind_socket_message(rx, tx);
+        self.control_sender.send(message).await.unwrap();
+        response.await.unwrap()
+    }
+
+    /// Unbind the socket from the local address and port.
+    pub async fn unbind_socket(&mut self) -> Result<(), Error> {
+        let (response, message) = ControlMessage::create_unbind_socket_message();
         self.control_sender.send(message).await.unwrap();
         response.await.unwrap()
     }
@@ -82,11 +137,17 @@ impl<
         todo!("Auto tester present not implemented yet");
     }
 
-    pub async fn diagnostic_message(
+    /// Send a UDS message to the server
+    ///
+    /// This is a generic message that can be used to send any UDS message
+    pub async fn send_diagnostic_message(
         &mut self,
         address_type: AddressType,
         user_data: WriteDefinitions,
-    ) -> Result<(), Error> {
+    ) -> Result<Message<ReadDefinitions>, Error> {
+        // Create a new message, send it to the server, and wait for a response
+
+        // Create a new message
         let message = Message::<WriteDefinitions>::diagnostic_message(
             self.client_options.protocol_version,
             self.client_options.client_logical_address,
@@ -96,19 +157,9 @@ impl<
             },
             user_data,
         );
-        // Send the message
-        let response = self.send_message(&message).await;
-        match response {
-            Ok(response) => {
-                // Send the response to the update channel
-                Ok(())
-            }
-            Err(err) => {
-                // Send the error to the update channel
-                Ok(())
-                // self.update_receiver.send(Err(err)).await.unwrap();
-            }
-        }
+
+        // Send the message and wait for a response
+        self.send_message(&message).await
     }
 
     /// Send a request to the server and wait for a response (which is returned)
@@ -117,7 +168,7 @@ impl<
         control: &Message<WriteDefinitions>,
     ) -> Result<Message<ReadDefinitions>, Error> {
         // Create new request and response channels to await the response of
-        let (response, message) = ControlMessage::send_request(control);
+        let (response, message) = ControlMessage::create_message(control);
         self.control_sender.send(message).await.unwrap();
         response.await.unwrap()
     }
