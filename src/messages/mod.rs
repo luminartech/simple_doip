@@ -80,7 +80,7 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
     ) -> Message<DiagnosticsDefinition> {
         let response = AliveCheckResponse { source_address };
         Message {
-            header: Header::new(protocol_version, PayloadType::AliveCheckResponse, 0),
+            header: Header::new(protocol_version, PayloadType::AliveCheckResponse, 2),
             payload: Payload::AliveCheckResponse(response),
         }
     }
