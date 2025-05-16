@@ -60,10 +60,10 @@ pub enum AddressType {
     Physical,
 }
 
-/// Follows the Facade pattern, providing a simplified interface to the client
-///
 /// The client is the main entry point for the user to interact with the DoIP protocol.
-/// It provides a simplified interface to the underlying client implementation.
+///
+/// It handles the connection to the server, and sends and receives messages, silently
+/// handling DoIP acknowledgements and other protocol details that the user doesn't need to worry about.
 #[derive(Debug)]
 pub struct Client<ReadDefinitions, WriteDefinitions> {
     pub client_options: ClientOptions,
