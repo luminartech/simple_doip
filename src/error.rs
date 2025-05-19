@@ -26,6 +26,8 @@ pub enum Error {
     ValueOutOfRange(#[from] std::num::TryFromIntError),
     #[error("Received Nack with code: {0:?}")]
     NackReceived(NackCode),
+    #[error("DoIP Port 13400 expected, but got: {0}")]
+    InvalidPort(u16),
     #[error("Socket not bound")]
     SocketNotBound,
     #[error("Socket closed unexpectedly")]

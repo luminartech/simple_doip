@@ -2,7 +2,6 @@ use doip::{
     client::{Client, ClientOptions},
     logical_address::LogicalAddress,
     messages::{ActivationTypeCode, ProtocolVersion},
-    socket_manager::{Connector, ConnectorSocket},
     LIDAR_LOGICAL_ADDRESS, TCP_PORT,
 };
 use std::net::{IpAddr, SocketAddr};
@@ -14,7 +13,7 @@ use uds_protocol::{ProtocolRequest, ProtocolResponse};
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_line_number(true)
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(tracing::Level::INFO)
         .init();
 
     info!("Starting DOIP client");
@@ -34,11 +33,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let mut client = Client::<ProtocolResponse, ProtocolRequest>::connect(custom_options).await?;
-    let connector = ConnectorSocket {
-        addr: custom_options.server_address,
-    };
-    let (rx, tx) = connector.establish_connection().await?;
-    let port = client.bind_socket(rx, tx).await?;
+    let port = client.bind_socket(custom_options.server_address).await?;
 
     info!("Bound to port: {}", port);
 

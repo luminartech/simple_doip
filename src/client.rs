@@ -1,3 +1,4 @@
+use crate::connection;
 use crate::{client_inner::ControlMessage, messages::RoutingActivationRequest};
 use crate::{
     client_inner::Inner,
@@ -9,7 +10,6 @@ use crate::{
     Error, LogicalAddress,
 };
 use std::net::{IpAddr, SocketAddr};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc;
 use tracing::{info, trace};
 
@@ -65,24 +65,25 @@ pub enum AddressType {
 /// It handles the connection to the server, and sends and receives messages, silently
 /// handling DoIP acknowledgements and other protocol details that the user doesn't need to worry about.
 #[derive(Debug)]
-pub struct Client<ReadDefinitions, WriteDefinitions> {
+pub struct Client<ReadDefinitions, WriteDefinitions, Conn = connection::ConnectorSocket> {
     pub client_options: ClientOptions,
     /// Sends messages from the user to the inner client
     control_sender: mpsc::Sender<ControlMessage<ReadDefinitions, WriteDefinitions>>,
     /// Receives messages from the inner client to the user
     update_receiver: mpsc::Receiver<Result<Message<ReadDefinitions>, MessageError>>,
+    _phantom: std::marker::PhantomData<Conn>,
 }
 
 impl<
         ReadDefinitions: WirePayload + 'static + Sync + Send + Clone,
         WriteDefinitions: WirePayload + 'static + Sync + Send + Clone,
-    > Client<ReadDefinitions, WriteDefinitions>
+        Conn: connection::Connector + 'static + Sync + Send,
+    > Client<ReadDefinitions, WriteDefinitions, Conn>
 {
     /// Create a DoIP connection, and automatically send a routing activation request if the client options specify it
     /// The target port defaults to [`crate::TCP_PORT`].
     pub async fn connect(client_options: ClientOptions) -> Result<Self, Error> {
-        let (control_sender, update_receiver) = Inner::spawn(client_options);
-
+        let (control_sender, update_receiver) = Inner::<_, _, Conn>::spawn(client_options);
         // Automatically send a routing activation request if the client options specify it
         if let Some(routing_activation_options) = client_options.routing_activation_options {
             let message = Message::<WriteDefinitions>::routing_activation_request(
@@ -102,18 +103,15 @@ impl<
             client_options,
             control_sender,
             update_receiver,
+            _phantom: std::marker::PhantomData,
         })
     }
 
     /// Bind the socket to a local address and port.
     ///
-    /// * ISO-13400 clients will bind to the local address and port of the server
-    pub async fn bind_socket(
-        &mut self,
-        rx: OwnedReadHalf,
-        tx: OwnedWriteHalf,
-    ) -> Result<u16, Error> {
-        let (response, message) = ControlMessage::create_bind_socket_message(rx, tx);
+    /// * Standard ISO-13400 clients will bind to the local address and port of the server
+    pub async fn bind_socket(&mut self, gateway_address: SocketAddr) -> Result<u16, Error> {
+        let (response, message) = ControlMessage::create_bind_socket_message(gateway_address);
         self.control_sender.send(message).await.unwrap();
         response.await.unwrap()
     }

@@ -3,17 +3,21 @@
 //!
 //! It is responsible for binding the socket, sending and receiving messages,
 //! and shutting down the socket when it is no longer needed.
+use crate::{
+    client::ClientOptions,
+    connection,
+    logical_address::LogicalAddress,
+    message_codec::MessageCodec,
+    messages::{Message, MessageError},
+    Error, TCP_PORT, TCP_TIMEOUT_GENERAL_INACTIVITY,
+};
+use futures::{SinkExt, StreamExt};
 use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, SocketAddr},
     time::Duration,
 };
-
-use futures::{SinkExt, StreamExt};
 use tokio::{
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpSocket,
-    },
+    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
     select,
     sync::mpsc,
 };
@@ -21,64 +25,10 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{error, info, trace};
 use uds_protocol::WireFormat;
 
-use crate::{
-    client::ClientOptions,
-    logical_address::LogicalAddress,
-    message_codec::MessageCodec,
-    messages::{Message, MessageError},
-    Error, TCP_PORT, TCP_TIMEOUT_GENERAL_INACTIVITY,
-};
-
-// TODO: Move this to a config file
-/// Buffer size for the TCP socket
-const BUFFER_SIZE: u32 = 1024 * 64;
-
-pub trait Connector {
-    /// Establish a connection to the DoIP node
-    fn establish_connection(
-        &self,
-    ) -> impl std::future::Future<Output = Result<(OwnedReadHalf, OwnedWriteHalf), Error>> + Send;
-}
-
-/// ISO 13400-2:2012 Connecting socket
-///
-/// This socket is used to connect to the server directly
-#[derive(Debug, Clone, Copy)]
-pub struct ConnectorSocket {
-    /// The address of the server to connect to
-    pub addr: SocketAddr,
-}
-impl Connector for ConnectorSocket {
-    async fn establish_connection(&self) -> Result<(OwnedReadHalf, OwnedWriteHalf), Error> {
-        let tcp_socket = match self.addr {
-            SocketAddr::V4(_) => TcpSocket::new_v4().unwrap(),
-            SocketAddr::V6(_) => TcpSocket::new_v6().unwrap(),
-        };
-        tcp_socket.set_reuseaddr(true)?;
-        tcp_socket.set_recv_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_nodelay(false)?;
-        let tcp_stream =
-            tokio::time::timeout(Duration::from_millis(5100), tcp_socket.connect(self.addr))
-                .await
-                .unwrap()
-                .unwrap();
-
-        Ok(tcp_stream.into_split())
-    }
-}
-
-pub fn connect_to_gateway(addr: IpAddr) -> impl Connector {
-    let connector = ConnectorSocket {
-        addr: SocketAddr::new(addr, TCP_PORT),
-    };
-    connector
-}
-
 /// 1-to-1 mapping of the socket manager to the client (currently)
 /// There is only one socket manager per client.
 #[derive(Debug)]
-pub struct SocketManager<ReadDefinitions, WriteDefinitions> {
+pub struct SocketManager<ReadDefinitions, WriteDefinitions, Conn> {
     /// Receiver used to receive messages from the socket
     /// This is the channel that the socket manager uses to send messages back up to the client
     receiver: mpsc::Receiver<Result<Message<ReadDefinitions>, MessageError>>,
@@ -88,12 +38,15 @@ pub struct SocketManager<ReadDefinitions, WriteDefinitions> {
     session_id: u16,
     /// The source address of the client connected to the socket
     source_address: Option<LogicalAddress>,
+
+    _phantom: std::marker::PhantomData<Conn>,
 }
 
-impl<ReadDefinitions, WriteDefinitions> SocketManager<ReadDefinitions, WriteDefinitions>
+impl<ReadDefinitions, WriteDefinitions, Conn> SocketManager<ReadDefinitions, WriteDefinitions, Conn>
 where
     ReadDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync,
     WriteDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync,
+    Conn: connection::Connector + 'static + Send + Sync,
 {
     /// Creates a new SocketManager instance
     ///
@@ -116,10 +69,12 @@ where
         // })
     }
 
-    pub async fn with_stream(
+    /// Creates a new SocketManager instance
+    ///
+    /// TCP socket is bound to the specified address
+    pub async fn bind(
         client_options: ClientOptions,
-        rx: OwnedReadHalf,
-        tx: OwnedWriteHalf,
+        gateway_address: SocketAddr,
     ) -> Result<Self, Error> {
         if !client_options
             .client_logical_address
@@ -129,78 +84,16 @@ where
                 client_options.client_logical_address,
             ));
         }
-        let socket_read_stream = FramedRead::new(rx, MessageCodec::new());
-        let socket_write_sink = FramedWrite::new(tx, MessageCodec::new());
 
-        let (rx_tx, rx_rx) = mpsc::channel(16);
-        let (tx_tx, tx_rx) = mpsc::channel(16);
-
-        Self::spawn_socket_loop(rx_tx, tx_rx, socket_read_stream, socket_write_sink);
-
-        Ok(Self {
-            source_address: Some(client_options.client_logical_address),
-            receiver: rx_rx,
-            sender: tx_tx,
-            local_port: TCP_PORT, // TODO: Double check this
-            session_id: 0,
-        })
-    }
-
-    /// Creates a new SocketManager instance
-    ///
-    /// TCP socket is bound to the specified address
-    pub async fn bind(client_options: ClientOptions) -> Result<Self, Error> {
-        trace!("Binding socket");
-        if !client_options
-            .client_logical_address
-            .is_valid_client_address()
-        {
-            return Err(Error::InvalidClientLogicalAddress(
-                client_options.client_logical_address,
-            ));
-        }
-        let tcp_socket = match client_options.server_address {
-            SocketAddr::V4(_) => TcpSocket::new_v4().unwrap(),
-            SocketAddr::V6(_) => TcpSocket::new_v6().unwrap(),
-        };
-
-        tcp_socket.set_reuseaddr(true)?;
-        tcp_socket.set_recv_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_nodelay(false)?;
-        let (rx, tx) = if client_options.client_logical_address == LogicalAddress(0x0E00) {
-            trace!("Binding to socket");
-            tcp_socket.bind(SocketAddr::from((client_options.client_address, TCP_PORT)))?;
-
-            trace!("Opening a TcpListener to socket");
-            let tcp_listener = tcp_socket.listen(32)?;
-            let local_addr = tcp_listener.local_addr()?;
-            info!("entity listening on {}", local_addr);
-            match tokio::time::timeout(
-                Duration::from_secs(600), // 60 second timeout for accept
-                tcp_listener.accept(),
-            )
-            .await?
-            {
-                Ok((tcp_stream, _socket)) => {
-                    trace!("Accepted connection from socket");
-                    tcp_stream.into_split()
-                }
-                Err(e) => {
-                    error!("Failed to accept connection: {}", e);
-                    return Err(Error::ConnectionClosed);
-                }
+        // Call the connection - this might be overridden by the user
+        let (rx, tx) = match Conn::establish_connection(gateway_address).await {
+            Ok((rx, tx)) => (rx, tx),
+            Err(e) => {
+                error!("Failed to establish connection: {}", e);
+                return Err(Error::ConnectionClosed);
             }
-        } else {
-            let tcp_stream = tokio::time::timeout(
-                Duration::from_millis(5100),
-                tcp_socket.connect(client_options.server_address),
-            )
-            .await
-            .unwrap()
-            .unwrap();
-            tcp_stream.into_split()
         };
+
         let socket_read_stream = FramedRead::new(rx, MessageCodec::new());
         let socket_write_sink = FramedWrite::new(tx, MessageCodec::new());
 
@@ -215,6 +108,7 @@ where
             sender: tx_tx,
             local_port: TCP_PORT, // TODO: Double check this
             session_id: 0,
+            _phantom: std::marker::PhantomData,
         })
     }
 

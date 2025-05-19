@@ -1,18 +1,14 @@
 //! User → Client → control_sender → Inner → SocketManager.sender → TCP Socket → Server
 //! User ← Client ← update_receiver ← Inner ← SocketManager.receiver ← TCP Socket ← Server
-use std::future;
-
+use crate::{client::ClientOptions, connection_state::ConnectionState, Error};
+use crate::{messages::*, socket_manager::SocketManager};
+use std::{future, net::SocketAddr};
 use tokio::{
-    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
     select,
     sync::{mpsc, oneshot},
 };
-
 use tracing::{debug, info, trace};
 use uds_protocol::WireFormat;
-
-use crate::{client::ClientOptions, connection_state::ConnectionState, Error};
-use crate::{messages::*, socket_manager::SocketManager};
 
 /// Messages used to control the DOIP entities
 #[derive(Debug)]
@@ -24,10 +20,7 @@ pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
     /// and does not need to be awaited
     SendNoResponse(Message<WriteDefinitions>),
 
-    BindSocket(
-        (OwnedReadHalf, OwnedWriteHalf),
-        oneshot::Sender<Result<u16, Error>>,
-    ),
+    BindSocket(SocketAddr, oneshot::Sender<Result<u16, Error>>),
     UnbindSocket(oneshot::Sender<Result<(), Error>>),
     UDSMessage(
         Message<WriteDefinitions>,
@@ -80,10 +73,9 @@ impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
 
     /// Builder for the bind socket message
     pub fn create_bind_socket_message(
-        rx: OwnedReadHalf,
-        tx: OwnedWriteHalf,
+        gateway_address: SocketAddr,
     ) -> (oneshot::Receiver<Result<u16, Error>>, Self) {
-        Self::create_oneshot(|sender| Self::BindSocket((rx, tx), sender))
+        Self::create_oneshot(|sender| Self::BindSocket(gateway_address, sender))
     }
 
     pub fn create_unbind_socket_message() -> (oneshot::Receiver<Result<(), Error>>, Self) {
@@ -98,7 +90,7 @@ impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
 ///
 /// The inner state enters an asynchronous loop which runs in the background
 ///
-pub(super) struct Inner<ReadDefinitions, WriteDefinitions> {
+pub(super) struct Inner<ReadDefinitions, WriteDefinitions, Conn> {
     client_options: ClientOptions,
     /// MPSC Receiver used to receive control messages from outer client
     control_receiver: mpsc::Receiver<ControlMessage<ReadDefinitions, WriteDefinitions>>,
@@ -109,7 +101,7 @@ pub(super) struct Inner<ReadDefinitions, WriteDefinitions> {
     active_request: Option<ControlMessage<ReadDefinitions, WriteDefinitions>>,
 
     /// Socket manager for TCP data socket if bound
-    tcp_data_socket: Option<SocketManager<ReadDefinitions, WriteDefinitions>>,
+    tcp_data_socket: Option<SocketManager<ReadDefinitions, WriteDefinitions, Conn>>,
 
     /// Represents the DoIP connection state of the socket
     connection_state: ConnectionState,
@@ -121,10 +113,11 @@ pub(super) struct Inner<ReadDefinitions, WriteDefinitions> {
     run: bool,
 }
 
-impl<ReadDefinitions, WriteDefinitions> Inner<ReadDefinitions, WriteDefinitions>
+impl<ReadDefinitions, WriteDefinitions, Conn> Inner<ReadDefinitions, WriteDefinitions, Conn>
 where
     ReadDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync + Clone,
     WriteDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync + Clone,
+    Conn: crate::connection::Connector + 'static + Send + Sync,
 {
     /// Spawns the inner client to run in the background and returns the send and recieve channels
     pub fn spawn(
@@ -136,7 +129,7 @@ where
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);
         let (update_sender, update_receiver) = mpsc::channel(16);
-        let inner = Inner {
+        let inner = Inner::<ReadDefinitions, WriteDefinitions, Conn> {
             client_options,
             control_receiver,
             update_sender,
@@ -150,14 +143,14 @@ where
     }
 
     /// Binds the unicast socket to the specified address
-    async fn bind_socket(&mut self, rx: OwnedReadHalf, tx: OwnedWriteHalf) -> Result<u16, Error> {
+    async fn bind_socket(&mut self, gateway_address: SocketAddr) -> Result<u16, Error> {
         // Check if the socket is already bound
         if let Some(socket) = &self.tcp_data_socket {
             return Ok(socket.port());
         } else {
             // Bind the socket
             let socket_manager =
-                SocketManager::with_stream(self.client_options.clone(), rx, tx).await?;
+                SocketManager::bind(self.client_options.clone(), gateway_address).await?;
             self.connection_state = ConnectionState::Initialized;
             let port = socket_manager.port();
             debug!("Bound socket to port: {}", port);
@@ -197,7 +190,7 @@ where
     }
 
     async fn receive_socket(
-        socket_manager: &mut Option<SocketManager<ReadDefinitions, WriteDefinitions>>,
+        socket_manager: &mut Option<SocketManager<ReadDefinitions, WriteDefinitions, Conn>>,
     ) -> Result<Message<ReadDefinitions>, Error> {
         if let Some(receiver) = socket_manager {
             match receiver.receive().await {
@@ -259,8 +252,11 @@ where
                         debug!("Failed to send message: {:?}", message);
                     }
                 }
-                ControlMessage::BindSocket((rx, tx), response) => {
-                    if response.send(self.bind_socket(rx, tx).await).is_err() {
+                ControlMessage::BindSocket(gateway_address, response) => {
+                    if response
+                        .send(self.bind_socket(gateway_address).await)
+                        .is_err()
+                    {
                         debug!("Failed to send bind socket response");
                     }
                 }

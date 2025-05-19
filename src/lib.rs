@@ -18,6 +18,8 @@ pub mod client;
 /// The client feature enables
 #[cfg(feature = "client")]
 pub mod client_inner;
+#[cfg(feature = "client")]
+pub mod connection;
 #[cfg(any(feature = "client", feature = "server"))]
 mod error;
 #[cfg(any(feature = "client", feature = "server"))]
