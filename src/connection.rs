@@ -111,10 +111,6 @@ impl Connector for ConnectorSocket {
                 error!("Connection timed out");
                 Err(crate::Error::ConnectionTimeout(e))
             }
-            _ => {
-                error!("Failed to connect to socket");
-                Err(crate::Error::ConnectionClosed)
-            }
         }
     }
 }

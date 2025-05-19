@@ -6,16 +6,12 @@
 use crate::{
     client::ClientOptions,
     connection,
-    logical_address::LogicalAddress,
     message_codec::MessageCodec,
     messages::{Message, MessageError},
     Error, TCP_PORT, TCP_TIMEOUT_GENERAL_INACTIVITY,
 };
 use futures::{SinkExt, StreamExt};
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-    time::Duration,
-};
+use std::{net::SocketAddr, time::Duration};
 use tokio::{
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
     select,
@@ -36,8 +32,6 @@ pub struct SocketManager<ReadDefinitions, WriteDefinitions, Conn> {
     sender: mpsc::Sender<Message<WriteDefinitions>>,
     local_port: u16,
     session_id: u16,
-    /// The source address of the client connected to the socket
-    source_address: Option<LogicalAddress>,
 
     _phantom: std::marker::PhantomData<Conn>,
 }
@@ -48,27 +42,6 @@ where
     WriteDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync,
     Conn: connection::Connector + 'static + Send + Sync,
 {
-    /// Creates a new SocketManager instance
-    ///
-    /// Binds a UDP socket for discovery
-    pub async fn bind_discovery(_interface: Ipv4Addr) -> Result<Self, Error> {
-        unimplemented!("UDP discovery not implemented yet");
-        // let (rx_tx, rx_rx) = mpsc::channel(16);
-        // let (tx_tx, tx_rx) = mpsc::channel(16);
-        // let bind_addr =
-        //     std::net::SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), UDP_DISCOVERY_PORT);
-        // let socket = UdpSocket::bind(bind_addr).await?;
-
-        // // Self::spawn_socket_loop(socket, rx_tx, tx_rx);
-
-        // Ok(Self {
-        //     receiver: rx_rx,
-        //     sender: tx_tx,
-        //     local_port: bind_addr.port(),
-        //     session_id: 0,
-        // })
-    }
-
     /// Creates a new SocketManager instance
     ///
     /// TCP socket is bound to the specified address
@@ -103,7 +76,6 @@ where
         Self::spawn_socket_loop(rx_tx, tx_rx, socket_read_stream, socket_write_sink);
 
         Ok(Self {
-            source_address: Some(client_options.client_logical_address),
             receiver: rx_rx,
             sender: tx_tx,
             local_port: TCP_PORT, // TODO: Double check this

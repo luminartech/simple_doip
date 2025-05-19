@@ -1,9 +1,8 @@
+use crate::messages::{Header, Message, MessageError, Payload};
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
 use uds_protocol::WireFormat;
-
-use crate::messages::{Header, Message, MessageError, Payload};
 
 /// Codec for the DoIP messages, used to encode and decode messages from
 /// the TCP stream

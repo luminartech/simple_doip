@@ -2,7 +2,7 @@ use doip::{
     client::{Client, ClientOptions},
     logical_address::LogicalAddress,
     messages::{ActivationTypeCode, ProtocolVersion},
-    LIDAR_LOGICAL_ADDRESS, TCP_PORT,
+    TCP_PORT, TESTER_LOGICAL_ADDRESS,
 };
 use std::net::{IpAddr, SocketAddr};
 use tracing::info;
@@ -21,7 +21,7 @@ async fn main() -> anyhow::Result<()> {
 
     let custom_options = ClientOptions {
         server_address: SocketAddr::from((local_server, TCP_PORT)),
-        server_logical_address: LIDAR_LOGICAL_ADDRESS,
+        server_logical_address: TESTER_LOGICAL_ADDRESS,
         server_physical_address: LogicalAddress(0x4010),
         client_address: IpAddr::from([0, 0, 0, 0]),
         client_logical_address: LogicalAddress(0x0E01),

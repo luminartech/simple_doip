@@ -1,11 +1,8 @@
+use crate::client_inner::ControlMessage;
 use crate::connection;
-use crate::{client_inner::ControlMessage, messages::RoutingActivationRequest};
 use crate::{
     client_inner::Inner,
-    messages::{
-        ActivationTypeCode, AliveCheckResponse, Header, Message, MessageError, Payload,
-        PayloadType, ProtocolVersion, RoutingActivationResponse,
-    },
+    messages::{ActivationTypeCode, Message, MessageError, ProtocolVersion},
     traits::WirePayload,
     Error, LogicalAddress,
 };

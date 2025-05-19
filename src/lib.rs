@@ -51,7 +51,7 @@ pub const UDP_DISCOVERY_PORT: u16 = 13400;
 pub const TCP_TLS_PORT: u16 = 3496;
 
 /// Is this always the address?
-pub const LIDAR_LOGICAL_ADDRESS: LogicalAddress = LogicalAddress(0xE400);
+pub const TESTER_LOGICAL_ADDRESS: LogicalAddress = LogicalAddress(0xE400);
 
 // DoIP timing and communication parameters
 

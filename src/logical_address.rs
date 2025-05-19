@@ -1,5 +1,4 @@
 use std::fmt::{Debug, Display, LowerHex, UpperHex};
-
 use tracing::info;
 
 #[derive(Clone, Copy, Eq)]

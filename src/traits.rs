@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-
 use uds_protocol::WireFormat;
 pub trait WirePayload: WireFormat + Send + Debug {}
 

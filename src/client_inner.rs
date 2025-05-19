@@ -194,7 +194,7 @@ where
     ) -> Result<Message<ReadDefinitions>, Error> {
         if let Some(receiver) = socket_manager {
             match receiver.receive().await {
-                Some(message) => message.map_err(|e| Error::SocketClosedUnexpectedly),
+                Some(message) => message.map_err(|_| Error::SocketClosedUnexpectedly),
                 None => Err(Error::SocketClosedUnexpectedly),
             }
         } else {
