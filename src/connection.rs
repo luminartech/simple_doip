@@ -59,7 +59,7 @@ use tokio::net::{
 };
 use tracing::{error, trace};
 
-//// Connector trait for establishing a connection to the DoIP node
+/// Connector trait for establishing a connection to the DoIP node
 pub trait Connector {
     /// Establish a connection to the DoIP node
     fn establish_connection(

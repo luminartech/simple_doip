@@ -11,6 +11,7 @@ use tracing::{debug, info, trace};
 use uds_protocol::WireFormat;
 
 /// Messages used to control the DOIP entities
+#[allow(unused)]
 #[derive(Debug)]
 pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
     /// No payload
@@ -49,6 +50,7 @@ impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
         (receiver, factory(sender))
     }
 
+    #[allow(unused)]
     pub fn create_routing_activation_message(
         message: &Message<WriteDefinitions>,
     ) -> (
@@ -112,6 +114,10 @@ pub(super) struct Inner<ReadDefinitions, WriteDefinitions, Conn> {
     /// when the outer client is dropped
     run: bool,
 }
+/// Sender for the control messages sent via the control channel
+type ControlSender<R, W> = mpsc::Sender<ControlMessage<R, W>>;
+/// Receiver for the update messages from the socket
+type UpdateReceiver<R, E> = mpsc::Receiver<Result<Message<R>, E>>;
 
 impl<ReadDefinitions, WriteDefinitions, Conn> Inner<ReadDefinitions, WriteDefinitions, Conn>
 where
@@ -123,8 +129,8 @@ where
     pub fn spawn(
         client_options: ClientOptions,
     ) -> (
-        mpsc::Sender<ControlMessage<ReadDefinitions, WriteDefinitions>>,
-        mpsc::Receiver<Result<Message<ReadDefinitions>, MessageError>>,
+        ControlSender<ReadDefinitions, WriteDefinitions>,
+        UpdateReceiver<ReadDefinitions, MessageError>,
     ) {
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);
@@ -146,11 +152,10 @@ where
     async fn bind_socket(&mut self, gateway_address: SocketAddr) -> Result<u16, Error> {
         // Check if the socket is already bound
         if let Some(socket) = &self.tcp_data_socket {
-            return Ok(socket.port());
+            Ok(socket.port())
         } else {
             // Bind the socket
-            let socket_manager =
-                SocketManager::bind(self.client_options.clone(), gateway_address).await?;
+            let socket_manager = SocketManager::bind(self.client_options, gateway_address).await?;
             self.connection_state = ConnectionState::Initialized;
             let port = socket_manager.port();
             debug!("Bound socket to port: {}", port);
@@ -173,6 +178,7 @@ where
         }
     }
 
+    #[allow(unused)]
     /// Send an alive check response, can be sent regardless of if there was a request
     async fn send_alive_check_response(&mut self) -> Result<(), Error> {
         if self.tcp_data_socket.is_none() {
@@ -285,7 +291,6 @@ where
                     if self.tcp_data_socket.is_none() {
                         if response.send(Err(Error::SocketNotBound)).is_err() {
                             debug!("Failed to send response: Socket not bound");
-                            return;
                         }
                     } else {
                         let send_result = self

@@ -2,6 +2,7 @@ use crate::messages::PayloadType;
 use tracing::warn;
 
 /// The DoIP connection state machine
+#[allow(unused)]
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(crate) enum ConnectionState {
     /// Socket is not connected. This state is here for the sake of
@@ -30,6 +31,7 @@ pub(crate) enum ConnectionState {
     Finalize,
 }
 
+#[allow(unused)]
 impl ConnectionState {
     pub fn is_message_allowed(&self, payload_type: &PayloadType) -> bool {
         match self {
