@@ -1,8 +1,8 @@
 use doip::{
     client::{Client, ClientOptions},
+    connection::Connector,
     logical_address::LogicalAddress,
     messages::ProtocolVersion,
-    socket_manager::Connector,
     Error, TCP_PORT,
 };
 use std::{
@@ -15,20 +15,19 @@ use tokio::net::{
 };
 use tracing::{error, info, trace};
 use tracing_subscriber;
-use uds_protocol::{ProtocolRequest, ProtocolResponse};
+use uds_protocol::{ProtocolIdentifier, ProtocolRequest, ProtocolResponse};
 
 /// Sets up a TCP listener on a client address and waits for a connection from the server
-pub struct ListenerSocket {
-    /// The client opening the listener socket
-    pub client_address: SocketAddr,
-}
+pub struct ListenerSocket;
 impl Connector for ListenerSocket {
-    async fn establish_connection(&self) -> Result<(OwnedReadHalf, OwnedWriteHalf), Error> {
-        let tcp_socket = match self.client_address {
+    async fn establish_connection(
+        gateway_address: SocketAddr,
+    ) -> Result<(OwnedReadHalf, OwnedWriteHalf), Error> {
+        let tcp_socket = match gateway_address {
             SocketAddr::V4(_) => TcpSocket::new_v4().unwrap(),
             SocketAddr::V6(_) => TcpSocket::new_v6().unwrap(),
         };
-        tcp_socket.bind(self.client_address)?;
+        tcp_socket.bind(gateway_address)?;
         let tcp_listener = tcp_socket.listen(32)?;
         let local_addr = tcp_listener.local_addr()?;
         info!("entity listening on {}", local_addr);
@@ -50,6 +49,7 @@ impl Connector for ListenerSocket {
     }
 }
 
+type InternalClient = Client<ProtocolResponse, ProtocolRequest, ListenerSocket>;
 /// This is a simple client that creates a TCP socket and waits for a connection from the server
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -71,14 +71,20 @@ async fn main() -> anyhow::Result<()> {
         routing_activation_options: None,
     };
 
-    let mut client = Client::<ProtocolResponse, ProtocolRequest>::connect(client_options).await?;
-    let connector = ListenerSocket {
-        client_address: SocketAddr::new(client_options.client_address, 0),
-    };
-    let (rx, tx) = connector.establish_connection().await?;
-    let port = client.bind_socket(rx, tx).await?;
+    let mut client = InternalClient::connect(client_options).await?;
+    let port = client
+        .bind_socket(SocketAddr::new(client_options.client_address, 0))
+        .await?;
 
     info!("Bound to port: {}", port);
+
+    let resp = client
+        .send_diagnostic_message(
+            doip::client::AddressType::Physical,
+            ProtocolRequest::read_data_by_identifier(vec![ProtocolIdentifier::try_from(0xF186)?]),
+        )
+        .await?;
+    info!("Sent diagnostic message and received response {:#?}", resp);
 
     let resp = client
         .send_diagnostic_message(
@@ -89,7 +95,6 @@ async fn main() -> anyhow::Result<()> {
             ),
         )
         .await?;
-    info!("Sent diagnostic message and received response {:#?}", resp);
     client.shut_down().await;
     Ok(())
 }
