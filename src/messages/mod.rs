@@ -47,8 +47,10 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
             }
             PayloadType::AliveCheckRequest => payload_type == PayloadType::AliveCheckResponse,
             PayloadType::DiagnosticMessage => {
+                // DiagnosticMessage can be a request or response in certain models
                 payload_type == PayloadType::DiagnosticMessageNegativeAcknowledge
                     || payload_type == PayloadType::DiagnosticMessagePositiveAcknowledge
+                    || payload_type == PayloadType::DiagnosticMessage
             }
             PayloadType::DoIPEntityStatusRequest => {
                 payload_type == PayloadType::DoIPEntityStatusResponse

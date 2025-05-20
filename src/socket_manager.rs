@@ -159,7 +159,7 @@ where
                     result = socket_read_stream.next() => {
                         match result {
                             Some(Err(e)) => {
-                                error!("Error decoding message: {:?}", e)
+                                error!("Error decoding message: {:?}", e.to_string())
                             }
                             Some(message) => {
                                 // Update the last activity time
