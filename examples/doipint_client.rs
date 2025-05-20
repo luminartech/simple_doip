@@ -15,7 +15,7 @@ use tokio::net::{
 };
 use tracing::{error, info, trace};
 use tracing_subscriber;
-use uds_protocol::{ProtocolIdentifier, ProtocolRequest, ProtocolResponse};
+use uds_protocol::{ProtocolRequest, ProtocolResponse};
 
 /// Sets up a TCP listener on a client address and waits for a connection from the server
 pub struct ListenerSocket;
@@ -27,23 +27,33 @@ impl Connector for ListenerSocket {
             SocketAddr::V4(_) => TcpSocket::new_v4().unwrap(),
             SocketAddr::V6(_) => TcpSocket::new_v6().unwrap(),
         };
+        tcp_socket.set_reuseaddr(true)?;
+        tcp_socket.set_recv_buffer_size(1024 * 64)?;
+        tcp_socket.set_send_buffer_size(1024 * 64)?;
+        tcp_socket.set_nodelay(false)?;
+
         tcp_socket.bind(gateway_address)?;
+
         let tcp_listener = tcp_socket.listen(32)?;
         let local_addr = tcp_listener.local_addr()?;
         info!("entity listening on {}", local_addr);
         match tokio::time::timeout(
-            Duration::from_secs(600), // 60 second timeout for accept
+            Duration::from_secs(60), // 60 second timeout for accept
             tcp_listener.accept(),
         )
-        .await?
+        .await
         {
-            Ok((tcp_stream, _socket)) => {
+            Ok(Ok((tcp_stream, _socket))) => {
                 trace!("Accepted connection from socket");
                 Ok(tcp_stream.into_split())
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 error!("Failed to accept connection: {}", e);
-                Err(Error::ConnectionClosed)
+                Err(doip::Error::ConnectionClosed)
+            }
+            Err(e) => {
+                error!("Timeout: Failed to accept connection: {}", e);
+                Err(doip::Error::ConnectionClosed)
             }
         }
     }
@@ -81,20 +91,13 @@ async fn main() -> anyhow::Result<()> {
     let resp = client
         .send_diagnostic_message(
             doip::client::AddressType::Physical,
-            ProtocolRequest::read_data_by_identifier(vec![ProtocolIdentifier::try_from(0xF186)?]),
-        )
-        .await?;
-    info!("Sent diagnostic message and received response {:#?}", resp);
-
-    let resp = client
-        .send_diagnostic_message(
-            doip::client::AddressType::Physical,
             ProtocolRequest::diagnostic_session_control(
                 true,
                 uds_protocol::DiagnosticSessionType::ProgrammingSession,
             ),
         )
         .await?;
+    info!("Sent diagnostic message and received response {:#?}", resp);
     client.shut_down().await;
     Ok(())
 }
