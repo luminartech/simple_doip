@@ -51,7 +51,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder for MessageCodec<Diag
             }
         } else {
             // We don't have a valid header, put the header back
-            println!("{:X}", src);
+            println!("{src:X}");
             Ok(None)
         }
     }
