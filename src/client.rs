@@ -175,7 +175,7 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
                         }
                     }
 
-                    println!("Error reading message: {:?}", error);
+                    println!("Error reading message: {error:?}");
                     Some(Err(Error::from(error)))
                 }
             },
