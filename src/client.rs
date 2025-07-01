@@ -107,10 +107,14 @@ impl<
     /// Bind the socket to a local address and port.
     ///
     /// * Standard ISO-13400 clients will bind to the local address and port of the server
+    /// * See [Inner::bind_socket] for more details
     pub async fn bind_socket(&mut self, gateway_address: SocketAddr) -> Result<u16, Error> {
         let (response, message) = ControlMessage::create_bind_socket_message(gateway_address);
-        self.control_sender.send(message).await.unwrap();
-        response.await.unwrap()
+        self.control_sender
+            .send(message)
+            .await
+            .map_err(|_| Error::ConnectionClosed)?;
+        response.await.map_err(|_| Error::ConnectionClosed)?
     }
 
     /// Unbind the socket from the local address and port.
@@ -168,6 +172,7 @@ impl<
         response.await.unwrap()
     }
 
+    /// Shut down the client, closing the connection and cleaning up resources
     pub async fn shut_down(self) {
         let Self {
             control_sender,
