@@ -1,7 +1,6 @@
-use crate::client_inner::ControlMessage;
-use crate::connection;
 use crate::{
-    client_inner::Inner,
+    client_inner::{ControlMessage, Inner},
+    connection,
     messages::{ActivationTypeCode, Message, MessageError, ProtocolVersion},
     traits::WirePayload,
     Error, LogicalAddress,
