@@ -17,7 +17,9 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     info!("Starting DOIP client");
-    let local_server: IpAddr = "127.0.0.1".parse()?;
+    let local_server: IpAddr = "127.0.0.1"
+        .parse()
+        .expect("Hardcoded IP address should be valid");
 
     let custom_options = ClientOptions {
         server_address: SocketAddr::from((local_server, TCP_PORT)),
