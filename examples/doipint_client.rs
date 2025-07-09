@@ -83,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut client = InternalClient::connect(client_options).await?;
     let port = client
-        .bind_socket(SocketAddr::new(client_options.client_address, 0))
+        .bind_socket(SocketAddr::new(client_options.client_address, TCP_PORT))
         .await?;
 
     info!("Bound to port: {}", port);
