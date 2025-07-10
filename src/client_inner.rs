@@ -1,7 +1,12 @@
 //! User → Client → control_sender → Inner → SocketManager.sender → TCP Socket → Server
 //! User ← Client ← update_receiver ← Inner ← SocketManager.receiver ← TCP Socket ← Server
-use crate::{client::ClientOptions, connection_state::ConnectionState, Error};
-use crate::{messages::*, socket_manager::SocketManager};
+use crate::{
+    client::{ClientOptions, SendResult},
+    connection_state::ConnectionState,
+    messages::*,
+    socket_manager::SocketManager,
+    Error,
+};
 use std::{future, net::SocketAddr};
 use tokio::{
     select,
@@ -25,7 +30,7 @@ pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
     UnbindSocket(oneshot::Sender<Result<(), Error>>),
     UDSMessage(
         Message<WriteDefinitions>,
-        oneshot::Sender<Result<Message<ReadDefinitions>, Error>>,
+        oneshot::Sender<Result<SendResult<Message<ReadDefinitions>>, Error>>,
     ),
     RoutingActivation(
         Message<WriteDefinitions>,
@@ -60,17 +65,18 @@ impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
         trace!(message = "RoutingActivationRequest");
         Self::create_oneshot(|sender| Self::RoutingActivation(message.clone(), sender))
     }
+
     /// Takes in a UDS Message Request (WriteDefinitions == Request)
     /// Returns:
     /// * a oneshot receiver for the UDS Response (ReadDefinitions == Response)
     /// * a ControlMessage to be sent to the inner client
     pub fn create_message(
-        message: &Message<WriteDefinitions>,
+        message: Message<WriteDefinitions>,
     ) -> (
-        oneshot::Receiver<Result<Message<ReadDefinitions>, Error>>,
+        oneshot::Receiver<Result<SendResult<Message<ReadDefinitions>>, Error>>,
         Self,
     ) {
-        Self::create_oneshot(|sender| Self::UDSMessage(message.clone(), sender))
+        Self::create_oneshot(|sender| Self::UDSMessage(message, sender))
     }
 
     /// Builder for the bind socket message
@@ -293,6 +299,9 @@ where
                             debug!("Failed to send response: Socket not bound");
                         }
                     } else {
+                        // Check for suppressed message, if it is, send a Suppressed response
+                        let suppress_response = message.is_positive_response_suppressed();
+
                         let send_result = self
                             .tcp_data_socket
                             .as_mut()
@@ -301,10 +310,42 @@ where
                             .await;
                         match send_result {
                             Ok(_) => {
+                                if suppress_response {
+                                    let _ = response.send(Ok(SendResult::Suppressed));
+                                } else {
+                                    let (await_sender, await_receiver) = oneshot::channel();
+
                                 self.active_request = Some(ControlMessage::AwaitResponse(
                                     message.to_owned(),
-                                    response,
-                                ));
+                                        await_sender,
+                                    ));
+                                    // Converts from the SendResult return to a regular AwaitResponse
+                                    // and spawns a task to await the response
+                                    tokio::spawn(async move {
+                                        match await_receiver.await {
+                                            Ok(Ok(response_message)) => {
+                                                if response
+                                                    .send(Ok(SendResult::Response(
+                                                        response_message,
+                                                    )))
+                                                    .is_err()
+                                                {
+                                                    debug!("Failed to send response");
+                                                }
+                                            }
+                                            Ok(Err(e)) => {
+                                                if response.send(Err(e)).is_err() {
+                                                    debug!("Failed to send error response");
+                                                }
+                                            }
+                                            Err(_) => {
+                                                debug!("Failed to receive response");
+                                                let _ = response.send(Err(Error::ConnectionClosed));
+                                                // If the receiver was dropped, we should exit
+                                            }
+                                        }
+                                    });
+                                }
                             }
                             Err(_) => todo!(),
                         }

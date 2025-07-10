@@ -56,6 +56,16 @@ pub enum AddressType {
     Physical,
 }
 
+/// The result of sending a message to the server. When a message
+/// is suppressed (ie via UDS), the server might not respond and returns `Suppressed`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SendResult<ReadDefinitions> {
+    /// The message was sent successfully
+    Response(ReadDefinitions),
+    /// The message was sent, but the server did not respond
+    Suppressed,
+}
+
 /// The client is the main entry point for the user to interact with the DoIP protocol.
 ///
 /// It handles the connection to the server, and sends and receives messages, silently
@@ -90,7 +100,7 @@ impl<
             );
 
             // Send the message and wait for a response
-            let (response, message) = ControlMessage::create_message(&message);
+            let (response, message) = ControlMessage::create_message(message);
             control_sender.send(message).await.unwrap();
             let _ = response.await;
         }
@@ -142,7 +152,7 @@ impl<
         &mut self,
         address_type: AddressType,
         user_data: WriteDefinitions,
-    ) -> Result<Message<ReadDefinitions>, Error> {
+    ) -> Result<SendResult<Message<ReadDefinitions>>, Error> {
         // Create a new message, send it to the server, and wait for a response
 
         // Create a new message
@@ -157,18 +167,20 @@ impl<
         );
 
         // Send the message and wait for a response
-        self.send_message(&message).await
+        self.send_message(message).await
     }
 
     /// Send a request to the server and wait for a response (which is returned)
     async fn send_message(
         &mut self,
-        control: &Message<WriteDefinitions>,
-    ) -> Result<Message<ReadDefinitions>, Error> {
+        control: Message<WriteDefinitions>,
+    ) -> Result<SendResult<Message<ReadDefinitions>>, Error> {
         // Create new request and response channels to await the response of
         let (response, message) = ControlMessage::create_message(control);
+        // Sends to Inner client
         self.control_sender.send(message).await.unwrap();
-        response.await.unwrap()
+        // if its a RecvError the sender has been dropped
+        response.await.map_err(|_| Error::ConnectionClosed)?
     }
 
     /// Shut down the client, closing the connection and cleaning up resources

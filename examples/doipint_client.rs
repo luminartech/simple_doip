@@ -1,5 +1,8 @@
 use doip::{
-    client::{Client, ClientOptions},
+    client::{
+        Client, ClientOptions,
+        SendResult::{Response, Suppressed},
+    },
     connection::Connector,
     logical_address::LogicalAddress,
     messages::ProtocolVersion,
@@ -93,11 +96,23 @@ async fn main() -> anyhow::Result<()> {
             doip::client::AddressType::Physical,
             ProtocolRequest::diagnostic_session_control(
                 true,
-                uds_protocol::DiagnosticSessionType::ProgrammingSession,
+                uds_protocol::DiagnosticSessionType::ExtendedDiagnosticSession,
             ),
         )
-        .await?;
-    info!("Sent diagnostic message and received response {:#?}", resp);
+        .await;
+    match resp {
+        Ok(Response(response)) => {
+            info!("Received response: {:#?}", response);
+        }
+        Ok(Suppressed) => {
+            info!("Received suppressed response, no response from server");
+        }
+        Err(e) => {
+            error!("Failed to send diagnostic message: {}", e);
+            return Err(anyhow::anyhow!(e));
+        }
+    }
+    // info!("Sent diagnostic message and received response {:#?}", resp);
     client.shut_down().await;
     Ok(())
 }

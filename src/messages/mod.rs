@@ -198,6 +198,15 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
         written += &self.payload.write(writer)?;
         Ok(written)
     }
+
+    pub fn is_positive_response_suppressed(&self) -> bool {
+        match &self.payload {
+            Payload::DiagnosticMessage(diagnostic_message) => {
+                diagnostic_message.is_positive_response_suppressed()
+            }
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]

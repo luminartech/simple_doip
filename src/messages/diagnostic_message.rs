@@ -33,4 +33,9 @@ impl<DiagnosticsDefinition: WireFormat> DiagnosticMessage<DiagnosticsDefinition>
         writer.write_u16::<BigEndian>(self.target_address.into())?;
         Ok(4 + self.user_data.to_writer(writer)?)
     }
+
+    /// Check the user data (usually a UDS message) for a suppressed positive response.
+    pub fn is_positive_response_suppressed(&self) -> bool {
+        self.user_data.is_positive_response_suppressed()
+    }
 }
