@@ -379,18 +379,13 @@ where
                 select! {
                     _ = tokio::time::sleep(std::time::Duration::from_millis(125)) => {}
                     // Receive a control message
-                    ctrl = control_receiver.recv() => {
-                        if let Some(ctrl) = ctrl {
-                            // We should never have an active request already
-                            // But maybe we should gracefully handle this
-                            // and just ignore the new request?
-                            assert!(self.active_request.is_none());
-                            debug!("Received control message: {:?}", ctrl);
-                            self.active_request = Some(ctrl);
-                        } else {
-                            // The sender has been dropped, so we should exit
-                            break;
-                        }
+                    Some(ctrl) = control_receiver.recv() => {
+                        // We should never have an active request already
+                        // But maybe we should gracefully handle this
+                        // and just ignore the new request?
+                        assert!(self.active_request.is_none());
+                        debug!("Received control message: {:?}", ctrl);
+                        self.active_request = Some(ctrl);
                     }
                     // Receive a message from the socket
                     message = Inner::receive_socket(tcp_data_socket) => {
