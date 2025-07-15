@@ -18,7 +18,7 @@ use tokio::net::{
 };
 use tracing::{error, info, trace};
 use tracing_subscriber;
-use uds_protocol::{ProtocolRequest, ProtocolResponse};
+use uds_protocol::{ProtocolIdentifier, ProtocolRequest, ProtocolResponse};
 
 /// Sets up a TCP listener on a client address and waits for a connection from the server
 pub struct ListenerSocket;
@@ -82,6 +82,8 @@ async fn main() -> anyhow::Result<()> {
         client_logical_address: LogicalAddress(0x0E80),
         protocol_version: ProtocolVersion::V2012,
         routing_activation_options: None,
+        tester_present_interval: Duration::from_secs(5), // 5 seconds for testing
+        suppress_tester_present: true,                   // Suppress the reply from the server
     };
 
     let mut client = InternalClient::connect(client_options).await?;
@@ -98,6 +100,29 @@ async fn main() -> anyhow::Result<()> {
                 true,
                 uds_protocol::DiagnosticSessionType::ExtendedDiagnosticSession,
             ),
+        )
+        .await;
+    match resp {
+        Ok(Response(response)) => {
+            info!("Received response: {:#?}", response);
+        }
+        Ok(Suppressed) => {
+            info!("Received suppressed response, no response from server");
+        }
+        Err(e) => {
+            error!("Failed to send diagnostic message: {}", e);
+            return Err(anyhow::anyhow!(e));
+        }
+    }
+    // sleep for 10 seconds to allow the server to respond with some tester presents
+    tokio::time::sleep(Duration::from_secs(7)).await;
+
+    let resp = client
+        .send_diagnostic_message(
+            doip::client::AddressType::Physical,
+            ProtocolRequest::read_data_by_identifier(vec![ProtocolIdentifier::new(
+                uds_protocol::UDSIdentifier::SystemSupplierECUHardwareNumber,
+            )]),
         )
         .await;
     match resp {

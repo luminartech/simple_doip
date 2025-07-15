@@ -32,7 +32,7 @@ pub mod server;
 
 pub mod connection_state;
 pub mod logical_address;
-use logical_address::LogicalAddress;
+pub use logical_address::LogicalAddress;
 use tokio::time;
 
 /// Default TCP port for DoIP

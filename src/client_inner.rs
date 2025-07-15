@@ -13,7 +13,7 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 use tracing::{debug, info, trace};
-use uds_protocol::WireFormat;
+use uds_protocol::{KeepAliveMessage, WireFormat};
 
 /// Messages used to control the DOIP entities
 #[allow(unused)]
@@ -119,6 +119,9 @@ pub(super) struct Inner<ReadDefinitions, WriteDefinitions, Conn> {
     /// This is used to gracefully shut down the inner client
     /// when the outer client is dropped
     run: bool,
+
+    // tester_present_heartbeat: tokio::time::Interval,
+    last_tester_present: std::time::Instant,
 }
 /// Sender for the control messages sent via the control channel
 type ControlSender<R, W> = mpsc::Sender<ControlMessage<R, W>>;
@@ -128,7 +131,8 @@ type UpdateReceiver<R, E> = mpsc::Receiver<Result<Message<R>, E>>;
 impl<ReadDefinitions, WriteDefinitions, Conn> Inner<ReadDefinitions, WriteDefinitions, Conn>
 where
     ReadDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync + Clone,
-    WriteDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync + Clone,
+    WriteDefinitions:
+        WireFormat + KeepAliveMessage + std::fmt::Debug + 'static + Send + Sync + Clone,
     Conn: crate::connection::Connector + 'static + Send + Sync,
 {
     /// Spawns the inner client to run in the background and returns the send and recieve channels
@@ -149,6 +153,7 @@ where
             tcp_data_socket: None,
             connection_state: ConnectionState::Listen,
             run: true,
+            last_tester_present: std::time::Instant::now(),
         };
         inner.run();
         (control_sender, update_receiver)
@@ -364,6 +369,14 @@ where
     fn run(mut self) {
         tokio::spawn(async move {
             info!("Starting DOIP processing loop");
+            let tester_present_req =
+                WriteDefinitions::create_keep_alive(self.client_options.suppress_tester_present);
+            let test_present_message = Message::<WriteDefinitions>::diagnostic_message(
+                self.client_options.protocol_version,
+                self.client_options.client_logical_address,
+                self.client_options.server_logical_address,
+                tester_present_req,
+            );
             loop {
                 let Self {
                     control_receiver,
@@ -372,12 +385,28 @@ where
                     active_request,
                     client_options,
                     run,
+                    last_tester_present,
                     ..
                 } = &mut self;
 
                 // Read a message from the read stream
                 select! {
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(125)) => {}
+                    _ = tokio::time::sleep(client_options.tester_present_interval) => {
+                        debug!("Run status: {}", run);
+                        let Some(socket_manager) = tcp_data_socket.as_mut() else {
+                            debug!("No socket manager available, skipping tester present message");
+                            continue;
+                        };
+                        if last_tester_present.elapsed() < client_options.tester_present_interval {
+                            trace!("Skipping tester present message, last sent within interval");
+                            continue;
+                        }
+                        if let Err(e) = socket_manager.send(test_present_message.clone()).await {
+                            debug!("Failed to send tester present message: {:?}", e);
+                        } else {
+                            *last_tester_present = std::time::Instant::now();
+                        }
+                    }
                     // Receive a control message
                     Some(ctrl) = control_receiver.recv() => {
                         // We should never have an active request already
@@ -389,6 +418,7 @@ where
                     }
                     // Receive a message from the socket
                     message = Inner::receive_socket(tcp_data_socket) => {
+                        *last_tester_present = std::time::Instant::now();
                         trace!("Received message from socket: {:?}", message);
                         match message {
                             Ok(received_message) => {
@@ -417,6 +447,7 @@ where
                                     // send the response to the update channel
                                     if let ControlMessage::AwaitResponse(request_message, response) = active {
                                         trace!("Received response for request: {:?}", request_message);
+                                        trace!("{received_message:?}");
                                         if request_message.is_response(received_message.header.payload_type) {
                                             debug!("Received expected response, sending to the update channel");
                                         // if received_message.header.payload_type == request_message.header.payload_type {

@@ -8,6 +8,7 @@ use crate::{
 use std::net::{IpAddr, SocketAddr};
 use tokio::sync::mpsc;
 use tracing::{info, trace};
+use uds_protocol::KeepAliveMessage;
 
 #[derive(Debug, strum::Display)]
 /// Send updates to the user
@@ -48,6 +49,12 @@ pub struct ClientOptions {
     pub protocol_version: ProtocolVersion,
     /// The activation type to use when sending the routing activation request
     pub routing_activation_options: Option<RoutingActivationOptions>,
+    /// Timer for sending the UDS Tester Present messages
+    /// Not necessary for DefaultSession, but useful for keeping the connection alive
+    pub tester_present_interval: std::time::Duration,
+
+    /// Whether to suppress the UDS TesterPresent reply from the server
+    pub suppress_tester_present: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -82,7 +89,7 @@ pub struct Client<ReadDefinitions, WriteDefinitions, Conn = connection::Connecto
 
 impl<
         ReadDefinitions: WirePayload + 'static + Sync + Send + Clone,
-        WriteDefinitions: WirePayload + 'static + Sync + Send + Clone,
+        WriteDefinitions: WirePayload + KeepAliveMessage + 'static + Sync + Send + Clone,
         Conn: connection::Connector + 'static + Sync + Send,
     > Client<ReadDefinitions, WriteDefinitions, Conn>
 {
