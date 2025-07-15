@@ -196,14 +196,23 @@ where
             return Err(Error::SocketNotBound);
         }
         // Send to the tcp_data_socket
-        self.tcp_data_socket
-            .as_mut()
-            .unwrap()
-            .send(Message::alive_check_response(
+        self.send_to_socket(Message::alive_check_response(
                 self.client_options.protocol_version,
                 self.client_options.client_logical_address,
             ))
             .await
+    }
+
+    /// Send a message to the socket manager
+    ///
+    /// Also keeps track of the last time a message was sent to the socket for Tester Present purposes
+    async fn send_to_socket(&mut self, message: Message<WriteDefinitions>) -> Result<(), Error> {
+        if let Some(socket) = &mut self.tcp_data_socket {
+            self.last_tester_present = std::time::Instant::now();
+            socket.send(message.clone()).await
+        } else {
+            Err(Error::SocketNotBound)
+        }
     }
 
     async fn receive_socket(
@@ -232,10 +241,7 @@ where
             match active_request {
                 ControlMessage::AliveCheckRequest(response) => {
                     let send_result = self
-                        .tcp_data_socket
-                        .as_mut()
-                        .unwrap()
-                        .send(Message::alive_check_request(
+                        .send_to_socket(Message::alive_check_request(
                             self.client_options.protocol_version,
                         ))
                         .await;
@@ -245,10 +251,7 @@ where
                 }
                 ControlMessage::AliveCheckResponse(message) => {
                     let _ = self
-                        .tcp_data_socket
-                        .as_mut()
-                        .unwrap()
-                        .send(Message::alive_check_response(
+                        .send_to_socket(Message::alive_check_response(
                             self.client_options.protocol_version,
                             self.client_options.client_logical_address,
                         ))
@@ -259,12 +262,8 @@ where
                 }
                 ControlMessage::SendNoResponse(message) => {
                     // Send the message to the socket
-                    let send_result = self
-                        .tcp_data_socket
-                        .as_mut()
-                        .unwrap()
-                        .send(message.clone())
-                        .await;
+                    let send_result = self.send_to_socket(message.clone()).await;
+
                     if send_result.is_err() {
                         debug!("Failed to send message: {:?}", message);
                     }
@@ -283,12 +282,8 @@ where
                     }
                 }
                 ControlMessage::RoutingActivation(message, response) => {
-                    let send_result = self
-                        .tcp_data_socket
-                        .as_mut()
-                        .unwrap()
-                        .send(message.clone())
-                        .await;
+                    let send_result = self.send_to_socket(message.clone()).await;
+
                     // Await for the response through the run loop
                     match send_result {
                         Ok(_) => {
@@ -307,12 +302,7 @@ where
                         // Check for suppressed message, if it is, send a Suppressed response
                         let suppress_response = message.is_positive_response_suppressed();
 
-                        let send_result = self
-                            .tcp_data_socket
-                            .as_mut()
-                            .unwrap()
-                            .send(message.clone())
-                            .await;
+                        let send_result = self.send_to_socket(message.clone()).await;
                         match send_result {
                             Ok(_) => {
                                 if suppress_response {
