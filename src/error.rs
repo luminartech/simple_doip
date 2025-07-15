@@ -10,6 +10,8 @@ pub enum Error {
     NetworkError(#[from] tokio::io::Error),
     #[error("Connection closed by remote host")]
     ConnectionClosed,
+    #[error("Failed to send a message: {0}")]
+    SendError(String),
     #[error(transparent)]
     MessageError(#[from] MessageError),
     #[error("Invalid logical address for client: {0:#06x}")]

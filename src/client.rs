@@ -178,7 +178,9 @@ impl<
         // Create new request and response channels to await the response of
         let (response, message) = ControlMessage::create_message(control);
         // Sends to Inner client
-        self.control_sender.send(message).await.unwrap();
+        if let Err(e) = self.control_sender.send(message).await {
+            return Err(Error::SendError(e.to_string()));
+        }
         // if its a RecvError the sender has been dropped
         response.await.map_err(|_| Error::ConnectionClosed)?
     }
