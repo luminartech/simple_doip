@@ -44,6 +44,15 @@ pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
     ),
 }
 
+/// Result type for the `create_message` function
+///
+/// Contains a oneshot receiver for the response and the control message to be sent
+/// to the inner client.
+pub(crate) struct CreateMessageResult<ReadDefinitions, WriteDefinitions>(
+    pub oneshot::Receiver<Result<SendResult<Message<ReadDefinitions>>, Error>>,
+    pub ControlMessage<ReadDefinitions, WriteDefinitions>,
+);
+
 impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
     ControlMessage<ReadDefinitions, WriteDefinitions>
 {
@@ -72,11 +81,9 @@ impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
     /// * a ControlMessage to be sent to the inner client
     pub fn create_message(
         message: Message<WriteDefinitions>,
-    ) -> (
-        oneshot::Receiver<Result<SendResult<Message<ReadDefinitions>>, Error>>,
-        Self,
-    ) {
-        Self::create_oneshot(|sender| Self::UDSMessage(message, sender))
+    ) -> CreateMessageResult<ReadDefinitions, WriteDefinitions> {
+        let (rx, msg) = Self::create_oneshot(|sender| Self::UDSMessage(message, sender));
+        CreateMessageResult(rx, msg)
     }
 
     /// Builder for the bind socket message
@@ -197,10 +204,10 @@ where
         }
         // Send to the tcp_data_socket
         self.send_to_socket(Message::alive_check_response(
-                self.client_options.protocol_version,
-                self.client_options.client_logical_address,
-            ))
-            .await
+            self.client_options.protocol_version,
+            self.client_options.client_logical_address,
+        ))
+        .await
     }
 
     /// Send a message to the socket manager
@@ -310,8 +317,8 @@ where
                                 } else {
                                     let (await_sender, await_receiver) = oneshot::channel();
 
-                                self.active_request = Some(ControlMessage::AwaitResponse(
-                                    message.to_owned(),
+                                    self.active_request = Some(ControlMessage::AwaitResponse(
+                                        message.to_owned(),
                                         await_sender,
                                     ));
                                     // Converts from the SendResult return to a regular AwaitResponse

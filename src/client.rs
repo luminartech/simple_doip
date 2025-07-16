@@ -1,5 +1,5 @@
 use crate::{
-    client_inner::{ControlMessage, Inner},
+    client_inner::{ControlMessage, CreateMessageResult, Inner},
     connection,
     messages::{ActivationTypeCode, Message, MessageError, ProtocolVersion},
     traits::WirePayload,
@@ -107,7 +107,7 @@ impl<
             );
 
             // Send the message and wait for a response
-            let (response, message) = ControlMessage::create_message(message);
+            let CreateMessageResult(response, message) = ControlMessage::create_message(message);
             control_sender.send(message).await.unwrap();
             let _ = response.await;
         }
@@ -183,7 +183,7 @@ impl<
         control: Message<WriteDefinitions>,
     ) -> Result<SendResult<Message<ReadDefinitions>>, Error> {
         // Create new request and response channels to await the response of
-        let (response, message) = ControlMessage::create_message(control);
+        let CreateMessageResult(response, message) = ControlMessage::create_message(control);
         // Sends to Inner client
         if let Err(e) = self.control_sender.send(message).await {
             return Err(Error::SendError(e.to_string()));

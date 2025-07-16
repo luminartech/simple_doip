@@ -51,7 +51,7 @@ impl From<ActivationTypeCode> for u8 {
 impl UpperHex for ActivationTypeCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let val: u8 = (*self).into();
-        let val = format!("{:02X}", val);
+        let val = format!("{val:02X}");
         f.write_str(&val)
     }
 }

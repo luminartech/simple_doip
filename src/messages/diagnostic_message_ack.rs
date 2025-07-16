@@ -151,6 +151,6 @@ mod tests {
             ack_code: DiagnosticAckCode::Reserved(8),
             previous_message_data: vec![0x01, 0x02, 0x03],
         };
-        println!("{:?}", ack);
+        println!("{ack:?}");
     }
 }
