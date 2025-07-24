@@ -89,7 +89,7 @@ pub struct Client<ReadDefinitions, WriteDefinitions, Conn = connection::Connecto
 
 impl<
         ReadDefinitions: WirePayload + 'static + Sync + Send + Clone,
-        WriteDefinitions: WirePayload + KeepAliveMessage + 'static + Sync + Send + Clone,
+        WriteDefinitions: WirePayload + 'static + Sync + Send + Clone,
         Conn: connection::Connector + 'static + Sync + Send,
     > Client<ReadDefinitions, WriteDefinitions, Conn>
 {

@@ -129,6 +129,10 @@ pub(super) struct Inner<ReadDefinitions, WriteDefinitions, Conn> {
 
     // tester_present_heartbeat: tokio::time::Interval,
     last_tester_present: std::time::Instant,
+
+    /// Tester Present request message to be sent
+    /// This is used to send the Tester Present message periodically
+    tester_present_message: Message<WriteDefinitions>,
 }
 /// Sender for the control messages sent via the control channel
 type ControlSender<R, W> = mpsc::Sender<ControlMessage<R, W>>;
@@ -138,8 +142,7 @@ type UpdateReceiver<R, E> = mpsc::Receiver<Result<Message<R>, E>>;
 impl<ReadDefinitions, WriteDefinitions, Conn> Inner<ReadDefinitions, WriteDefinitions, Conn>
 where
     ReadDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync + Clone,
-    WriteDefinitions:
-        WireFormat + KeepAliveMessage + std::fmt::Debug + 'static + Send + Sync + Clone,
+    WriteDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync + Clone,
     Conn: crate::connection::Connector + 'static + Send + Sync,
 {
     /// Spawns the inner client to run in the background and returns the send and recieve channels
@@ -152,6 +155,8 @@ where
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);
         let (update_sender, update_receiver) = mpsc::channel(16);
+        let tester_present_message =
+            Message::<WriteDefinitions>::alive_check_request(client_options.protocol_version);
         let inner = Inner::<ReadDefinitions, WriteDefinitions, Conn> {
             client_options,
             control_receiver,
@@ -161,6 +166,7 @@ where
             connection_state: ConnectionState::Listen,
             run: true,
             last_tester_present: std::time::Instant::now(),
+            tester_present_message,
         };
         inner.run();
         (control_sender, update_receiver)
@@ -366,14 +372,14 @@ where
     fn run(mut self) {
         tokio::spawn(async move {
             info!("Starting DOIP processing loop");
-            let tester_present_req =
-                WriteDefinitions::create_keep_alive(self.client_options.suppress_tester_present);
-            let test_present_message = Message::<WriteDefinitions>::diagnostic_message(
-                self.client_options.protocol_version,
-                self.client_options.client_logical_address,
-                self.client_options.server_logical_address,
-                tester_present_req,
-            );
+            // let tester_present_message =
+            // WriteDefinitions::create_keep_alive(self.client_options.suppress_tester_present);
+            // let tester_present_message = Message::<WriteDefinitions>::diagnostic_message(
+            //     self.client_options.protocol_version,
+            //     self.client_options.client_logical_address,
+            //     self.client_options.server_logical_address,
+            //     self.tester_present_message,
+            // );
             loop {
                 let Self {
                     control_receiver,
@@ -383,6 +389,7 @@ where
                     client_options,
                     run,
                     last_tester_present,
+                    tester_present_message,
                     ..
                 } = &mut self;
 
@@ -398,7 +405,7 @@ where
                             trace!("Skipping tester present message, last sent within interval");
                             continue;
                         }
-                        if let Err(e) = socket_manager.send(test_present_message.clone()).await {
+                        if let Err(e) = socket_manager.send(tester_present_message.clone()).await {
                             debug!("Failed to send tester present message: {:?}", e);
                         } else {
                             *last_tester_present = std::time::Instant::now();
