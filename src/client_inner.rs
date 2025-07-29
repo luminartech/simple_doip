@@ -13,34 +13,34 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 use tracing::{debug, info, trace};
-use uds_protocol::{KeepAliveMessage, WireFormat};
+use uds_protocol::{DiagnosticDefinition, KeepAliveMessage, WireFormat};
 
 /// Messages used to control the DOIP entities
 #[allow(unused)]
 #[derive(Debug)]
-pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
+pub(super) enum ControlMessage<DiagTypes> {
     /// No payload
     AliveCheckRequest(oneshot::Sender<Result<(), Error>>),
-    AliveCheckResponse(Message<ReadDefinitions>),
+    AliveCheckResponse(Message<DiagTypes>),
     /// No oneshot needed, the response is sent
     /// and does not need to be awaited
-    SendNoResponse(Message<WriteDefinitions>),
+    SendNoResponse(Message<DiagTypes>),
 
     BindSocket(SocketAddr, oneshot::Sender<Result<u16, Error>>),
     UnbindSocket(oneshot::Sender<Result<(), Error>>),
     UDSMessage(
-        Message<WriteDefinitions>,
-        oneshot::Sender<Result<SendResult<Message<ReadDefinitions>>, Error>>,
+        Message<DiagTypes>,
+        oneshot::Sender<Result<SendResult<Message<DiagTypes>>, Error>>,
     ),
     RoutingActivation(
-        Message<WriteDefinitions>,
-        oneshot::Sender<Result<Message<ReadDefinitions>, Error>>,
+        Message<DiagTypes>,
+        oneshot::Sender<Result<Message<DiagTypes>, Error>>,
     ),
     AwaitResponse(
         /// the Request message that was sent
-        Message<WriteDefinitions>,
+        Message<DiagTypes>,
         /// the response channel to send the response to
-        oneshot::Sender<Result<Message<ReadDefinitions>, Error>>,
+        oneshot::Sender<Result<Message<DiagTypes>, Error>>,
     ),
 }
 
@@ -48,14 +48,12 @@ pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
 ///
 /// Contains a oneshot receiver for the response and the control message to be sent
 /// to the inner client.
-pub(crate) struct CreateMessageResult<ReadDefinitions, WriteDefinitions>(
-    pub oneshot::Receiver<Result<SendResult<Message<ReadDefinitions>>, Error>>,
-    pub ControlMessage<ReadDefinitions, WriteDefinitions>,
+pub(crate) struct CreateMessageResult<DiagTypes>(
+    pub oneshot::Receiver<Result<SendResult<Message<DiagTypes>>, Error>>,
+    pub ControlMessage<DiagTypes>,
 );
 
-impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
-    ControlMessage<ReadDefinitions, WriteDefinitions>
-{
+impl<DiagTypes: DiagnosticDefinition + Clone> ControlMessage<DiagTypes> {
     /// Helper method to create control messages with oneshot channels
     fn create_oneshot<T>(
         factory: impl FnOnce(oneshot::Sender<Result<T, Error>>) -> Self,
@@ -66,22 +64,17 @@ impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
 
     #[allow(unused)]
     pub fn create_routing_activation_message(
-        message: &Message<WriteDefinitions>,
-    ) -> (
-        oneshot::Receiver<Result<Message<ReadDefinitions>, Error>>,
-        Self,
-    ) {
+        message: &Message<DiagTypes>,
+    ) -> (oneshot::Receiver<Result<Message<DiagTypes>, Error>>, Self) {
         trace!(message = "RoutingActivationRequest");
         Self::create_oneshot(|sender| Self::RoutingActivation(message.clone(), sender))
     }
 
-    /// Takes in a UDS Message Request (WriteDefinitions == Request)
+    /// Takes in a UDS Message Request (DiagTypes == Request)
     /// Returns:
-    /// * a oneshot receiver for the UDS Response (ReadDefinitions == Response)
+    /// * a oneshot receiver for the UDS Response (DiagTypes == Response)
     /// * a ControlMessage to be sent to the inner client
-    pub fn create_message(
-        message: Message<WriteDefinitions>,
-    ) -> CreateMessageResult<ReadDefinitions, WriteDefinitions> {
+    pub fn create_message(message: Message<DiagTypes>) -> CreateMessageResult<DiagTypes> {
         let (rx, msg) = Self::create_oneshot(|sender| Self::UDSMessage(message, sender));
         CreateMessageResult(rx, msg)
     }
@@ -105,18 +98,18 @@ impl<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat + Clone>
 ///
 /// The inner state enters an asynchronous loop which runs in the background
 ///
-pub(super) struct Inner<ReadDefinitions, WriteDefinitions, Conn> {
+pub(super) struct Inner<DiagTypes: DiagnosticDefinition, Conn> {
     client_options: ClientOptions,
     /// MPSC Receiver used to receive control messages from outer client
-    control_receiver: mpsc::Receiver<ControlMessage<ReadDefinitions, WriteDefinitions>>,
+    control_receiver: mpsc::Receiver<ControlMessage<DiagTypes>>,
     /// MPSC Sender used to send updates to outer client
-    update_sender: mpsc::Sender<Result<Message<ReadDefinitions>, MessageError>>,
+    update_sender: mpsc::Sender<Result<Message<DiagTypes>, MessageError>>,
 
     /// active request in flight (if it exists) in case the connection is lost
-    active_request: Option<ControlMessage<ReadDefinitions, WriteDefinitions>>,
+    active_request: Option<ControlMessage<DiagTypes>>,
 
     /// Socket manager for TCP data socket if bound
-    tcp_data_socket: Option<SocketManager<ReadDefinitions, WriteDefinitions, Conn>>,
+    tcp_data_socket: Option<SocketManager<uds_protocol::Request<DiagTypes>>, uds_protocol::Response<DiagTypes>, Conn>>,
 
     /// Represents the DoIP connection state of the socket
     connection_state: ConnectionState,
@@ -132,32 +125,33 @@ pub(super) struct Inner<ReadDefinitions, WriteDefinitions, Conn> {
 
     /// Tester Present request message to be sent
     /// This is used to send the Tester Present message periodically
-    tester_present_message: Message<WriteDefinitions>,
+    tester_present_message: Message<uds_protocol::Request<DiagTypes>>,
 }
 /// Sender for the control messages sent via the control channel
-type ControlSender<R, W> = mpsc::Sender<ControlMessage<R, W>>;
+type ControlSender<D> = mpsc::Sender<ControlMessage<D>>;
 /// Receiver for the update messages from the socket
 type UpdateReceiver<R, E> = mpsc::Receiver<Result<Message<R>, E>>;
 
-impl<ReadDefinitions, WriteDefinitions, Conn> Inner<ReadDefinitions, WriteDefinitions, Conn>
+impl<DiagTypes, Conn> Inner<DiagTypes, Conn>
 where
-    ReadDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync + Clone,
-    WriteDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync + Clone,
+    DiagTypes: DiagnosticDefinition + std::fmt::Debug + 'static + Send + Sync + Clone,
     Conn: crate::connection::Connector + 'static + Send + Sync,
 {
     /// Spawns the inner client to run in the background and returns the send and recieve channels
     pub fn spawn(
         client_options: ClientOptions,
     ) -> (
-        ControlSender<ReadDefinitions, WriteDefinitions>,
-        UpdateReceiver<ReadDefinitions, MessageError>,
+        ControlSender<DiagTypes>,
+        UpdateReceiver<DiagTypes, MessageError>,
     ) {
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);
         let (update_sender, update_receiver) = mpsc::channel(16);
         let tester_present_message =
-            Message::<WriteDefinitions>::alive_check_request(client_options.protocol_version);
-        let inner = Inner::<ReadDefinitions, WriteDefinitions, Conn> {
+            Message::<uds_protocol::Request<DiagTypes>>::alive_check_request(
+                client_options.protocol_version,
+            );
+        let inner = Inner::<DiagTypes, Conn> {
             client_options,
             control_receiver,
             update_sender,
@@ -219,7 +213,10 @@ where
     /// Send a message to the socket manager
     ///
     /// Also keeps track of the last time a message was sent to the socket for Tester Present purposes
-    async fn send_to_socket(&mut self, message: Message<WriteDefinitions>) -> Result<(), Error> {
+    async fn send_to_socket(
+        &mut self,
+        message: Message<uds_protocol::Request<DiagTypes>>,
+    ) -> Result<(), Error> {
         if let Some(socket) = &mut self.tcp_data_socket {
             self.last_tester_present = std::time::Instant::now();
             socket.send(message.clone()).await
@@ -229,8 +226,8 @@ where
     }
 
     async fn receive_socket(
-        socket_manager: &mut Option<SocketManager<ReadDefinitions, WriteDefinitions, Conn>>,
-    ) -> Result<Message<ReadDefinitions>, Error> {
+        socket_manager: &mut Option<SocketManager<DiagTypes, Conn>>,
+    ) -> Result<Message<uds_protocol::Response<DiagTypes>>, Error> {
         if let Some(receiver) = socket_manager {
             match receiver.receive().await {
                 Some(message) => message.map_err(|_| Error::SocketClosedUnexpectedly),

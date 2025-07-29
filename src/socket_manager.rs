@@ -19,27 +19,26 @@ use tokio::{
 };
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{error, info, trace};
-use uds_protocol::WireFormat;
+use uds_protocol::{DiagnosticDefinition, WireFormat};
 
 /// 1-to-1 mapping of the socket manager to the client (currently)
 /// There is only one socket manager per client.
 #[derive(Debug)]
-pub struct SocketManager<ReadDefinitions, WriteDefinitions, Conn> {
+pub struct SocketManager<D: DiagnosticDefinition, Conn> {
     /// Receiver used to receive messages from the socket
     /// This is the channel that the socket manager uses to send messages back up to the client
-    receiver: mpsc::Receiver<Result<Message<ReadDefinitions>, MessageError>>,
+    receiver: mpsc::Receiver<Result<Message<uds_protocol::Response<D>>, MessageError>>,
     /// Sender used to send messages to the socket
-    sender: mpsc::Sender<Message<WriteDefinitions>>,
+    sender: mpsc::Sender<Message<uds_protocol::Request<D>>>,
     local_port: u16,
     session_id: u16,
 
     _phantom: std::marker::PhantomData<Conn>,
 }
 
-impl<ReadDefinitions, WriteDefinitions, Conn> SocketManager<ReadDefinitions, WriteDefinitions, Conn>
+impl<D, Conn> SocketManager<D, Conn>
 where
-    ReadDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync,
-    WriteDefinitions: WireFormat + std::fmt::Debug + 'static + Send + Sync,
+    D: DiagnosticDefinition + std::fmt::Debug + 'static + Send + Sync,
     Conn: connection::Connector + 'static + Send + Sync,
 {
     /// Creates a new SocketManager instance
@@ -85,7 +84,7 @@ where
     }
 
     /// Send a message to the target address
-    pub async fn send(&mut self, message: Message<WriteDefinitions>) -> Result<(), Error> {
+    pub async fn send(&mut self, message: Message<uds_protocol::Request<D>>) -> Result<(), Error> {
         self.sender.send(message).await.map_err(|e| {
             error!("Failed to send message: {}", e);
             Error::ConnectionClosed
@@ -95,7 +94,9 @@ where
     }
 
     /// Receive a message from the receiver/Request channel
-    pub async fn receive(&mut self) -> Option<Result<Message<ReadDefinitions>, MessageError>> {
+    pub async fn receive(
+        &mut self,
+    ) -> Option<Result<Message<uds_protocol::Response<D>>, MessageError>> {
         self.receiver.recv().await
     }
 
@@ -103,7 +104,7 @@ where
     pub async fn receive_timeout(
         &mut self,
         timeout: Duration,
-    ) -> Option<Result<Message<ReadDefinitions>, MessageError>> {
+    ) -> Option<Result<Message<uds_protocol::Response<D>>, MessageError>> {
         tokio::time::timeout(timeout, self.receiver.recv())
             .await
             .unwrap()
@@ -136,10 +137,10 @@ where
 
     /// Spawn the socket loop to get messages from the socket
     fn spawn_socket_loop(
-        rx_tx: mpsc::Sender<Result<Message<ReadDefinitions>, MessageError>>,
-        mut tx_rx: mpsc::Receiver<Message<WriteDefinitions>>,
-        mut socket_read_stream: FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>,
-        mut socket_write_sink: FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>,
+        rx_tx: mpsc::Sender<Result<Message<D>, MessageError>>,
+        mut tx_rx: mpsc::Receiver<Message<D>>,
+        mut socket_read_stream: FramedRead<OwnedReadHalf, MessageCodec<D>>,
+        mut socket_write_sink: FramedWrite<OwnedWriteHalf, MessageCodec<D>>,
     ) {
         tokio::spawn(async move {
             // General TCP activity timeout

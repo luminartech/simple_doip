@@ -31,6 +31,7 @@ use uds_protocol::WireFormat;
 use crate::LogicalAddress;
 
 /// Message contains the payload and header info of a DoIP message
+///
 /// The payload is a generic type that implements the WireFormat trait
 /// The header is a fixed size struct that contains the protocol version, payload type, and payload length
 #[derive(Debug, Clone)]

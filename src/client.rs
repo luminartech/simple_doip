@@ -8,7 +8,7 @@ use crate::{
 use std::net::{IpAddr, SocketAddr};
 use tokio::sync::mpsc;
 use tracing::{info, trace};
-use uds_protocol::KeepAliveMessage;
+use uds_protocol::{DiagnosticDefinition, KeepAliveMessage};
 
 #[derive(Debug, strum::Display)]
 /// Send updates to the user
@@ -78,25 +78,24 @@ pub enum SendResult<ReadDefinitions> {
 /// It handles the connection to the server, and sends and receives messages, silently
 /// handling DoIP acknowledgements and other protocol details that the user doesn't need to worry about.
 #[derive(Debug)]
-pub struct Client<ReadDefinitions, WriteDefinitions, Conn = connection::ConnectorSocket> {
+pub struct Client<DiagnosticDefinitions, Conn = connection::ConnectorSocket> {
     pub client_options: ClientOptions,
     /// Sends messages from the user to the inner client
-    control_sender: mpsc::Sender<ControlMessage<ReadDefinitions, WriteDefinitions>>,
+    control_sender: mpsc::Sender<ControlMessage<DiagnosticDefinitions>>,
     /// Receives messages from the inner client to the user
     update_receiver: mpsc::Receiver<Result<Message<ReadDefinitions>, MessageError>>,
     _phantom: std::marker::PhantomData<Conn>,
 }
 
 impl<
-        ReadDefinitions: WirePayload + 'static + Sync + Send + Clone,
-        WriteDefinitions: WirePayload + 'static + Sync + Send + Clone,
+        DiagnosticDefinitions: DiagnosticDefinition + 'static + Sync + Send + Clone,
         Conn: connection::Connector + 'static + Sync + Send,
-    > Client<ReadDefinitions, WriteDefinitions, Conn>
+    > Client<DiagnosticDefinitions, Conn>
 {
     /// Create a DoIP connection, and automatically send a routing activation request if the client options specify it
     /// The target port defaults to [`crate::TCP_PORT`].
     pub async fn connect(client_options: ClientOptions) -> Result<Self, Error> {
-        let (control_sender, update_receiver) = Inner::<_, _, Conn>::spawn(client_options);
+        let (control_sender, update_receiver) = Inner::<_, Conn>::spawn(client_options);
         // Automatically send a routing activation request if the client options specify it
         if let Some(routing_activation_options) = client_options.routing_activation_options {
             let message = Message::<WriteDefinitions>::routing_activation_request(
@@ -158,12 +157,12 @@ impl<
     pub async fn send_diagnostic_message(
         &mut self,
         address_type: AddressType,
-        user_data: WriteDefinitions,
+        user_data: DiagnosticDefinitions,
     ) -> Result<SendResult<Message<ReadDefinitions>>, Error> {
         // Create a new message, send it to the server, and wait for a response
 
         // Create a new message
-        let message = Message::<WriteDefinitions>::diagnostic_message(
+        let message = Message::<DiagnosticDefinitions>::diagnostic_message(
             self.client_options.protocol_version,
             self.client_options.client_logical_address,
             match address_type {
@@ -180,8 +179,8 @@ impl<
     /// Send a request to the server and wait for a response (which is returned)
     async fn send_message(
         &mut self,
-        control: Message<WriteDefinitions>,
-    ) -> Result<SendResult<Message<ReadDefinitions>>, Error> {
+        control: Message<DiagnosticDefinitions>,
+    ) -> Result<SendResult<Message<DiagnosticDefinitions>>, Error> {
         // Create new request and response channels to await the response of
         let CreateMessageResult(response, message) = ControlMessage::create_message(control);
         // Sends to Inner client
