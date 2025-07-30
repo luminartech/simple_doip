@@ -2,13 +2,12 @@ use crate::{
     client_inner::{ControlMessage, CreateMessageResult, Inner},
     connection,
     messages::{ActivationTypeCode, Message, MessageError, ProtocolVersion},
-    traits::WirePayload,
     Error, LogicalAddress,
 };
 use std::net::{IpAddr, SocketAddr};
 use tokio::sync::mpsc;
 use tracing::{info, trace};
-use uds_protocol::{DiagnosticDefinition, KeepAliveMessage};
+use uds_protocol::DiagnosticDefinition;
 
 #[derive(Debug, strum::Display)]
 /// Send updates to the user
@@ -78,19 +77,22 @@ pub enum SendResult<ReadDefinitions> {
 /// It handles the connection to the server, and sends and receives messages, silently
 /// handling DoIP acknowledgements and other protocol details that the user doesn't need to worry about.
 #[derive(Debug)]
-pub struct Client<DiagnosticDefinitions, Conn = connection::ConnectorSocket> {
+pub struct Client<DiagTypes: DiagnosticDefinition, Conn = connection::ConnectorSocket> {
     pub client_options: ClientOptions,
     /// Sends messages from the user to the inner client
-    control_sender: mpsc::Sender<ControlMessage<DiagnosticDefinitions>>,
+    control_sender: mpsc::Sender<
+        ControlMessage<uds_protocol::Response<DiagTypes>, uds_protocol::Request<DiagTypes>>,
+    >,
     /// Receives messages from the inner client to the user
-    update_receiver: mpsc::Receiver<Result<Message<ReadDefinitions>, MessageError>>,
+    update_receiver:
+        mpsc::Receiver<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>>,
     _phantom: std::marker::PhantomData<Conn>,
 }
 
-impl<
-        DiagnosticDefinitions: DiagnosticDefinition + 'static + Sync + Send + Clone,
-        Conn: connection::Connector + 'static + Sync + Send,
-    > Client<DiagnosticDefinitions, Conn>
+impl<DiagTypes, Conn> Client<DiagTypes, Conn>
+where
+    DiagTypes: DiagnosticDefinition + 'static + Sync + Send + Clone + std::fmt::Debug,
+    Conn: connection::Connector + 'static + Sync + Send,
 {
     /// Create a DoIP connection, and automatically send a routing activation request if the client options specify it
     /// The target port defaults to [`crate::TCP_PORT`].
@@ -98,7 +100,7 @@ impl<
         let (control_sender, update_receiver) = Inner::<_, Conn>::spawn(client_options);
         // Automatically send a routing activation request if the client options specify it
         if let Some(routing_activation_options) = client_options.routing_activation_options {
-            let message = Message::<WriteDefinitions>::routing_activation_request(
+            let message = Message::<uds_protocol::Request<DiagTypes>>::routing_activation_request(
                 client_options.protocol_version,
                 client_options.client_logical_address,
                 routing_activation_options.activation_type,
@@ -140,7 +142,9 @@ impl<
     }
 
     /// Returns an Option of a Response if there was one in flight when the client or server disconnected
-    pub async fn reconnect(&mut self) -> Result<Option<Message<WriteDefinitions>>, Error> {
+    pub async fn reconnect(
+        &mut self,
+    ) -> Result<Option<Message<uds_protocol::Request<DiagTypes>>>, Error> {
         todo!("Reconnect not implemented yet");
     }
 
@@ -157,12 +161,12 @@ impl<
     pub async fn send_diagnostic_message(
         &mut self,
         address_type: AddressType,
-        user_data: DiagnosticDefinitions,
-    ) -> Result<SendResult<Message<ReadDefinitions>>, Error> {
+        user_data: uds_protocol::Request<DiagTypes>,
+    ) -> Result<SendResult<Message<uds_protocol::Response<DiagTypes>>>, Error> {
         // Create a new message, send it to the server, and wait for a response
 
         // Create a new message
-        let message = Message::<DiagnosticDefinitions>::diagnostic_message(
+        let message = Message::diagnostic_message(
             self.client_options.protocol_version,
             self.client_options.client_logical_address,
             match address_type {
@@ -179,8 +183,8 @@ impl<
     /// Send a request to the server and wait for a response (which is returned)
     async fn send_message(
         &mut self,
-        control: Message<DiagnosticDefinitions>,
-    ) -> Result<SendResult<Message<DiagnosticDefinitions>>, Error> {
+        control: Message<uds_protocol::Request<DiagTypes>>,
+    ) -> Result<SendResult<Message<uds_protocol::Response<DiagTypes>>>, Error> {
         // Create new request and response channels to await the response of
         let CreateMessageResult(response, message) = ControlMessage::create_message(control);
         // Sends to Inner client

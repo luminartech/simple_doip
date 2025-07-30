@@ -19,26 +19,26 @@ use tokio::{
 };
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{error, info, trace};
-use uds_protocol::{DiagnosticDefinition, WireFormat};
+use uds_protocol::DiagnosticDefinition;
 
 /// 1-to-1 mapping of the socket manager to the client (currently)
 /// There is only one socket manager per client.
 #[derive(Debug)]
-pub struct SocketManager<D: DiagnosticDefinition, Conn> {
+pub struct SocketManager<DiagTypes: DiagnosticDefinition, Conn> {
     /// Receiver used to receive messages from the socket
     /// This is the channel that the socket manager uses to send messages back up to the client
-    receiver: mpsc::Receiver<Result<Message<uds_protocol::Response<D>>, MessageError>>,
+    receiver: mpsc::Receiver<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>>,
     /// Sender used to send messages to the socket
-    sender: mpsc::Sender<Message<uds_protocol::Request<D>>>,
+    sender: mpsc::Sender<Message<uds_protocol::Request<DiagTypes>>>,
     local_port: u16,
     session_id: u16,
 
     _phantom: std::marker::PhantomData<Conn>,
 }
 
-impl<D, Conn> SocketManager<D, Conn>
+impl<DiagTypes, Conn> SocketManager<DiagTypes, Conn>
 where
-    D: DiagnosticDefinition + std::fmt::Debug + 'static + Send + Sync,
+    DiagTypes: DiagnosticDefinition + std::fmt::Debug + 'static + Send + Sync,
     Conn: connection::Connector + 'static + Send + Sync,
 {
     /// Creates a new SocketManager instance
@@ -66,8 +66,10 @@ where
             }
         };
 
-        let socket_read_stream = FramedRead::new(rx, MessageCodec::new());
-        let socket_write_sink = FramedWrite::new(tx, MessageCodec::new());
+        let socket_read_stream =
+            FramedRead::new(rx, MessageCodec::<uds_protocol::Response<DiagTypes>>::new());
+        let socket_write_sink =
+            FramedWrite::new(tx, MessageCodec::<uds_protocol::Request<DiagTypes>>::new());
 
         let (rx_tx, rx_rx) = mpsc::channel(16);
         let (tx_tx, tx_rx) = mpsc::channel(16);
@@ -84,7 +86,10 @@ where
     }
 
     /// Send a message to the target address
-    pub async fn send(&mut self, message: Message<uds_protocol::Request<D>>) -> Result<(), Error> {
+    pub async fn send(
+        &mut self,
+        message: Message<uds_protocol::Request<DiagTypes>>,
+    ) -> Result<(), Error> {
         self.sender.send(message).await.map_err(|e| {
             error!("Failed to send message: {}", e);
             Error::ConnectionClosed
@@ -96,7 +101,7 @@ where
     /// Receive a message from the receiver/Request channel
     pub async fn receive(
         &mut self,
-    ) -> Option<Result<Message<uds_protocol::Response<D>>, MessageError>> {
+    ) -> Option<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>> {
         self.receiver.recv().await
     }
 
@@ -104,7 +109,7 @@ where
     pub async fn receive_timeout(
         &mut self,
         timeout: Duration,
-    ) -> Option<Result<Message<uds_protocol::Response<D>>, MessageError>> {
+    ) -> Option<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>> {
         tokio::time::timeout(timeout, self.receiver.recv())
             .await
             .unwrap()
@@ -137,10 +142,16 @@ where
 
     /// Spawn the socket loop to get messages from the socket
     fn spawn_socket_loop(
-        rx_tx: mpsc::Sender<Result<Message<D>, MessageError>>,
-        mut tx_rx: mpsc::Receiver<Message<D>>,
-        mut socket_read_stream: FramedRead<OwnedReadHalf, MessageCodec<D>>,
-        mut socket_write_sink: FramedWrite<OwnedWriteHalf, MessageCodec<D>>,
+        rx_tx: mpsc::Sender<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>>,
+        mut tx_rx: mpsc::Receiver<Message<uds_protocol::Request<DiagTypes>>>,
+        mut socket_read_stream: FramedRead<
+            OwnedReadHalf,
+            MessageCodec<uds_protocol::Response<DiagTypes>>,
+        >,
+        mut socket_write_sink: FramedWrite<
+            OwnedWriteHalf,
+            MessageCodec<uds_protocol::Request<DiagTypes>>,
+        >,
     ) {
         tokio::spawn(async move {
             // General TCP activity timeout

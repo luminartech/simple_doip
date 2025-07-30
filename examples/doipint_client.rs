@@ -18,7 +18,7 @@ use tokio::net::{
 };
 use tracing::{error, info, trace};
 use tracing_subscriber;
-use uds_protocol::{ProtocolIdentifier, ProtocolRequest, ProtocolResponse};
+use uds_protocol::{ProtocolIdentifier, ProtocolRequest};
 
 /// Sets up a TCP listener on a client address and waits for a connection from the server
 pub struct ListenerSocket;
@@ -62,7 +62,7 @@ impl Connector for ListenerSocket {
     }
 }
 
-type InternalClient = Client<ProtocolResponse, ProtocolRequest, ListenerSocket>;
+type InternalClient = Client<uds_protocol::UdsSpec, ListenerSocket>;
 /// This is a simple client that creates a TCP socket and waits for a connection from the server
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -93,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Bound to port: {}", port);
 
-    let resp = client
+    let resp: Result<doip::client::SendResult<_>, _> = client
         .send_diagnostic_message(
             doip::client::AddressType::Physical,
             ProtocolRequest::diagnostic_session_control(
@@ -117,7 +117,7 @@ async fn main() -> anyhow::Result<()> {
     // sleep for 10 seconds to allow the server to respond with some tester presents
     tokio::time::sleep(Duration::from_secs(7)).await;
 
-    let resp = client
+    let resp: Result<doip::client::SendResult<_>, _> = client
         .send_diagnostic_message(
             doip::client::AddressType::Physical,
             ProtocolRequest::read_data_by_identifier(vec![ProtocolIdentifier::new(

@@ -35,12 +35,12 @@ use crate::LogicalAddress;
 /// The payload is a generic type that implements the WireFormat trait
 /// The header is a fixed size struct that contains the protocol version, payload type, and payload length
 #[derive(Debug, Clone)]
-pub struct Message<DiagnosticDefinitions> {
+pub struct Message<W> {
     pub header: header::Header,
-    pub payload: Payload<DiagnosticDefinitions>,
+    pub payload: Payload<W>,
 }
 
-impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
+impl<W: WireFormat> Message<W> {
     pub fn is_response(&self, payload_type: PayloadType) -> bool {
         match self.header.payload_type {
             PayloadType::RoutingActivationRequest => {
@@ -68,9 +68,7 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
         }
     }
 
-    pub fn alive_check_request(
-        protocol_version: ProtocolVersion,
-    ) -> Message<DiagnosticsDefinition> {
+    pub fn alive_check_request(protocol_version: ProtocolVersion) -> Message<W> {
         Message {
             header: Header::new(protocol_version, PayloadType::AliveCheckRequest, 0),
             payload: Payload::AliveCheckRequest,
@@ -80,7 +78,7 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
     pub fn alive_check_response(
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
-    ) -> Message<DiagnosticsDefinition> {
+    ) -> Message<W> {
         let response = AliveCheckResponse { source_address };
         Message {
             header: Header::new(protocol_version, PayloadType::AliveCheckResponse, 2),
@@ -92,8 +90,8 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
         target_address: LogicalAddress,
-        message: DiagnosticsDefinition,
-    ) -> Message<DiagnosticsDefinition> {
+        message: W,
+    ) -> Message<W> {
         let payload_size = message.required_size() as u32 + 4;
         let message = DiagnosticMessage {
             source_address,
@@ -116,7 +114,7 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
         target_address: LogicalAddress,
         ack_code: DiagnosticAckCode,
         previous_message_data: Vec<u8>,
-    ) -> Message<DiagnosticsDefinition> {
+    ) -> Message<W> {
         let ack = DiagnosticMessageAck {
             source_address,
             target_address,
@@ -138,7 +136,7 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
         source_address: LogicalAddress,
         activation_type: ActivationTypeCode,
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
-    ) -> Message<DiagnosticsDefinition> {
+    ) -> Message<W> {
         let request = RoutingActivationRequest {
             source_address,
             activation_type,
@@ -167,7 +165,7 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
         routing_activation_response_code: RoutingActivationResponseCode,
         reserved_oem: [u8; 4],
         oem_specific: Option<[u8; 4]>,
-    ) -> Message<DiagnosticsDefinition> {
+    ) -> Message<W> {
         let response = RoutingActivationResponse {
             logical_address_tester,
             logical_address_of_doip_entity,
@@ -183,11 +181,9 @@ impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
     }
 }
 
-impl<DiagnosticsDefinition: WireFormat> Message<DiagnosticsDefinition> {
+impl<W: WireFormat> Message<W> {
     // TODO: This needs careful review and should do a lot more error checking than it does now
-    pub fn read<T: Read>(
-        mut message_bytes: &mut T,
-    ) -> Result<Message<DiagnosticsDefinition>, MessageError> {
+    pub fn read<T: Read>(mut message_bytes: &mut T) -> Result<Message<W>, MessageError> {
         let header = Header::read(&mut message_bytes)?;
         header.version_inverse_correct()?;
         let payload = Payload::read(&mut message_bytes, header.payload_type)?;

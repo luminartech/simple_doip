@@ -7,7 +7,7 @@ use doip::{
 use std::net::{IpAddr, SocketAddr};
 use tracing::info;
 use tracing_subscriber;
-use uds_protocol::{ProtocolRequest, ProtocolResponse};
+use uds_protocol::{ProtocolRequest, ProtocolResponse, UdsSpec};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -32,9 +32,11 @@ async fn main() -> anyhow::Result<()> {
             activation_type: ActivationTypeCode::Default,
             oem_specific: None,
         }),
+        tester_present_interval: std::time::Duration::from_secs(5), // 5 seconds for testing
+        suppress_tester_present: true, // Suppress the reply from the server
     };
 
-    let mut client = Client::<ProtocolResponse, ProtocolRequest>::connect(custom_options).await?;
+    let mut client = Client::<UdsSpec>::connect(custom_options).await?;
     let port = client.bind_socket(custom_options.server_address).await?;
 
     info!("Bound to port: {}", port);
