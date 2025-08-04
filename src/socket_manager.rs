@@ -66,10 +66,8 @@ where
             }
         };
 
-        let socket_read_stream =
-            FramedRead::new(rx, MessageCodec::<uds_protocol::Response<DiagTypes>>::new());
-        let socket_write_sink =
-            FramedWrite::new(tx, MessageCodec::<uds_protocol::Request<DiagTypes>>::new());
+        let socket_read_stream = FramedRead::new(rx, MessageCodec::new());
+        let socket_write_sink = FramedWrite::new(tx, MessageCodec::new());
 
         let (rx_tx, rx_rx) = mpsc::channel(16);
         let (tx_tx, tx_rx) = mpsc::channel(16);
