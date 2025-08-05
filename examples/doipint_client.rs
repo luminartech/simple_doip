@@ -21,8 +21,8 @@ use tracing_subscriber;
 use uds_protocol::{ProtocolIdentifier, ProtocolRequest};
 
 /// Sets up a TCP listener on a client address and waits for a connection from the server
-pub struct ListenerSocket;
-impl Connector for ListenerSocket {
+pub struct ExampleSocket;
+impl Connector for ExampleSocket {
     async fn establish_connection(
         gateway_address: SocketAddr,
     ) -> Result<(OwnedReadHalf, OwnedWriteHalf), Error> {
@@ -62,7 +62,7 @@ impl Connector for ListenerSocket {
     }
 }
 
-type InternalClient = Client<uds_protocol::UdsSpec, ListenerSocket>;
+type InternalClient = Client<uds_protocol::UdsSpec, ExampleSocket>;
 /// This is a simple client that creates a TCP socket and waits for a connection from the server
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
