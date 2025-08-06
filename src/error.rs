@@ -32,4 +32,6 @@ pub enum Error {
     SocketNotBound,
     #[error("Socket closed unexpectedly")]
     SocketClosedUnexpectedly,
+    #[error("Invalid client type")]
+    InvalidClientType,
 }
