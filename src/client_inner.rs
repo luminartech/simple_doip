@@ -324,48 +324,47 @@ where
                             debug!("Failed to send response: Socket not bound");
                         }
                     } else {
-                        // Check for suppressed message, if it is, send a Suppressed response
-                        let suppress_response = message.is_positive_response_suppressed();
-
                         let send_result = self.send_to_socket(message.clone()).await;
+
+                        // Check for a successful suppressed message, if it is, send a Suppressed response
+                        if message.is_positive_response_suppressed() && send_result.is_ok() {
+                            if response.send(Ok(SendResult::Suppressed)).is_err() {
+                                debug!("Failed to send suppressed response");
+                            }
+                            return;
+                        }
                         match send_result {
                             Ok(_) => {
-                                if suppress_response {
-                                    let _ = response.send(Ok(SendResult::Suppressed));
-                                } else {
-                                    let (await_sender, await_receiver) = oneshot::channel();
+                                let (await_sender, await_receiver) = oneshot::channel();
 
-                                    self.active_request = Some(ControlMessage::AwaitResponse(
-                                        message.to_owned(),
-                                        await_sender,
-                                    ));
-                                    // Converts from the SendResult return to a regular AwaitResponse
-                                    // and spawns a task to await the response
-                                    tokio::spawn(async move {
-                                        match await_receiver.await {
-                                            Ok(Ok(response_message)) => {
-                                                if response
-                                                    .send(Ok(SendResult::Response(
-                                                        response_message,
-                                                    )))
-                                                    .is_err()
-                                                {
-                                                    debug!("Failed to send response");
-                                                }
-                                            }
-                                            Ok(Err(e)) => {
-                                                if response.send(Err(e)).is_err() {
-                                                    debug!("Failed to send error response");
-                                                }
-                                            }
-                                            Err(_) => {
-                                                debug!("Failed to receive response");
-                                                let _ = response.send(Err(Error::ConnectionClosed));
-                                                // If the receiver was dropped, we should exit
+                                self.active_request = Some(ControlMessage::AwaitResponse(
+                                    message.to_owned(),
+                                    await_sender,
+                                ));
+                                // Converts from the SendResult return to a regular AwaitResponse
+                                // and spawns a task to await the response
+                                tokio::spawn(async move {
+                                    match await_receiver.await {
+                                        Ok(Ok(response_message)) => {
+                                            if response
+                                                .send(Ok(SendResult::Response(response_message)))
+                                                .is_err()
+                                            {
+                                                debug!("Failed to send response");
                                             }
                                         }
-                                    });
-                                }
+                                        Ok(Err(e)) => {
+                                            if response.send(Err(e)).is_err() {
+                                                debug!("Failed to send error response");
+                                            }
+                                        }
+                                        Err(_) => {
+                                            debug!("Failed to receive response");
+                                            let _ = response.send(Err(Error::ConnectionClosed));
+                                            // If the receiver was dropped, we should exit
+                                        }
+                                    }
+                                });
                             }
                             Err(_) => todo!(),
                         }
