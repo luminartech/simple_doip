@@ -159,10 +159,12 @@ where
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);
         let (update_sender, update_receiver) = mpsc::channel(16);
-        let tester_present_message =
-            Message::<uds_protocol::Request<DiagTypes>>::alive_check_request(
-                client_options.protocol_version,
-            );
+        let tester_present_message = Message::diagnostic_message(
+            client_options.protocol_version,
+            client_options.client_logical_address,
+            client_options.server_physical_address,
+            uds_protocol::Request::tester_present(client_options.suppress_tester_present),
+        );
         let inner = Inner::<DiagTypes, Conn> {
             client_options,
             control_receiver,
@@ -382,14 +384,6 @@ where
     fn run(mut self) {
         tokio::spawn(async move {
             info!("Starting DOIP processing loop");
-            // let tester_present_message =
-            // WriteDefinitions::create_keep_alive(self.client_options.suppress_tester_present);
-            // let tester_present_message = Message::<WriteDefinitions>::diagnostic_message(
-            //     self.client_options.protocol_version,
-            //     self.client_options.client_logical_address,
-            //     self.client_options.server_logical_address,
-            //     self.tester_present_message,
-            // );
             loop {
                 let Self {
                     control_receiver,
