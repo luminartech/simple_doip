@@ -415,13 +415,18 @@ where
                         }
                     }
                     // Receive a control message
-                    Some(ctrl) = control_receiver.recv() => {
+                    ctrl_opt = control_receiver.recv() => {
                         // We should never have an active request already
                         // But maybe we should gracefully handle this
                         // and just ignore the new request?
+                        if ctrl_opt.is_none() {
+                            debug!("Control channel closed, shutting down inner client");
+                            *run = false;
+                            break;
+                        }
                         assert!(self.active_request.is_none());
-                        debug!("Received control message: {:?}", ctrl);
-                        self.active_request = Some(ctrl);
+                        debug!("Received control message: {:?}", ctrl_opt);
+                        self.active_request = ctrl_opt;
                     }
                     // Receive a message from the socket
                     message = Inner::receive_socket(tcp_data_socket) => {
