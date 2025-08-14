@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use uds_protocol::WireFormat;
+use uds_protocol::{DiagnosticDefinition, WireFormat};
 
 use crate::LogicalAddress;
 
@@ -37,5 +37,15 @@ impl<DiagnosticsDefinition: WireFormat> DiagnosticMessage<DiagnosticsDefinition>
     /// Check the user data (usually a UDS message) for a suppressed positive response.
     pub fn is_positive_response_suppressed(&self) -> bool {
         self.user_data.is_positive_response_suppressed()
+    }
+}
+
+impl<DiagTypes: DiagnosticDefinition> DiagnosticMessage<uds_protocol::Response<DiagTypes>> {
+    pub fn negative_response_code(&self) -> Option<uds_protocol::NegativeResponseCode> {
+        if let uds_protocol::Response::NegativeResponse(nr) = &self.user_data {
+            Some(nr.nrc)
+        } else {
+            None
+        }
     }
 }

@@ -188,7 +188,7 @@ impl Debug for PayloadType {
 /// * Inverse Protocol Version (1 byte)
 /// * [PayloadType] (2 bytes)
 /// * Payload Length (4 bytes)
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Header {
     /// Client Protocol Version
     pub protocol_version: ProtocolVersion,
