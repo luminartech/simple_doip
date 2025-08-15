@@ -140,9 +140,12 @@ pub(super) struct Inner<DiagTypes: DiagnosticDefinition, Conn> {
     tester_present_message: Message<uds_protocol::Request<DiagTypes>>,
 }
 /// Sender for the control messages sent via the control channel
-type ControlSender<R, W> = mpsc::Sender<ControlMessage<R, W>>;
+type ControlSender<DiagTypes> = mpsc::Sender<
+    ControlMessage<uds_protocol::Response<DiagTypes>, uds_protocol::Request<DiagTypes>>,
+>;
 /// Receiver for the update messages from the socket
-type UpdateReceiver<R, E> = mpsc::Receiver<Result<Message<R>, E>>;
+type UpdateReceiver<DiagTypes, E> =
+    mpsc::Receiver<Result<Message<uds_protocol::Response<DiagTypes>>, E>>;
 
 impl<DiagTypes, Conn> Inner<DiagTypes, Conn>
 where
@@ -153,8 +156,8 @@ where
     pub fn spawn(
         client_options: ClientOptions,
     ) -> (
-        ControlSender<uds_protocol::Response<DiagTypes>, uds_protocol::Request<DiagTypes>>,
-        UpdateReceiver<uds_protocol::Response<DiagTypes>, MessageError>,
+        ControlSender<DiagTypes>,
+        UpdateReceiver<DiagTypes, MessageError>,
     ) {
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);
@@ -285,7 +288,7 @@ where
                     debug!("Received alive check response: {:?}", message);
                 }
                 ControlMessage::SendNoResponse(message) => {
-                    let err_msg = format!("Failed to send message: {:?}", message);
+                    let err_msg = format!("Failed to send message: {message:?}");
                     // Send the message to the socket
                     let send_result = self.send_to_socket(message).await;
 

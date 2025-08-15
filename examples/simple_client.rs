@@ -7,7 +7,7 @@ use doip::{
 use std::net::{IpAddr, SocketAddr};
 use tracing::info;
 use tracing_subscriber;
-use uds_protocol::{ProtocolRequest, ProtocolResponse, UdsSpec};
+use uds_protocol::{ProtocolRequest, UdsSpec};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
