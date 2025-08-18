@@ -2,6 +2,8 @@ use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
+use crate::logical_address::LogicalAddress;
+
 use super::message_error::MessageError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,7 +71,7 @@ impl From<VinGidSyncStatus> for u8 {
 pub struct VehicleIdentificationResponse {
     /// Vehicle Identification Number
     pub vin: [u8; 17],
-    pub logical_address: u16,
+    pub logical_address: LogicalAddress,
     /// Unique entity id, e.g. MAC address of network interface.
     pub entity_id: [u8; 6],
     //// Unique group identification of entities within a vehicle.
@@ -85,7 +87,7 @@ impl VehicleIdentificationResponse {
         let mut vin = [0x00; 17];
         reader.read_exact(&mut vin)?;
 
-        let logical_address = reader.read_u16::<BigEndian>()?;
+        let logical_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
 
         let mut entity_id = [0x00; 6];
         reader.read_exact(&mut entity_id)?;
@@ -118,7 +120,7 @@ impl VehicleIdentificationResponse {
 
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_all(&self.vin)?;
-        writer.write_u16::<BigEndian>(self.logical_address)?;
+        writer.write_u16::<BigEndian>(self.logical_address.into())?;
         writer.write_all(&self.entity_id)?;
         if let Some(group_id) = self.group_id {
             writer.write_all(&group_id)?;

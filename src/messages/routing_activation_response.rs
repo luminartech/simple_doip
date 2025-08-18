@@ -2,43 +2,46 @@ use std::io::{Read, Write};
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
+use crate::logical_address::LogicalAddress;
+
 use super::message_error::MessageError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum RoutingActivationResponseCode {
     /// Routing activation denied due to unknown source address.
     ///  * Do not activate routing and close this TCP_DATA socket.
-    DeniedUnknownSourceAddress,
+    DeniedUnknownSourceAddress = 0x00,
     /// Routing activation denied because all concurrently supported TCP_DATA sockets are registered and active.
     /// * Do not activate routing and close this TCP_DATA socket.
-    DeniedAllTcpSocketsRegisteredAndActive,
+    DeniedAllTcpSocketsRegisteredAndActive = 0x01,
     /// Routing activation denied because the SA received is different from the table connection entry on the already activated TCP_DATA socket.
     /// * Do not activate routing and close this TCP_DATA socket.
-    DeniedSourceAddressAlreadyActivated,
+    DeniedSourceAddressAlreadyActivated = 0x02,
     /// Routing activation denied because the SA is already registered and active on a different TCP_DATA socket.
     /// * Do not activate routing and close this TCP_DATA socket.
-    DeniedSourceAddressAlreadyRegistered,
+    DeniedSourceAddressAlreadyRegistered = 0x03,
     /// Routing activation denied due to missing authentication.
     /// * Do not activate routing and register.
-    DeniedMissingAuthentication,
+    DeniedMissingAuthentication = 0x04,
     /// Routing activation denied due to rejected confirmation.
     /// * Do not activate routing and close this TCP_DATA socket.
-    DeniedRejectedConfirmation,
+    DeniedRejectedConfirmation = 0x05,
     /// Routing activation denied due to unsupported routing activation type.
     /// * Do not activate routing and close this TCP_DATA socket.
-    DeniedUnsupportedRoutingActivationType,
+    DeniedUnsupportedRoutingActivationType = 0x06,
     /// Routing activation denied because the specified activation type requires a secure TLS TCP_DATA socket.
     /// * Do not activate routing and close this (non TLS) TCP_DATA socket.
-    DeniedEncryptedConnectionViaTLSRequired,
+    DeniedEncryptedConnectionViaTLSRequired = 0x07,
     /// Reserved for future use.
     /// * Ignored by this library.
     Reserved(u8),
     /// Routing successfully activated.
     /// * Activate routing and register SA on this TCP_DATA socket.
-    RoutingSuccessfullyActivated,
+    RoutingSuccessfullyActivated = 0x10,
     /// Routing is activated; confirmation required.
     /// * Only activate routing after confirmation from within the vehicle.
-    RoutingSuccessfullyActivatedConfirmationRequired,
+    RoutingSuccessfullyActivatedConfirmationRequired = 0x11,
     /// Vehicle manufacturer specific response code.
     /// * Ignored by this library.
     VehicleManufacturerSpecific(u8),
@@ -87,9 +90,9 @@ impl From<RoutingActivationResponseCode> for u8 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RoutingActivationResponse {
     /// External test equipment address
-    pub logical_address_tester: u16,
+    pub logical_address_tester: LogicalAddress,
     /// Routing activation status information
-    pub logical_address_of_doip_entity: u16,
+    pub logical_address_of_doip_entity: LogicalAddress,
     pub routing_activation_response_code: RoutingActivationResponseCode,
     pub reserved_oem: [u8; 4],
     pub oem_specific: Option<[u8; 4]>,
@@ -97,9 +100,9 @@ pub struct RoutingActivationResponse {
 
 impl RoutingActivationResponse {
     pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        let logical_address_tester = reader.read_u16::<BigEndian>()?;
-        let logical_address_of_doip_entity = reader.read_u16::<BigEndian>()?;
-        let routing_activation_response_code_byte = reader.read_u8()?;
+        let logical_address_tester = LogicalAddress(reader.read_u16::<BigEndian>()?);
+        let logical_address_of_doip_entity = LogicalAddress(reader.read_u16::<BigEndian>()?);
+        let routing_activation_response_code_byte: u8 = reader.read_u8()?;
         let routing_activation_response_code =
             RoutingActivationResponseCode::from(routing_activation_response_code_byte);
 
@@ -121,13 +124,13 @@ impl RoutingActivationResponse {
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_all(&self.logical_address_tester.to_be_bytes())?;
-        writer.write_all(&self.logical_address_of_doip_entity.to_be_bytes())?;
+        writer.write_u16::<BigEndian>(self.logical_address_tester.into())?;
+        writer.write_u16::<BigEndian>(self.logical_address_of_doip_entity.into())?;
         writer.write_u8(self.routing_activation_response_code.into())?;
         writer.write_all(&self.reserved_oem)?;
         if let Some(oem_specific) = self.oem_specific {
             writer.write_all(&oem_specific)?;
         }
-        Ok(13 + self.oem_specific.map(|_| 4).unwrap_or(0))
+        Ok(9 + self.oem_specific.map(|_| 4).unwrap_or(0))
     }
 }

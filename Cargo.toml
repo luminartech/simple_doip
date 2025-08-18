@@ -6,24 +6,30 @@ edition = "2021"
 [dependencies]
 futures.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, optional = true, features = ["time"] }
+tokio = { workspace = true, optional = true, features = [
+    "macros",
+    "rt",
+    "rt-multi-thread",
+    "time",
+] }
 uds_protocol = { path = "../uds_protocol" }
 
 async-trait = "0.1"
 bytes = "1"
 byteorder = "1"
+strum = { workspace = true, features = ["derive"] }
 tokio-util = { version = "0.7.12", optional = true, features = [
     "net",
     "codec",
 ] }
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
 
 [dev-dependencies]
 anyhow = "1"
-doip = { path = ".", features = ["client", "server"] }
-
 
 [features]
-default = []
+default = ["client", "server"]
 codec = ["dep:tokio", "dep:tokio-util"]
 client = ["codec"]
 server = ["codec"]

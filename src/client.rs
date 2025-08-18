@@ -1,23 +1,33 @@
 use crate::{
-    message_codec::MessageCodec,
-    messages::{
-        ActivationTypeCode, AliveCheckResponse, Header, Message, MessageError, Payload,
-        PayloadType, ProtocolVersion, RoutingActivationResponse,
-    },
-    Error,
+    client_inner::{ControlMessage, CreateMessageResult, Inner},
+    connection,
+    messages::{ActivationTypeCode, Message, MessageError, ProtocolVersion},
+    Error, LogicalAddress,
 };
+use std::net::{IpAddr, SocketAddr};
+use tokio::sync::mpsc;
+use tracing::{info, trace};
+use uds_protocol::DiagnosticDefinition;
 
-use futures::{SinkExt, StreamExt};
-use std::{
-    net::{IpAddr, SocketAddr},
-    time::Duration,
-};
-use tokio::net::{
-    tcp::{OwnedReadHalf, OwnedWriteHalf},
-    TcpSocket,
-};
-use tokio_util::codec::{FramedRead, FramedWrite};
-use uds_protocol::SingleValueWireFormat;
+#[derive(Debug, strum::Display)]
+/// Send updates to the user
+pub enum ClientUpdate<ReadDefinitions> {
+    /// Unicase message from the server
+    Unicast(Message<ReadDefinitions>),
+    /// Inner DoIP client error
+    Error(Error),
+}
+
+/// Activation options for the routing activation request
+///
+/// This is used to determine which type of routing activation request to send
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RoutingActivationOptions {
+    /// Activation type code
+    pub activation_type: ActivationTypeCode,
+    /// OEM specific data
+    pub oem_specific: Option<[u8; 4]>,
+}
 
 /// DoIP client options used to specify connection info
 /// Derive `Serialize` and `Deserialize` for use in config files
@@ -27,15 +37,23 @@ pub struct ClientOptions {
     pub server_address: SocketAddr,
     /// Target logical addresses, uniquely identifies the ECU to be diagnosed.
     /// Valid range: 0x0001 - 0x0DFF
-    pub server_logical_address: u16,
-    /// Valid range: 0x0001 - 0x0DFF
-    pub server_physical_address: u16,
+    pub server_logical_address: LogicalAddress,
+    /// (Logical address) Valid range: 0x0001 - 0x0DFF
+    pub server_physical_address: LogicalAddress,
     /// Local ip address to bind the TCP and UDP sockets to, e.g. `0.0.0.0`. The port is randomly chosen.
     pub client_address: IpAddr,
     /// Valid range: 0x0E00 - 0x0FFF
-    pub client_logical_address: u16,
+    pub client_logical_address: LogicalAddress,
     /// Which protocol version the client should
     pub protocol_version: ProtocolVersion,
+    /// The activation type to use when sending the routing activation request
+    pub routing_activation_options: Option<RoutingActivationOptions>,
+    /// Timer for sending the UDS Tester Present messages
+    /// Not necessary for DefaultSession, but useful for keeping the connection alive
+    pub tester_present_interval: std::time::Duration,
+
+    /// Whether to suppress the UDS TesterPresent reply from the server
+    pub suppress_tester_present: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,111 +62,111 @@ pub enum AddressType {
     Physical,
 }
 
-pub struct Client<ReadDefinitions, WriteDefinitions> {
-    pub client_options: ClientOptions,
-    read_stream: FramedRead<OwnedReadHalf, MessageCodec<ReadDefinitions>>,
-    write_sink: FramedWrite<OwnedWriteHalf, MessageCodec<WriteDefinitions>>,
+/// The result of sending a message to the server. When a message
+/// is suppressed (ie via UDS), the server might not respond and returns `Suppressed`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SendResult<ReadDefinitions> {
+    /// The message was sent successfully
+    Response(ReadDefinitions),
+    /// The message was sent, but the server did not respond
+    Suppressed,
 }
 
-impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFormat>
-    Client<ReadDefinitions, WriteDefinitions>
-{
-    /// Create a DoIP connection.
-    /// The target port defaults to [`SERVER_TCP_PORT`].
-    pub async fn connect(client_options: ClientOptions) -> Result<Self, Error> {
-        if client_options.client_logical_address < 0x0E00
-            || client_options.client_logical_address > 0x0FFF
-        {
-            return Err(Error::InvalidClientLogicalAddress(
-                client_options.client_logical_address,
-            ));
-        }
+/// The client is the main entry point for the user to interact with the DoIP protocol.
+///
+/// It handles the connection to the server, and sends and receives messages, silently
+/// handling DoIP acknowledgements and other protocol details that the user doesn't need to worry about.
+#[derive(Debug)]
+pub struct Client<DiagTypes: DiagnosticDefinition, Conn = connection::ConnectorSocket> {
+    pub client_options: ClientOptions,
+    /// Sends messages from the user to the inner client
+    control_sender: mpsc::Sender<
+        ControlMessage<uds_protocol::Response<DiagTypes>, uds_protocol::Request<DiagTypes>>,
+    >,
+    /// Receives messages from the inner client to the user
+    update_receiver:
+        mpsc::Receiver<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>>,
+    _phantom: std::marker::PhantomData<Conn>,
+}
 
-        let tcp_socket = match client_options.server_address {
-            SocketAddr::V4(_) => TcpSocket::new_v4()?,
-            SocketAddr::V6(_) => TcpSocket::new_v6()?,
-        };
-        tcp_socket.set_reuseaddr(true)?;
-        const BUFFER_SIZE: u32 = 1024 * 64;
-        tcp_socket.set_recv_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_nodelay(false)?;
-        let tcp_stream = tokio::time::timeout(
-            Duration::from_millis(500),
-            tcp_socket.connect(client_options.server_address),
-        )
-        .await??;
-        let (rx, tx) = tcp_stream.into_split();
-        let read_stream = FramedRead::new(rx, MessageCodec::<ReadDefinitions>::new());
-        let write_sink = FramedWrite::new(tx, MessageCodec::<WriteDefinitions>::new());
+impl<DiagTypes, Conn> Client<DiagTypes, Conn>
+where
+    DiagTypes: DiagnosticDefinition + 'static + Sync + Send + Clone + std::fmt::Debug,
+    Conn: connection::Connector + 'static + Sync + Send,
+{
+    /// Create a DoIP connection, and automatically send a routing activation request if the client options specify it
+    /// The target port defaults to [`crate::TCP_PORT`].
+    pub async fn connect(client_options: ClientOptions) -> Result<Self, Error> {
+        let (control_sender, update_receiver) = Inner::<_, Conn>::spawn(client_options);
+        // Automatically send a routing activation request if the client options specify it
+        if let Some(routing_activation_options) = client_options.routing_activation_options {
+            let message = Message::<uds_protocol::Request<DiagTypes>>::routing_activation_request(
+                client_options.protocol_version,
+                client_options.client_logical_address,
+                routing_activation_options.activation_type,
+                routing_activation_options.oem_specific,
+            );
+
+            // Send the message and wait for a response
+            let CreateMessageResult(response, message) = ControlMessage::create_message(message);
+            control_sender.send(message).await.unwrap();
+            let _ = response.await;
+        }
 
         Ok(Self {
             client_options,
-            read_stream,
-            write_sink,
+            control_sender,
+            update_receiver,
+            _phantom: std::marker::PhantomData,
         })
     }
 
-    pub async fn close(&mut self) -> Result<(), Error> {
-        self.write_sink.flush().await?;
-        self.write_sink.close().await?;
-        Ok(())
+    /// Bind the socket to a local address and port.
+    ///
+    /// * Standard ISO-13400 clients will bind to the local address and port of the server
+    /// * See [Inner::bind_socket] for more details
+    pub async fn bind_socket(&mut self, gateway_address: SocketAddr) -> Result<u16, Error> {
+        let (response, message) = ControlMessage::create_bind_socket_message(gateway_address);
+        self.control_sender
+            .send(message)
+            .await
+            .map_err(|_| Error::ConnectionClosed)?;
+        response.await.map_err(|_| Error::ConnectionClosed)?
     }
 
-    pub async fn request_routing_activation(
+    /// Unbind the socket from the local address and port.
+    pub async fn unbind_socket(&mut self) -> Result<(), Error> {
+        let (response, message) = ControlMessage::create_unbind_socket_message();
+        self.control_sender.send(message).await.unwrap();
+        response.await.unwrap()
+    }
+
+    /// Returns an Option of a Response if there was one in flight when the client or server disconnected
+    pub async fn reconnect(
         &mut self,
-        activation_type: ActivationTypeCode,
-        reserved_vehicle_manufacturer: Option<[u8; 4]>,
-    ) -> Result<RoutingActivationResponse, Error> {
-        let message = Message::<WriteDefinitions>::routing_activation_request(
-            self.client_options.protocol_version,
-            self.client_options.client_logical_address,
-            activation_type,
-            reserved_vehicle_manufacturer,
-        );
-
-        self.write_sink.send(&message).await?;
-        match self.read_tcp_message().await {
-            Some(Ok(response_message)) => {
-                if let Payload::RoutingActivationResponse(response) = response_message.payload {
-                    Ok(response)
-                } else {
-                    Err(Error::UnexpectedMessageType(
-                        response_message.header.payload_type,
-                    ))
-                }
-            }
-            Some(Err(error)) => Err(error),
-            None => Err(Error::ConnectionClosed),
-        }
+    ) -> Result<Option<Message<uds_protocol::Request<DiagTypes>>>, Error> {
+        todo!("Reconnect not implemented yet");
     }
 
-    pub async fn request_alive_check(&mut self) -> Result<AliveCheckResponse, Error> {
-        let header = Header::new(
-            self.client_options.protocol_version,
-            PayloadType::AliveCheckRequest,
-            0,
-        );
-        let payload = Payload::<WriteDefinitions>::AliveCheckRequest;
-        let message = Message { header, payload };
-        self.write_sink.send(&message).await?;
-
-        let response_message = self.read_tcp_message().await.unwrap()?;
-        if let Payload::AliveCheckResponse(response_payload) = response_message.payload {
-            Ok(response_payload)
-        } else {
-            Err(Error::UnexpectedMessageType(
-                response_message.header.payload_type,
-            ))
-        }
+    /// Automatically send UDS tester present's to the server
+    /// This is useful for keeping the connection alive as a set and forget
+    pub async fn auto_tester_present(send_tester_present: bool) {
+        trace!("Auto tester present: {}", send_tester_present);
+        todo!("Auto tester present not implemented yet");
     }
 
-    pub async fn diagnostic_message(
+    /// Send a UDS message to the server
+    ///
+    /// This is a generic message that can be used to send any UDS message
+    pub async fn send_diagnostic_message(
         &mut self,
         address_type: AddressType,
-        user_data: WriteDefinitions,
-    ) -> Result<(), Error> {
-        let message = Message::<WriteDefinitions>::diagnostic_message(
+        user_data: uds_protocol::Request<DiagTypes>,
+    ) -> Result<SendResult<Message<uds_protocol::Response<DiagTypes>>>, Error> {
+        // Create a new message, send it to the server, and wait for a response
+
+        // Create a new message
+        let message = Message::diagnostic_message(
             self.client_options.protocol_version,
             self.client_options.client_logical_address,
             match address_type {
@@ -157,28 +175,37 @@ impl<ReadDefinitions: SingleValueWireFormat, WriteDefinitions: SingleValueWireFo
             },
             user_data,
         );
-        // Send the message
-        self.write_sink.send(&message).await?;
-        Ok(())
+
+        // Send the message and wait for a response
+        self.send_message(message).await
     }
 
-    pub async fn read_tcp_message(&mut self) -> Option<Result<Message<ReadDefinitions>, Error>> {
-        // Unwrap here is to unwrap the option, not the result
-        match self.read_stream.next().await {
-            None => None,
-            Some(result) => match result {
-                Ok(message) => Some(Ok(message)),
-                Err(error) => {
-                    if let MessageError::UdsProtocol(uds_protocol::Error::IoError(err)) = &error {
-                        if err.kind() == std::io::ErrorKind::UnexpectedEof {
-                            return None;
-                        }
-                    }
+    /// Send a request to the server and wait for a response (which is returned)
+    async fn send_message(
+        &mut self,
+        control: Message<uds_protocol::Request<DiagTypes>>,
+    ) -> Result<SendResult<Message<uds_protocol::Response<DiagTypes>>>, Error> {
+        // Create new request and response channels to await the response of
+        let CreateMessageResult(response, message) = ControlMessage::create_message(control);
+        // Sends to Inner client
+        if let Err(e) = self.control_sender.send(message).await {
+            return Err(Error::SendError(e.to_string()));
+        }
+        // if its a RecvError the sender has been dropped
+        response.await.map_err(|_| Error::ConnectionClosed)?
+    }
 
-                    println!("Error reading message: {error:?}");
-                    Some(Err(Error::from(error)))
-                }
-            },
+    /// Shut down the client, closing the connection and cleaning up resources
+    pub async fn shut_down(self) {
+        let Self {
+            control_sender,
+            mut update_receiver,
+            ..
+        } = self;
+        drop(control_sender);
+        info!("Shutting Down DOIP client");
+        while update_receiver.recv().await.is_some() {
+            info!(".");
         }
     }
 }

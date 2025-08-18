@@ -1,4 +1,5 @@
 use crate::{
+    logical_address::LogicalAddress,
     message_codec::MessageCodec,
     messages::{
         DiagnosticMessage, DiagnosticPowerModeCode, FurtherActionRequired, Message, Payload,
@@ -17,23 +18,20 @@ use std::{
 };
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
-use uds_protocol::SingleValueWireFormat;
+use tracing::{error, warn};
+use uds_protocol::WireFormat;
 
 pub struct ClientConnectionInfo {
     /// Client IP address
     pub ip_address: IpAddr,
     /// Client logical address
-    pub logical_address: u16,
+    pub logical_address: LogicalAddress,
 }
 /// Trait for handling DoIP connections as a server.
 /// Implement this trait to create a custom DoIP server.
-/// Most protocol functions have a simple, de=fault implementation
+/// Most protocol functions have a simple, default implementation
 #[async_trait]
-pub trait ServerConnectionHandler<
-    ReadDefinitions: SingleValueWireFormat,
-    WriteDefinitions: SingleValueWireFormat,
->
-{
+pub trait ServerConnectionHandler<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat> {
     // Required Functions
     // These functions must be implemented by the server implementation
 
@@ -41,7 +39,7 @@ pub trait ServerConnectionHandler<
     fn get_vin(&self) -> [u8; 17];
 
     /// Get the ECU logical address for this server
-    fn get_logical_address(&self) -> u16;
+    fn get_logical_address(&self) -> LogicalAddress;
 
     /// Get the unique entity ID for this server
     /// This is usually the MAC address of the network interface.
@@ -162,8 +160,8 @@ pub struct Server<R, S, T> {
 
 impl<R, S, T> Server<R, S, T>
 where
-    R: SingleValueWireFormat,
-    S: SingleValueWireFormat,
+    R: WireFormat,
+    S: WireFormat,
     T: ServerConnectionHandler<R, S> + Sync,
 {
     pub fn new(connection_handler: T) -> Result<Self, Error> {
@@ -187,7 +185,7 @@ where
                         .handle_client_connection(client_socket_addr, tcp_stream)
                         .await
                     {
-                        println!("Client error: {client_error}");
+                        error!("Client error: {client_error}");
                     }
                 }
                 Err(accept_error) => {
@@ -221,7 +219,7 @@ where
                     panic!("Client, decoding error source: {client_socket_addr}, {codec_error}")
                 }
                 None => {
-                    println!("Client stream closed, client addr: {client_socket_addr}");
+                    warn!("Client stream closed, client addr: {client_socket_addr}");
                     self.active_connections.fetch_sub(1, Ordering::Relaxed);
                     return Ok(());
                 }
@@ -238,7 +236,7 @@ where
         // client count should come from that map, as well as the logical address missing below
         let connection_info = ClientConnectionInfo {
             ip_address: client_socket_addr.ip(),
-            logical_address: 0x0000, // TODO fix this constant
+            logical_address: LogicalAddress(0x0000), // TODO fix this constant
         };
 
         match request_message.payload {

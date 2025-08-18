@@ -6,10 +6,11 @@ use super::message_error::MessageError;
 
 ///Identifies whether or not the vehicle is in diagnostic power mode and ready to perform reliable diagnostics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
 pub enum DiagnosticPowerModeCode {
-    NotReady,
-    Ready,
-    NotSupported,
+    NotReady = 0x00,
+    Ready = 0x01,
+    NotSupported = 0x02,
     Reserved(u8),
 }
 

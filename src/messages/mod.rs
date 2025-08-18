@@ -26,18 +26,49 @@ pub use vehicle_identification_response::{
 };
 
 use std::io::{Read, Write};
-use uds_protocol::SingleValueWireFormat;
+use uds_protocol::WireFormat;
 
-#[derive(Debug)]
-pub struct Message<DiagnosticDefinitions> {
+use crate::LogicalAddress;
+
+/// Message contains the payload and header info of a DoIP message
+///
+/// The payload is a generic type that implements the WireFormat trait
+/// The header is a fixed size struct that contains the protocol version, payload type, and payload length
+#[derive(Debug, Clone, PartialEq)]
+pub struct Message<W> {
     pub header: header::Header,
-    pub payload: Payload<DiagnosticDefinitions>,
+    pub payload: Payload<W>,
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition> {
-    pub fn alive_check_request(
-        protocol_version: ProtocolVersion,
-    ) -> Message<DiagnosticsDefinition> {
+impl<W: WireFormat> Message<W> {
+    pub fn is_response(&self, payload_type: PayloadType) -> bool {
+        match self.header.payload_type {
+            PayloadType::RoutingActivationRequest => {
+                payload_type == PayloadType::RoutingActivationResponse
+            }
+            PayloadType::AliveCheckRequest => payload_type == PayloadType::AliveCheckResponse,
+            PayloadType::DiagnosticMessage => {
+                // DiagnosticMessage can be a request or response in certain models
+                payload_type == PayloadType::DiagnosticMessageNegativeAcknowledge
+                    || payload_type == PayloadType::DiagnosticMessagePositiveAcknowledge
+                    || payload_type == PayloadType::DiagnosticMessage
+            }
+            PayloadType::DoIPEntityStatusRequest => {
+                payload_type == PayloadType::DoIPEntityStatusResponse
+            }
+            PayloadType::DiagnosticPowerModeInfoRequest => {
+                payload_type == PayloadType::DiagnosticPowerModeInfoResponse
+            }
+            PayloadType::VehicleIdentificationRequest
+            | PayloadType::VehicleIdentificationRequestWithEID
+            | PayloadType::VehicleIdentificationRequestWithVIN => {
+                payload_type == PayloadType::VehicleAnnouncement
+            }
+            _ => false,
+        }
+    }
+
+    pub fn alive_check_request(protocol_version: ProtocolVersion) -> Message<W> {
         Message {
             header: Header::new(protocol_version, PayloadType::AliveCheckRequest, 0),
             payload: Payload::AliveCheckRequest,
@@ -46,21 +77,21 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition
 
     pub fn alive_check_response(
         protocol_version: ProtocolVersion,
-        source_address: u16,
-    ) -> Message<DiagnosticsDefinition> {
+        source_address: LogicalAddress,
+    ) -> Message<W> {
         let response = AliveCheckResponse { source_address };
         Message {
-            header: Header::new(protocol_version, PayloadType::AliveCheckResponse, 0),
+            header: Header::new(protocol_version, PayloadType::AliveCheckResponse, 2),
             payload: Payload::AliveCheckResponse(response),
         }
     }
 
     pub fn diagnostic_message(
         protocol_version: ProtocolVersion,
-        source_address: u16,
-        target_address: u16,
-        message: DiagnosticsDefinition,
-    ) -> Message<DiagnosticsDefinition> {
+        source_address: LogicalAddress,
+        target_address: LogicalAddress,
+        message: W,
+    ) -> Message<W> {
         let payload_size = message.required_size() as u32 + 4;
         let message = DiagnosticMessage {
             source_address,
@@ -79,11 +110,11 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition
 
     pub fn diagnostic_message_ack(
         protocol_version: ProtocolVersion,
-        source_address: u16,
-        target_address: u16,
+        source_address: LogicalAddress,
+        target_address: LogicalAddress,
         ack_code: DiagnosticAckCode,
         previous_message_data: Vec<u8>,
-    ) -> Message<DiagnosticsDefinition> {
+    ) -> Message<W> {
         let ack = DiagnosticMessageAck {
             source_address,
             target_address,
@@ -94,7 +125,7 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition
             header: Header::new(
                 protocol_version,
                 PayloadType::DiagnosticMessagePositiveAcknowledge,
-                0,
+                5 + ack.previous_message_data.len() as u32,
             ),
             payload: Payload::DiagnosticMessageAck(ack),
         }
@@ -102,10 +133,10 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition
 
     pub fn routing_activation_request(
         protocol_version: ProtocolVersion,
-        source_address: u16,
+        source_address: LogicalAddress,
         activation_type: ActivationTypeCode,
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
-    ) -> Message<DiagnosticsDefinition> {
+    ) -> Message<W> {
         let request = RoutingActivationRequest {
             source_address,
             activation_type,
@@ -129,12 +160,12 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition
 
     pub fn routing_activation_response(
         protocol_version: ProtocolVersion,
-        logical_address_tester: u16,
-        logical_address_of_doip_entity: u16,
+        logical_address_tester: LogicalAddress,
+        logical_address_of_doip_entity: LogicalAddress,
         routing_activation_response_code: RoutingActivationResponseCode,
         reserved_oem: [u8; 4],
         oem_specific: Option<[u8; 4]>,
-    ) -> Message<DiagnosticsDefinition> {
+    ) -> Message<W> {
         let response = RoutingActivationResponse {
             logical_address_tester,
             logical_address_of_doip_entity,
@@ -143,17 +174,16 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition
             oem_specific,
         };
         Message {
-            header: Header::new(protocol_version, PayloadType::RoutingActivationResponse, 0),
+            // TODO: Check the payload length
+            header: Header::new(protocol_version, PayloadType::RoutingActivationResponse, 9),
             payload: Payload::RoutingActivationResponse(response),
         }
     }
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition> {
+impl<W: WireFormat> Message<W> {
     // TODO: This needs careful review and should do a lot more error checking than it does now
-    pub fn read<T: Read>(
-        mut message_bytes: &mut T,
-    ) -> Result<Message<DiagnosticsDefinition>, MessageError> {
+    pub fn read<T: Read>(mut message_bytes: &mut T) -> Result<Message<W>, MessageError> {
         let header = Header::read(&mut message_bytes)?;
         header.version_inverse_correct()?;
         let payload = Payload::read(&mut message_bytes, header.payload_type)?;
@@ -164,6 +194,15 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Message<DiagnosticsDefinition
         let mut written = self.header.write(writer)?;
         written += &self.payload.write(writer)?;
         Ok(written)
+    }
+
+    pub fn is_positive_response_suppressed(&self) -> bool {
+        match &self.payload {
+            Payload::DiagnosticMessage(diagnostic_message) => {
+                diagnostic_message.is_positive_response_suppressed()
+            }
+            _ => false,
+        }
     }
 }
 

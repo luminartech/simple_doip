@@ -8,12 +8,33 @@ use super::message_error::MessageError;
 /// Only sent by the server except in development
 /// Indicates error condition in previously received message
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum NackCode {
-    IncorrectPatternFormat,
-    UnknownPayloadType,
-    MessageTooLarge,
-    OutOfMemory,
-    InvalidPayloadLength,
+    /// Protocol or inverse protocol version mismatch
+    ///
+    /// DoIP entity action: Close socket
+    IncorrectPatternFormat = 0x00,
+
+    /// Payload type is not supported by DoIP entity
+    ///
+    /// DoIP entity action: Discard DoIP message
+    UnknownPayloadType = 0x01,
+
+    /// Payload length (without header) is larger than maximum data size (MDS) supported by DoIP entity
+    ///
+    /// DoIP entity action: Discard DoIP message
+    MessageTooLarge = 0x02,
+
+    /// Payload length exceeds currently available DoIP protocol handler memory of the DoIP entity
+    ///
+    /// DoIP entity action: Discard DoIP message
+    OutOfMemory = 0x03,
+
+    /// Payload length param does not match the expected length for the specific payload type.
+    /// Includes payload-type-specific min length, fixed length, and max length checks
+    ///
+    /// DoIP entity action: Close socket
+    InvalidPayloadLength = 0x04,
     Reserved(u8),
 }
 

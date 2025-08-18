@@ -1,24 +1,29 @@
 use std::io::{Read, Write};
 
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+
+use crate::logical_address::LogicalAddress;
+
 use super::message_error::MessageError;
 
+/// Alive Check Response can be sent even if there was no Alive Check Request received.
+/// It can also be sent by any DoIP entity to indicate that it is alive, server or client.
+///
+/// Typical use is to wait for a request from the server
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AliveCheckResponse {
     /// Contains the logical address of the client DoIP entity that is currently active on this TCP_DATA socket.
-    pub source_address: u16,
+    pub source_address: LogicalAddress,
 }
 
 impl AliveCheckResponse {
     pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        let mut source_address = [0x00u8; 2];
-        reader.read_exact(&mut source_address)?;
-        Ok(AliveCheckResponse {
-            source_address: u16::from_be_bytes(source_address),
-        })
+        let source_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
+        Ok(AliveCheckResponse { source_address })
     }
 
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_all(&self.source_address.to_be_bytes())?;
+        writer.write_u16::<BigEndian>(self.source_address.into())?;
         Ok(2)
     }
 }

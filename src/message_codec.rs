@@ -1,9 +1,12 @@
+use crate::messages::{Header, Message, MessageError, Payload};
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
-use uds_protocol::SingleValueWireFormat;
+use tracing::info;
+use uds_protocol::WireFormat;
 
-use crate::messages::{Header, Message, MessageError, Payload};
-
+/// Codec for the DoIP messages, used to encode and decode messages from
+/// the TCP stream
+#[derive(Debug)]
 pub struct MessageCodec<DiagnosticsDefinition> {
     _diagnostics_definition: std::marker::PhantomData<DiagnosticsDefinition>,
 }
@@ -22,7 +25,7 @@ impl<DiagnosticsDefinition> Default for MessageCodec<DiagnosticsDefinition> {
     }
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder for MessageCodec<DiagnosticsDefinition> {
+impl<DiagnosticsDefinition: WireFormat> Decoder for MessageCodec<DiagnosticsDefinition> {
     type Item = Message<DiagnosticsDefinition>;
     type Error = MessageError;
 
@@ -51,13 +54,13 @@ impl<DiagnosticsDefinition: SingleValueWireFormat> Decoder for MessageCodec<Diag
             }
         } else {
             // We don't have a valid header, put the header back
-            println!("{src:X}");
+            info!("{src:X}");
             Ok(None)
         }
     }
 }
 
-impl<DiagnosticsDefinition: SingleValueWireFormat> Encoder<&Message<DiagnosticsDefinition>>
+impl<DiagnosticsDefinition: WireFormat> Encoder<&Message<DiagnosticsDefinition>>
     for MessageCodec<DiagnosticsDefinition>
 {
     type Error = MessageError;

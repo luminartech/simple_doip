@@ -4,9 +4,10 @@ use std::io::{Read, Write};
 use super::message_error::MessageError;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
 pub enum EntityStatusNodeType {
-    DoIPGateway,
-    DoIPNode,
+    DoIPGateway = 0x00,
+    DoIPNode = 0x01,
     Reserved(u8),
 }
 
