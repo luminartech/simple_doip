@@ -17,7 +17,6 @@ use tokio::net::{
     TcpSocket,
 };
 use tracing::{error, info, trace};
-use tracing_subscriber;
 use uds_protocol::{ProtocolIdentifier, ProtocolRequest};
 
 /// Sets up a TCP listener on a client address and waits for a connection from the server
