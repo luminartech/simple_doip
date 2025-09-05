@@ -196,7 +196,7 @@ where
         }
     }
 
-    async fn handle_client_connection(
+    pub async fn handle_client_connection(
         &self,
         client_socket_addr: SocketAddr,
         tcp_stream: TcpStream,

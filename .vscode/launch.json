@@ -81,6 +81,60 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug example 'mock_server'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=mock_server",
+                    "--package=doip"
+                ],
+                "filter": {
+                    "name": "mock_server",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'doipint_client'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=doipint_client",
+                    "--package=doip"
+                ],
+                "filter": {
+                    "name": "doipint_client",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug example 'doipint_server'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=doipint_server",
+                    "--package=doip"
+                ],
+                "filter": {
+                    "name": "doipint_server",
+                    "kind": "example"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug unit tests in example 'echo_server'",
             "cargo": {
                 "args": [
