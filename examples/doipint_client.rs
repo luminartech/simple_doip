@@ -115,26 +115,28 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     // sleep for 10 seconds to allow the server to respond with some tester presents
-    tokio::time::sleep(Duration::from_secs(7)).await;
+    loop {
+        tokio::time::sleep(Duration::from_secs(7)).await;
 
-    let resp: Result<doip::client::SendResult<_>, _> = client
-        .send_diagnostic_message(
-            doip::client::AddressType::Physical,
-            ProtocolRequest::read_data_by_identifier(vec![ProtocolIdentifier::new(
-                uds_protocol::UDSIdentifier::SystemSupplierECUHardwareNumber,
-            )]),
-        )
-        .await;
-    match resp {
-        Ok(Response(response)) => {
-            info!("Received response: {:#?}", response);
-        }
-        Ok(Suppressed) => {
-            info!("Received suppressed response, no response from server");
-        }
-        Err(e) => {
-            error!("Failed to send diagnostic message: {}", e);
-            return Err(anyhow::anyhow!(e));
+        let resp: Result<doip::client::SendResult<_>, _> = client
+            .send_diagnostic_message(
+                doip::client::AddressType::Physical,
+                ProtocolRequest::read_data_by_identifier(vec![ProtocolIdentifier::new(
+                    uds_protocol::UDSIdentifier::SystemSupplierECUHardwareNumber,
+                )]),
+            )
+            .await;
+        match resp {
+            Ok(Response(response)) => {
+                info!("Received response: {:#?}", response);
+            }
+            Ok(Suppressed) => {
+                info!("Received suppressed response, no response from server");
+            }
+            Err(e) => {
+                error!("Failed to send diagnostic message: {}", e);
+                return Err(anyhow::anyhow!(e));
+            }
         }
     }
     // info!("Sent diagnostic message and received response {:#?}", resp);
