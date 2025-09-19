@@ -388,7 +388,7 @@ where
 
     fn run(mut self) {
         tokio::spawn(async move {
-            info!("Starting DOIP processing loop");
+            debug!("Starting DOIP processing loop");
             loop {
                 let Self {
                     control_receiver,

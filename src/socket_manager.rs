@@ -18,7 +18,7 @@ use tokio::{
     sync::mpsc,
 };
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{error, info, trace};
+use tracing::{debug, error, info, trace};
 use uds_protocol::DiagnosticDefinition;
 
 /// 1-to-1 mapping of the socket manager to the client (currently)
@@ -218,7 +218,7 @@ where
                                 }
                             }
                             None => {
-                                info!("Socket Dropping");
+                                debug!("Socket Dropping");
                                 // The sender has been dropped, so we should exit
                                 break;
                             }

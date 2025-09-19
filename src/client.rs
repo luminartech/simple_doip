@@ -6,7 +6,7 @@ use crate::{
 };
 use std::net::{IpAddr, SocketAddr};
 use tokio::sync::mpsc;
-use tracing::{info, trace};
+use tracing::{debug, info, trace};
 use uds_protocol::DiagnosticDefinition;
 
 #[derive(Debug, strum::Display)]
@@ -203,7 +203,7 @@ where
             ..
         } = self;
         drop(control_sender);
-        info!("Shutting Down DOIP client");
+        debug!("Shutting Down DOIP client");
         while update_receiver.recv().await.is_some() {
             info!(".");
         }
