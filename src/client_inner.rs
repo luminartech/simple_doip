@@ -12,7 +12,7 @@ use tokio::{
     select,
     sync::{mpsc, oneshot},
 };
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 use uds_protocol::{DiagnosticDefinition, WireFormat};
 
 /// Messages used to control the DOIP entities
