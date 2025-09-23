@@ -12,7 +12,7 @@ use tokio::{
     select,
     sync::{mpsc, oneshot},
 };
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 use uds_protocol::{DiagnosticDefinition, WireFormat};
 
 /// Messages used to control the DOIP entities
@@ -388,7 +388,7 @@ where
 
     fn run(mut self) {
         tokio::spawn(async move {
-            info!("Starting DOIP processing loop");
+            debug!("Starting DOIP processing loop");
             loop {
                 let Self {
                     control_receiver,
