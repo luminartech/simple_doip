@@ -131,7 +131,15 @@ where
             .send(message)
             .await
             .map_err(|_| Error::ConnectionClosed)?;
-        response.await.map_err(|_| Error::ConnectionClosed)?
+        response.await.map_err(|_| Error::ConnectionClosed)?;
+        let routing_message = Message::routing_activation_request(
+            self.client_options.protocol_version,
+            self.client_options.client_logical_address,
+            ActivationTypeCode::Default,
+            None,
+        );
+        let (response, message) =
+            ControlMessage::create_routing_activation_message(routing_message);
     }
 
     /// Unbind the socket from the local address and port.
