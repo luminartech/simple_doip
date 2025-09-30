@@ -133,7 +133,7 @@ pub(super) struct Inner<DiagTypes: DiagnosticDefinition, Conn> {
     run: bool,
 
     // tester_present_heartbeat: tokio::time::Interval,
-    last_tester_present: std::time::Instant,
+    last_tester_present: tokio::time::Instant,
 
     /// Tester Present request message to be sent
     /// This is used to send the Tester Present message periodically
@@ -176,7 +176,7 @@ where
             tcp_data_socket: None,
             connection_state: ConnectionState::Listen,
             run: true,
-            last_tester_present: std::time::Instant::now(),
+            last_tester_present: tokio::time::Instant::now(),
             tester_present_message,
         };
         inner.run();
@@ -235,7 +235,7 @@ where
         message: Message<uds_protocol::Request<DiagTypes>>,
     ) -> Result<(), Error> {
         if let Some(socket) = &mut self.tcp_data_socket {
-            self.last_tester_present = std::time::Instant::now();
+            self.last_tester_present = tokio::time::Instant::now();
             socket.send(message).await
         } else {
             Err(Error::SocketNotBound)
@@ -401,23 +401,20 @@ where
                     tester_present_message,
                     ..
                 } = &mut self;
-
-                // Read a message from the read stream
                 select! {
-                    _ = tokio::time::sleep(client_options.tester_present_interval) => {
-                        debug!("Run status: {}", run);
+                    // Handle the UDS TesterPresent heartbeat
+                    _ = tokio::time::sleep_until(*last_tester_present + client_options.tester_present_interval) => {
                         let Some(socket_manager) = tcp_data_socket.as_mut() else {
                             debug!("No socket manager available, skipping tester present message");
                             continue;
                         };
                         if last_tester_present.elapsed() < client_options.tester_present_interval {
-                            trace!("Skipping tester present message, last sent within interval");
                             continue;
                         }
                         if let Err(e) = socket_manager.send(tester_present_message.clone()).await {
                             debug!("Failed to send tester present message: {:?}", e);
                         } else {
-                            *last_tester_present = std::time::Instant::now();
+                            *last_tester_present = tokio::time::Instant::now();
                         }
                     }
                     // Receive a control message
@@ -436,7 +433,7 @@ where
                     }
                     // Receive a message from the socket
                     message = Inner::receive_socket(tcp_data_socket) => {
-                        *last_tester_present = std::time::Instant::now();
+                        *last_tester_present = tokio::time::Instant::now();
                         trace!("Received message from socket: {:?}", message);
                         match message {
                             Ok(received_message) => {

@@ -50,7 +50,7 @@ pub struct ClientOptions {
     pub routing_activation_options: Option<RoutingActivationOptions>,
     /// Timer for sending the UDS Tester Present messages
     /// Not necessary for DefaultSession, but useful for keeping the connection alive
-    pub tester_present_interval: std::time::Duration,
+    pub tester_present_interval: tokio::time::Duration,
 
     /// Whether to suppress the UDS TesterPresent reply from the server
     pub suppress_tester_present: bool,
