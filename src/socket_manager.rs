@@ -61,7 +61,7 @@ where
         let (rx, tx) = match Conn::establish_connection(gateway_address).await {
             Ok((rx, tx)) => (rx, tx),
             Err(e) => {
-                error!("Failed to establish connection: {}", e);
+                error!("Failed to establish connection: {e} on {gateway_address}");
                 return Err(Error::ConnectionClosed);
             }
         };
@@ -173,10 +173,27 @@ where
                             // Decoding the message can fail, so we handle that here
                             Some(Err(e)) => {
                                 last_activity = tokio::time::Instant::now();
-                                error!(concat!("Internal Error decoding message: {:?}\n",
-                                "This usually means that the library is not set up to read this message type. ",
+                                match e {
+                                    MessageError::Io(ref io_err) => {
+                                        if io_err.kind() == std::io::ErrorKind::ConnectionReset {
+                                            info!(concat!("Connection reset by peer, closing socket\n", "{:?}"), io_err);
+                                            // The socket has been closed by the remote end, so we should exit
+                                            break;
+                                        };
+                                        error!(concat!("{:?}\n",
+                                            "Check that you are not sending too many requests to the server.",
+                                            "The server may be closing the connection due to overload."
+                                        ), io_err);
+                                        // The socket has been closed by the remote end, so we should exit
+                                        break;
+                                    }
+                                    _ => {
+                                        error!(concat!("Internal Error decoding message: {:?}\n",
+                                    "This usually means that the library is not set up to read this message type. ",
                                     "Please check either the uds_protocol Response implementation, ",
                                     "or the underlying types in the DiagnosticDefinition associated type"), e.to_string());
+                                    }
+                                };
 
                                 // send a MessageError to the receiver
                                 let _ = rx_tx.send(Err(e)).await;
