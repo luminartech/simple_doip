@@ -131,7 +131,12 @@ where
             .send(message)
             .await
             .map_err(|_| Error::ConnectionClosed)?;
-        response.await.map_err(|_| Error::ConnectionClosed)?
+        let port = response
+            .await
+            .map_err(|_| Error::ConnectionClosed)?
+            .map_err(|_| Error::SocketNotBound)?;
+
+        Ok(port)
     }
 
     /// Unbind the socket from the local address and port.
