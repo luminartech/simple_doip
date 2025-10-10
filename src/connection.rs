@@ -59,12 +59,13 @@ use tokio::net::{
 };
 use tracing::{error, trace};
 
+#[async_trait::async_trait]
 /// Connector trait for establishing a connection to the DoIP node
 pub trait Connector {
     /// Establish a connection to the DoIP node
-    fn establish_connection(
+    async fn establish_connection(
         gateway_address: SocketAddr,
-    ) -> impl std::future::Future<Output = Result<(OwnedReadHalf, OwnedWriteHalf), crate::Error>> + Send;
+    ) -> Result<(OwnedReadHalf, OwnedWriteHalf), crate::Error>;
 }
 
 // TODO: Move this to a config file
@@ -76,6 +77,8 @@ const BUFFER_SIZE: u32 = 1024 * 64;
 /// This socket is used to connect to the server directly.
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectorSocket;
+
+#[async_trait::async_trait]
 impl Connector for ConnectorSocket {
     async fn establish_connection(
         gateway_address: SocketAddr,
