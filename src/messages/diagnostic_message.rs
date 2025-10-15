@@ -18,7 +18,7 @@ impl<DiagnosticsDefinition: WireFormat> DiagnosticMessage<DiagnosticsDefinition>
     pub fn read<R: Read>(reader: &mut R) -> Result<Self, MessageError> {
         let source_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
         let target_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
-        let user_data = DiagnosticsDefinition::option_from_reader(reader)?
+        let user_data = DiagnosticsDefinition::decode(reader)?
             .expect("Diagnostics Messages should never be empty");
 
         Ok(Self {
@@ -31,7 +31,7 @@ impl<DiagnosticsDefinition: WireFormat> DiagnosticMessage<DiagnosticsDefinition>
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u16::<BigEndian>(self.source_address.into())?;
         writer.write_u16::<BigEndian>(self.target_address.into())?;
-        Ok(4 + self.user_data.to_writer(writer)?)
+        Ok(4 + self.user_data.encode(writer)?)
     }
 
     /// Check the user data (usually a UDS message) for a suppressed positive response.
