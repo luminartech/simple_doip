@@ -32,7 +32,8 @@ async fn main() -> anyhow::Result<()> {
             activation_type: ActivationTypeCode::Default,
             oem_specific: None,
         }),
-        tester_present_interval: std::time::Duration::from_secs(5), // 5 seconds for testing
+        // 2 second interval recommended by UDS 14229-2 (S3client)
+        tester_present_interval: std::time::Duration::from_secs(2),
         suppress_tester_present: true, // Suppress the reply from the server
     };
 
