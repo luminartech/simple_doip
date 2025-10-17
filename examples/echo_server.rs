@@ -81,7 +81,7 @@ impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandle
         let mut previous_message_data = Vec::with_capacity(message.user_data.required_size());
         message
             .user_data
-            .to_writer(&mut previous_message_data)
+            .encode(&mut previous_message_data)
             .unwrap();
         Ok(Message::diagnostic_message_ack(
             self.protocol_version(),
