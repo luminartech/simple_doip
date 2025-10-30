@@ -68,3 +68,11 @@ pub const TCP_TIMEOUT_GENERAL_INACTIVITY: time::Duration = time::Duration::from_
 /// Alive check for the maximum amount of time an entity waits for an alive check response after having
 /// made an alive check request. Timeout is 5 seconds.
 pub const TCP_TIMEOUT_ALIVE_CHECK: time::Duration = time::Duration::from_secs(5);
+
+/// Time between receipt of the last byte of a DoIP Diagnostic Message and transmission of the ACK or NACK.
+pub const TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL: time::Duration = time::Duration::from_millis(50);
+
+/// After the timeout has elapsed, the request or response is considered to be lost and the request may be repeated
+///
+/// Ref: A_DoIP_Diagnostic_Message
+pub const TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE: time::Duration = time::Duration::from_secs(2);
