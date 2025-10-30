@@ -62,7 +62,7 @@ where
             Ok((rx, tx)) => (rx, tx),
             Err(e) => {
                 error!("Failed to establish connection: {e} on {gateway_address}");
-                return Err(Error::ConnectionClosed);
+                return Err(e);
             }
         };
 
@@ -186,6 +186,12 @@ where
                                         ), io_err);
                                         // The socket has been closed by the remote end, so we should exit
                                         break;
+                                    }
+                                    MessageError::UdsProtocol(ref uds_error) => {
+                                        error!(concat!("UDS Protocol Error decoding message: {:?}\n",
+                                            "This usually means that the message sent was malformed or unexpected. ",
+                                            "Please check either the uds_protocol Response implementation, ",
+                                            "or the underlying types in the DiagnosticDefinition associated type"), uds_error);
                                     }
                                     _ => {
                                         error!(concat!("Internal Error decoding message: {:?}\n",
