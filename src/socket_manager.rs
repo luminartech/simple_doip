@@ -77,7 +77,7 @@ where
         Ok(Self {
             receiver: rx_rx,
             sender: tx_tx,
-            local_port: TCP_PORT, // TODO: Double check this
+            local_port: gateway_address.port(),
             session_id: 0,
             _phantom: std::marker::PhantomData,
         })
@@ -207,7 +207,7 @@ where
                             Some(message) => {
                                 // Update the last activity time
                                 last_activity = tokio::time::Instant::now();
-                                trace!("Received response from socket: {:?}", message);
+                                trace!("A: STREAM INCOMING: {:?}", message);
                                 match rx_tx.send( message ).await {
                                     Ok(_) => {}
                                     Err(_) => {
@@ -231,7 +231,7 @@ where
                                 // Update the last activity time
                                 last_activity = tokio::time::Instant::now();
 
-                                trace!("Sending request to socket: {:?}", message);
+                                trace!("OUTGOING: {:?}", message);
                                 match socket_write_sink.send(&message).await {
                                     Ok(_) => {}
                                     Err(e) => {
