@@ -38,9 +38,6 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let mut client = Client::<UdsSpec>::connect(custom_options).await?;
-    let port = client.bind_socket(custom_options.server_address).await?;
-
-    info!("Bound to port: {}", port);
 
     let request = ProtocolRequest::diagnostic_session_control(
         false,
