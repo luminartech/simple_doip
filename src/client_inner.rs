@@ -451,17 +451,15 @@ where
                         }
                     }, if active_request.is_some() && await_response_deadline.is_some() => {
                         debug!("Await response deadline reached, server did not respond, which may mean you will not receive Negative Response or message was suppressed");
-                        if let Some(active) = active_request.take() {
-                            if let ControlMessage::AwaitResponse(_, response) = active {
-                                if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
-                                    debug!("Failed to send suppressed response");
-                                }
+                        if let Some(ControlMessage::AwaitResponse(_, response)) = active_request.take() {
+                            if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
+                                debug!("Failed to send suppressed response");
                             }
                         }
                         *await_response_deadline = None;
                     }
                     // Handle the UDS TesterPresent heartbeat
-                    _ = tokio::time::sleep_until(*last_tester_present + client_options.tester_present_interval), if *run == true => {
+                    _ = tokio::time::sleep_until(*last_tester_present + client_options.tester_present_interval), if *run => {
                         let Some(socket_manager) = tcp_data_socket.as_mut() else {
                             debug!("No socket manager available, skipping tester present message");
                             continue;

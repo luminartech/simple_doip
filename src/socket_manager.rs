@@ -8,7 +8,7 @@ use crate::{
     connection,
     message_codec::MessageCodec,
     messages::{Message, MessageError},
-    Error, TCP_PORT, TCP_TIMEOUT_GENERAL_INACTIVITY,
+    Error, TCP_TIMEOUT_GENERAL_INACTIVITY,
 };
 use futures::{SinkExt, StreamExt};
 use std::{net::SocketAddr, time::Duration};
