@@ -6,7 +6,7 @@ use crate::logical_address::LogicalAddress;
 
 use super::message_error::MessageError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FurtherActionRequired {
     NoFurtherActionRequired,
     Reserved(u8),
@@ -36,7 +36,7 @@ impl From<FurtherActionRequired> for u8 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VinGidSyncStatus {
     /// VIN and/or GID are synchronized
     Synchronized,
@@ -67,7 +67,7 @@ impl From<VinGidSyncStatus> for u8 {
 }
 
 /// Vehicle identification response / Vehicle announcement
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct VehicleIdentificationResponse {
     /// Vehicle Identification Number
     pub vin: [u8; 17],

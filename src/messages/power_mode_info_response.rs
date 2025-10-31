@@ -5,7 +5,7 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use super::message_error::MessageError;
 
 ///Identifies whether or not the vehicle is in diagnostic power mode and ready to perform reliable diagnostics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum DiagnosticPowerModeCode {
     NotReady = 0x00,

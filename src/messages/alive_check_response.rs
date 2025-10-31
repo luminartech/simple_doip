@@ -10,7 +10,7 @@ use super::message_error::MessageError;
 /// It can also be sent by any DoIP entity to indicate that it is alive, server or client.
 ///
 /// Typical use is to wait for a request from the server
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AliveCheckResponse {
     /// Contains the logical address of the client DoIP entity that is currently active on this TCP_DATA socket.
     pub source_address: LogicalAddress,

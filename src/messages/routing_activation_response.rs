@@ -6,7 +6,7 @@ use crate::logical_address::LogicalAddress;
 
 use super::message_error::MessageError;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum RoutingActivationResponseCode {
     /// Routing activation denied due to unknown source address.
@@ -87,7 +87,7 @@ impl From<RoutingActivationResponseCode> for u8 {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RoutingActivationResponse {
     /// External test equipment address
     pub logical_address_tester: LogicalAddress,

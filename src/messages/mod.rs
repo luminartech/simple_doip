@@ -34,7 +34,7 @@ use crate::LogicalAddress;
 ///
 /// The payload is a generic type that implements the WireFormat trait
 /// The header is a fixed size struct that contains the protocol version, payload type, and payload length
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Message<W> {
     pub header: header::Header,
     pub payload: Payload<W>,
