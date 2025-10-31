@@ -2,7 +2,7 @@ use crate::messages::{header::PayloadType, nack::NackCode};
 
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum MessageError {
     #[error("Negative acknowledgement: {0:?}")]
     Nack(NackCode),

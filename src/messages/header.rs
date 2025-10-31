@@ -12,7 +12,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use super::message_error::MessageError;
 
 /// DoIP Protocol Version
-#[derive(Clone, Copy, Eq, PartialEq, strum::Display)]
+#[derive(Clone, Copy, strum::Display, Eq, PartialEq)]
 #[repr(u8)]
 pub enum ProtocolVersion {
     Reserved = 0x00,
@@ -78,7 +78,7 @@ impl Debug for ProtocolVersion {
 }
 
 /// DoIP Message Payload Type
-#[derive(Clone, Copy, Eq, PartialEq, strum::Display)]
+#[derive(Clone, Copy, strum::Display, Eq, PartialEq)]
 #[repr(u16)]
 pub enum PayloadType {
     /// Negative Acknowledge

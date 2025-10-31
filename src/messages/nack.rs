@@ -7,7 +7,7 @@ use super::message_error::MessageError;
 /// Negative Acknowledgement payload
 /// Only sent by the server except in development
 /// Indicates error condition in previously received message
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum NackCode {
     /// Protocol or inverse protocol version mismatch

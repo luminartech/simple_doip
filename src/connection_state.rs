@@ -3,7 +3,7 @@ use tracing::warn;
 
 /// The DoIP connection state machine
 #[allow(unused)]
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ConnectionState {
     /// Socket is not connected. This state is here for the sake of
     /// completeness. The socket manager will generally not be in this state

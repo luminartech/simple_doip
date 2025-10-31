@@ -10,7 +10,7 @@ use crate::LogicalAddress;
 
 use super::message_error::MessageError;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ActivationTypeCode {
     /// ISO 14229
     Default,
@@ -55,7 +55,7 @@ impl UpperHex for ActivationTypeCode {
         f.write_str(&val)
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct RoutingActivationRequest {
     /// Address of DoIP entity that requests routing activation.
     pub source_address: LogicalAddress,

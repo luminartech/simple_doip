@@ -74,7 +74,7 @@ const BUFFER_SIZE: u32 = 1024 * 64;
 /// ISO 13400-2:2012 Connection to the gateway node via port 13400
 ///
 /// This socket is used to connect to the server directly.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ConnectorSocket;
 impl Connector for ConnectorSocket {
     async fn establish_connection(

@@ -16,7 +16,7 @@ use super::message_error::MessageError;
 /// sent from a tester to a DoIP server.
 ///
 /// Contains both positive and negative acknowledgement codes.
-#[derive(Clone, Copy, PartialEq, Eq, strum::Display)]
+#[derive(Clone, Copy, strum::Display, Eq, PartialEq)]
 #[repr(u8)]
 #[non_exhaustive]
 pub enum DiagnosticAckCode {
@@ -87,7 +87,7 @@ impl Debug for DiagnosticAckCode {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct DiagnosticMessageAck {
     pub source_address: LogicalAddress,
     pub target_address: LogicalAddress,
