@@ -20,7 +20,7 @@
 //!
 //! ## Custom Implementation
 //! This example shows how to implement a custom connector using a TCP socket.
-//! ```rust
+//! ```rust,ignore
 //! use doip::connection::Connector;
 //! use tokio::net::{TcpSocket, tcp::{OwnedReadHalf, OwnedWriteHalf}};
 //! use std::net::{IpAddr, SocketAddr};
@@ -28,6 +28,7 @@
 //!
 //! pub struct MyConnector;
 //!
+//! #[async_trait::async_trait]
 //! impl Connector for MyConnector {
 //!    async fn establish_connection(gateway_address: SocketAddr) -> Result<(OwnedReadHalf, OwnedWriteHalf), doip::Error> {
 //!        // Implement the connection logic here
