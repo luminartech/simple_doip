@@ -36,7 +36,7 @@ pub enum Error {
     InvalidClientType,
     #[error("Failed to bind to socket: {0}")]
     BindFailed(String),
-    #[error("Failed to route activation")]
+    #[error("Failed route activation")]
     RoutingActivationFailed,
     /// Request may have been suppressed, so this is a non-fatal error
     #[error("Response timeout exceeded")]
