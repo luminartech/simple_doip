@@ -13,34 +13,34 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 use tracing::{debug, trace};
-use uds_protocol::{DiagnosticDefinition, WireFormat};
+
 
 /// Messages used to control the DOIP entities
 #[allow(unused)]
 #[derive(Debug)]
-pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
+pub(super) enum ControlMessage {
     /// No payload
     AliveCheckRequest(oneshot::Sender<Result<(), Error>>),
-    AliveCheckResponse(Message<ReadDefinitions>),
+    AliveCheckResponse(Message),
     /// No oneshot needed, the response is sent
     /// and does not need to be awaited
-    SendNoResponse(Message<WriteDefinitions>),
+    SendNoResponse(Message),
 
     BindSocket(SocketAddr, oneshot::Sender<Result<u16, Error>>),
     UnbindSocket(oneshot::Sender<Result<(), Error>>),
     UDSMessage(
-        Message<WriteDefinitions>,
-        oneshot::Sender<Result<SendResult<Message<ReadDefinitions>>, Error>>,
+        Message,
+        oneshot::Sender<Result<SendResult<Message>, Error>>,
     ),
     RoutingActivation(
-        Message<WriteDefinitions>,
-        oneshot::Sender<Result<Message<ReadDefinitions>, Error>>,
+        Message,
+        oneshot::Sender<Result<Message, Error>>,
     ),
     AwaitResponse(
         /// the Request message that was sent
-        Message<WriteDefinitions>,
+        Message,
         /// the response channel to send the response to
-        oneshot::Sender<Result<Message<ReadDefinitions>, Error>>,
+        oneshot::Sender<Result<Message, Error>>,
     ),
 }
 
@@ -48,16 +48,12 @@ pub(super) enum ControlMessage<ReadDefinitions, WriteDefinitions> {
 ///
 /// Contains a oneshot receiver for the response and the control message to be sent
 /// to the inner client.
-pub(crate) struct CreateMessageResult<ReadDefinitions, WriteDefinitions>(
-    pub oneshot::Receiver<Result<SendResult<Message<ReadDefinitions>>, Error>>,
-    pub ControlMessage<ReadDefinitions, WriteDefinitions>,
+pub(crate) struct CreateMessageResult(
+    pub oneshot::Receiver<Result<SendResult<Message>, Error>>,
+    pub ControlMessage,
 );
 
-impl<ReadDefinitions, WriteDefinitions> ControlMessage<ReadDefinitions, WriteDefinitions>
-where
-    ReadDefinitions: WireFormat,
-    WriteDefinitions: WireFormat + Clone,
-{
+impl ControlMessage {
     /// Helper method to create control messages with oneshot channels
     fn create_oneshot<T>(
         factory: impl FnOnce(oneshot::Sender<Result<T, Error>>) -> Self,
@@ -68,9 +64,9 @@ where
 
     #[allow(unused)]
     pub fn create_routing_activation_message(
-        message: &Message<WriteDefinitions>,
+        message: &Message,
     ) -> (
-        oneshot::Receiver<Result<Message<ReadDefinitions>, Error>>,
+        oneshot::Receiver<Result<Message, Error>>,
         Self,
     ) {
         trace!(message = "RoutingActivationRequest");
@@ -82,8 +78,8 @@ where
     /// * a oneshot receiver for the UDS Response (ReadDefinitions == Response)
     /// * a ControlMessage to be sent to the inner client
     pub fn create_message(
-        message: Message<WriteDefinitions>,
-    ) -> CreateMessageResult<ReadDefinitions, WriteDefinitions> {
+        message: Message,
+    ) -> CreateMessageResult {
         let (rx, msg) = Self::create_oneshot(|sender| Self::UDSMessage(message, sender));
         CreateMessageResult(rx, msg)
     }
@@ -107,24 +103,21 @@ where
 ///
 /// The inner state enters an asynchronous loop which runs in the background
 ///
-pub(super) struct Inner<DiagTypes: DiagnosticDefinition, Conn> {
+pub(super) struct Inner<Conn> {
     client_options: ClientOptions,
     /// MPSC Receiver used to receive control messages from outer client
-    control_receiver: mpsc::Receiver<
-        ControlMessage<uds_protocol::Response<DiagTypes>, uds_protocol::Request<DiagTypes>>,
-    >,
+    control_receiver: mpsc::Receiver<ControlMessage>,
     /// MPSC Sender used to send updates to outer client
-    update_sender: mpsc::Sender<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>>,
+    update_sender: mpsc::Sender<Result<Message, MessageError>>,
 
     /// active request in flight (if it exists) in case the connection is lost
-    active_request:
-        Option<ControlMessage<uds_protocol::Response<DiagTypes>, uds_protocol::Request<DiagTypes>>>,
+    active_request: Option<ControlMessage>,
 
     /// Deadline for awaiting a response
     await_response_deadline: Option<tokio::time::Instant>,
 
     /// Socket manager for TCP data socket if bound
-    tcp_data_socket: Option<SocketManager<DiagTypes, Conn>>,
+    tcp_data_socket: Option<SocketManager<Conn>>,
 
     /// Represents the DoIP connection state of the socket
     connection_state: ConnectionState,
@@ -140,38 +133,41 @@ pub(super) struct Inner<DiagTypes: DiagnosticDefinition, Conn> {
 
     /// Tester Present request message to be sent
     /// This is used to send the Tester Present message periodically
-    tester_present_message: Message<uds_protocol::Request<DiagTypes>>,
+    tester_present_message: Message,
 }
 /// Sender for the control messages sent via the control channel
-type ControlSender<DiagTypes> = mpsc::Sender<
-    ControlMessage<uds_protocol::Response<DiagTypes>, uds_protocol::Request<DiagTypes>>,
->;
+type ControlSender = mpsc::Sender<ControlMessage>;
 /// Receiver for the update messages from the socket
-type UpdateReceiver<DiagTypes, E> =
-    mpsc::Receiver<Result<Message<uds_protocol::Response<DiagTypes>>, E>>;
+type UpdateReceiver<E> = mpsc::Receiver<Result<Message, E>>;
 
-impl<DiagTypes, Conn> Inner<DiagTypes, Conn>
+impl<Conn> Inner<Conn>
 where
-    DiagTypes: DiagnosticDefinition + std::fmt::Debug + 'static + Send + Sync + Clone,
     Conn: crate::connection::Connector + 'static + Send + Sync,
 {
     /// Spawns the inner client to run in the background and returns the send and recieve channels
     pub fn spawn(
         client_options: ClientOptions,
     ) -> (
-        ControlSender<DiagTypes>,
-        UpdateReceiver<DiagTypes, MessageError>,
+        ControlSender,
+        UpdateReceiver<MessageError>,
     ) {
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);
         let (update_sender, update_receiver) = mpsc::channel(16);
+        // Create a simple tester present message as bytes
+        // This is a basic UDS tester present: [0x3E, 0x80] (service 0x3E with suppress positive response)
+        let tester_present_bytes = if client_options.suppress_tester_present {
+            vec![0x3E, 0x80]  // Tester Present with suppress positive response
+        } else {
+            vec![0x3E, 0x00]  // Tester Present without suppress positive response
+        };
         let tester_present_message = Message::diagnostic_message(
             client_options.protocol_version,
             client_options.client_logical_address,
             client_options.server_physical_address,
-            uds_protocol::Request::tester_present(client_options.suppress_tester_present),
+            tester_present_bytes,
         );
-        let inner = Inner::<DiagTypes, Conn> {
+        let inner = Inner::<Conn> {
             client_options,
             control_receiver,
             update_sender,
@@ -194,7 +190,7 @@ where
             Ok(socket.port())
         } else {
             // Bind the socket
-            let socket_manager = SocketManager::bind(self.client_options, gateway_address).await?;
+            let socket_manager: SocketManager<Conn> = SocketManager::bind(self.client_options, gateway_address).await?;
             self.connection_state = ConnectionState::Initialized;
             let port = socket_manager.port();
             debug!("Bound socket to port: {}", port);
@@ -210,6 +206,7 @@ where
     async fn unbind_socket(&mut self) -> Result<(), Error> {
         // Check if the socket is already bound
         if let Some(socket_manager) = self.tcp_data_socket.take() {
+
             self.run = false;
             // Unbind the socket
             socket_manager.shut_down().await;
@@ -241,7 +238,7 @@ where
     /// [Error::SocketNotBound] - if the socket is not bound
     async fn send_to_socket(
         &mut self,
-        message: Message<uds_protocol::Request<DiagTypes>>,
+        message: Message,
     ) -> Result<(), Error> {
         if let Some(socket) = &mut self.tcp_data_socket {
             self.last_tester_present = tokio::time::Instant::now();
@@ -252,8 +249,8 @@ where
     }
 
     async fn receive_socket(
-        socket_manager: &mut Option<SocketManager<DiagTypes, Conn>>,
-    ) -> Result<Message<uds_protocol::Response<DiagTypes>>, Error> {
+        socket_manager: &mut Option<SocketManager<Conn>>,
+    ) -> Result<Message, Error> {
         if let Some(receiver) = socket_manager {
             match receiver.receive().await {
                 Some(message) => message.map_err(|_| Error::SocketClosedUnexpectedly),
@@ -351,10 +348,10 @@ where
                     self.last_tester_present + crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL,
                 )
                 .await;
-                // Check for a successful suppressed message, if it is, send a Suppressed response
-                // If a RequestCorrectlyRecieved-ResponsePending NRC is received, the server WILL send a response
-                // so we should not send a Suppressed response
-                let was_suppressed = message.is_positive_response_suppressed();
+                // Since DoIP is now transport-agnostic, we can't determine
+                // if a response is suppressed from the opaque payload.
+                // This logic should be handled at the application (UDS) layer.
+                let was_suppressed = false;  // Always false at transport layer
                 match send_result {
                     Ok(_) => {
                         let (await_sender, await_receiver) = oneshot::channel();

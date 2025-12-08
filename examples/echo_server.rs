@@ -72,7 +72,7 @@ impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandle
 
     async fn diagnostic_message(
         &self,
-        message: &DiagnosticMessage<ProtocolRequest>,
+        message: &DiagnosticMessage,
     ) -> Result<Message<ProtocolResponse>, Error> {
         debug!(
             "Received diagnostic message from {:?} to {:?}",

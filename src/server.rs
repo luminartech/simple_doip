@@ -52,12 +52,12 @@ pub trait ServerConnectionHandler<ReadDefinitions: WireFormat, WriteDefinitions:
     async fn routing_activation(
         &self,
         request: &RoutingActivationRequest,
-    ) -> Result<Message<WriteDefinitions>, Error>;
+    ) -> Result<Message, Error>;
 
     async fn diagnostic_message(
         &self,
-        message: &DiagnosticMessage<ReadDefinitions>,
-    ) -> Result<Message<WriteDefinitions>, Error>;
+        message: &DiagnosticMessage,
+    ) -> Result<Message, Error>;
 
     // Optional Functions
     // These functions *may* be overridden to provide custom behavior
@@ -129,8 +129,8 @@ pub trait ServerConnectionHandler<ReadDefinitions: WireFormat, WriteDefinitions:
     async fn alive_check(
         &self,
         client_info: &ClientConnectionInfo,
-    ) -> Result<Message<WriteDefinitions>, Error> {
-        Ok(Message::<WriteDefinitions>::alive_check_response(
+    ) -> Result<Message, Error> {
+        Ok(Message::alive_check_response(
             self.protocol_version(),
             client_info.logical_address,
         ))
@@ -203,8 +203,8 @@ where
     ) -> Result<(), Error> {
         let _currently_open_sockets = self.active_connections.fetch_add(1, Ordering::Relaxed);
         let (rx, tx) = tcp_stream.into_split();
-        let mut read_stream = FramedRead::new(rx, MessageCodec::<R>::new());
-        let mut write_sink = FramedWrite::new(tx, MessageCodec::<S>::new());
+        let mut read_stream = FramedRead::new(rx, MessageCodec::new());
+        let mut write_sink = FramedWrite::new(tx, MessageCodec::new());
 
         loop {
             match read_stream.next().await {
@@ -230,8 +230,8 @@ where
     async fn handle_client_message(
         &self,
         client_socket_addr: SocketAddr,
-        request_message: Message<R>,
-    ) -> Result<Message<S>, Error> {
+        request_message: Message,
+    ) -> Result<Message, Error> {
         // TODO: Need to handle active sockets by adding clients to a map
         // client count should come from that map, as well as the logical address missing below
         let connection_info = ClientConnectionInfo {

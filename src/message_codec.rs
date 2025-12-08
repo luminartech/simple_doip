@@ -2,31 +2,28 @@ use crate::messages::{Header, Message, MessageError, Payload};
 use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
-use uds_protocol::WireFormat;
 
 /// Codec for the DoIP messages, used to encode and decode messages from
 /// the TCP stream
 #[derive(Debug)]
-pub struct MessageCodec<DiagnosticsDefinition> {
-    _diagnostics_definition: std::marker::PhantomData<DiagnosticsDefinition>,
+pub struct MessageCodec {
+    // No phantom data needed since we're no longer generic
 }
 
-impl<DiagnosticsDefinition> MessageCodec<DiagnosticsDefinition> {
+impl MessageCodec {
     pub fn new() -> Self {
-        Self::default()
+        Self {}
     }
 }
 
-impl<DiagnosticsDefinition> Default for MessageCodec<DiagnosticsDefinition> {
+impl Default for MessageCodec {
     fn default() -> Self {
-        Self {
-            _diagnostics_definition: std::marker::PhantomData,
-        }
+        Self {}
     }
 }
 
-impl<DiagnosticsDefinition: WireFormat> Decoder for MessageCodec<DiagnosticsDefinition> {
-    type Item = Message<DiagnosticsDefinition>;
+impl Decoder for MessageCodec {
+    type Item = Message;
     type Error = MessageError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -46,7 +43,7 @@ impl<DiagnosticsDefinition: WireFormat> Decoder for MessageCodec<DiagnosticsDefi
                 let _ = src.split_to(8);
                 // We have the full message, split off the payload from the rx buffer
                 let payload_bytes = src.split_to(header.payload_length as usize);
-                let payload = Payload::<DiagnosticsDefinition>::read(
+                let payload = Payload::read(
                     &mut payload_bytes.as_ref(),
                     header.payload_type,
                 )?;
@@ -60,14 +57,14 @@ impl<DiagnosticsDefinition: WireFormat> Decoder for MessageCodec<DiagnosticsDefi
     }
 }
 
-impl<DiagnosticsDefinition: WireFormat> Encoder<&Message<DiagnosticsDefinition>>
-    for MessageCodec<DiagnosticsDefinition>
+impl Encoder<&Message>
+    for MessageCodec
 {
     type Error = MessageError;
 
     fn encode(
         &mut self,
-        message: &Message<DiagnosticsDefinition>,
+        message: &Message,
         dst: &mut BytesMut,
     ) -> Result<(), Self::Error> {
         message.write(&mut dst.writer())?;

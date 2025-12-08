@@ -7,7 +7,6 @@ use doip::{
 use std::net::{IpAddr, SocketAddr};
 use tracing::info;
 use tracing_subscriber;
-use uds_protocol::{ProtocolRequest, UdsSpec};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -37,15 +36,15 @@ async fn main() -> anyhow::Result<()> {
         suppress_tester_present: true, // Suppress the reply from the server
     };
 
-    let mut client = Client::<UdsSpec>::connect(custom_options).await?;
+    let mut client = Client::connect(custom_options).await?;
 
-    let request = ProtocolRequest::diagnostic_session_control(
-        false,
-        uds_protocol::DiagnosticSessionType::ExtendedDiagnosticSession,
-    );
+    // Create a UDS Diagnostic Session Control request as raw bytes
+    // Service ID: 0x10 (Diagnostic Session Control)
+    // Session Type: 0x03 (Extended Diagnostic Session)
+    let request_bytes = vec![0x10, 0x03];
 
     let resp = client
-        .send_diagnostic_message(doip::client::AddressType::Physical, request)
+        .send_diagnostic_message(doip::client::AddressType::Physical, request_bytes)
         .await?;
     info!("Sent diagnostic message and received response {:#?}", resp);
     client.shut_down().await;

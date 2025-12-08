@@ -12,13 +12,13 @@ use std::{
 };
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
-use uds_protocol::{DiagnosticDefinition, Request, Response};
+
 
 #[derive(Debug, strum::Display)]
 /// Send updates to the user
-pub enum ClientUpdate<ReadDefinitions> {
+pub enum ClientUpdate {
     /// Unicase message from the server
-    Unicast(Message<ReadDefinitions>),
+    Unicast(Message),
     /// Inner DoIP client error
     Error(Error),
 }
@@ -82,27 +82,24 @@ pub enum SendResult<ReadDefinitions> {
 /// It handles the connection to the server, and sends and receives messages, silently
 /// handling DoIP acknowledgements and other protocol details that the user doesn't need to worry about.
 #[derive(Debug)]
-pub struct Client<DiagTypes: DiagnosticDefinition, Conn = connection::ConnectorSocket> {
+pub struct Client<Conn = connection::ConnectorSocket> {
     pub client_options: ClientOptions,
     /// Sends messages from the user to the inner client
-    control_sender: mpsc::Sender<
-        ControlMessage<uds_protocol::Response<DiagTypes>, uds_protocol::Request<DiagTypes>>,
-    >,
+    control_sender: mpsc::Sender<ControlMessage>,
     /// Receives messages from the inner client to the user
     update_receiver:
-        mpsc::Receiver<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>>,
+        mpsc::Receiver<Result<Message, MessageError>>,
     _phantom: std::marker::PhantomData<Conn>,
 }
 
-impl<DiagTypes, Conn> Client<DiagTypes, Conn>
+impl<Conn> Client<Conn>
 where
-    DiagTypes: DiagnosticDefinition + 'static + Sync + Send + Clone + std::fmt::Debug,
     Conn: connection::Connector + 'static + Sync + Send,
 {
     /// Create a DoIP connection, and automatically send a routing activation request if the client options specify it
     /// The target port defaults to [`crate::TCP_PORT`].
     pub async fn connect(client_options: ClientOptions) -> Result<Self, Error> {
-        let (control_sender, update_receiver) = Inner::<_, Conn>::spawn(client_options);
+        let (control_sender, update_receiver) = Inner::<Conn>::spawn(client_options);
         Self::bind_socket(&control_sender, &client_options).await?;
 
         Ok(Self {
@@ -118,7 +115,7 @@ where
     /// * Standard ISO-13400 clients will bind to the local address and port of the server
     /// * See [Inner::bind_socket] for more details
     async fn bind_socket(
-        control_sender: &mpsc::Sender<ControlMessage<Response<DiagTypes>, Request<DiagTypes>>>,
+        control_sender: &mpsc::Sender<ControlMessage>,
         client_options: &ClientOptions,
     ) -> Result<u16, Error> {
         let (response, message) =
@@ -210,7 +207,7 @@ where
     /// Returns an Option of a Response if there was one in flight when the client or server disconnected
     pub async fn reconnect(
         &mut self,
-    ) -> Result<Option<Message<uds_protocol::Response<DiagTypes>>>, Error> {
+    ) -> Result<Option<Message>, Error> {
         let _ = Self::bind_socket(&self.control_sender, &self.client_options).await?;
         trace!("Reconnected, checking for in-flight messages over 5 seconds");
         let res =
@@ -240,8 +237,8 @@ where
     pub async fn send_diagnostic_message(
         &mut self,
         address_type: AddressType,
-        user_data: uds_protocol::Request<DiagTypes>,
-    ) -> Result<SendResult<Message<uds_protocol::Response<DiagTypes>>>, Error> {
+        user_data: Vec<u8>,
+    ) -> Result<SendResult<Message>, Error> {
         // Create a new message, send it to the server, and wait for a response
 
         // Create a new message
@@ -262,8 +259,8 @@ where
     /// Send a request to the server and wait for a response (which is returned)
     async fn send_message(
         &mut self,
-        control: Message<uds_protocol::Request<DiagTypes>>,
-    ) -> Result<SendResult<Message<uds_protocol::Response<DiagTypes>>>, Error> {
+        control: Message,
+    ) -> Result<SendResult<Message>, Error> {
         // Create new request and response channels to await the response of
         let CreateMessageResult(response, message) = ControlMessage::create_message(control);
         // Sends to Inner client

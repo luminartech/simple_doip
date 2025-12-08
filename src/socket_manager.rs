@@ -19,26 +19,24 @@ use tokio::{
 };
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, info, trace};
-use uds_protocol::DiagnosticDefinition;
 
 /// 1-to-1 mapping of the socket manager to the client (currently)
 /// There is only one socket manager per client.
 #[derive(Debug)]
-pub struct SocketManager<DiagTypes: DiagnosticDefinition, Conn> {
+pub struct SocketManager<Conn> {
     /// Receiver used to receive messages from the socket
     /// This is the channel that the socket manager uses to send messages back up to the client
-    receiver: mpsc::Receiver<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>>,
+    receiver: mpsc::Receiver<Result<Message, MessageError>>,
     /// Sender used to send messages to the socket
-    sender: mpsc::Sender<Message<uds_protocol::Request<DiagTypes>>>,
+    sender: mpsc::Sender<Message>,
     local_port: u16,
     session_id: u16,
 
     _phantom: std::marker::PhantomData<Conn>,
 }
 
-impl<DiagTypes, Conn> SocketManager<DiagTypes, Conn>
+impl<Conn> SocketManager<Conn>
 where
-    DiagTypes: DiagnosticDefinition + std::fmt::Debug + 'static + Send + Sync,
     Conn: connection::Connector + 'static + Send + Sync,
 {
     /// Creates a new SocketManager instance
@@ -86,7 +84,7 @@ where
     /// Send a message to the target address
     pub async fn send(
         &mut self,
-        message: Message<uds_protocol::Request<DiagTypes>>,
+        message: Message,
     ) -> Result<(), Error> {
         self.sender.send(message).await.map_err(|e| {
             error!("Failed to send message: {}", e);
@@ -99,7 +97,7 @@ where
     /// Receive a message from the receiver/Request channel
     pub async fn receive(
         &mut self,
-    ) -> Option<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>> {
+    ) -> Option<Result<Message, MessageError>> {
         self.receiver.recv().await
     }
 
@@ -107,7 +105,7 @@ where
     pub async fn receive_timeout(
         &mut self,
         timeout: Duration,
-    ) -> Option<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>> {
+    ) -> Option<Result<Message, MessageError>> {
         tokio::time::timeout(timeout, self.receiver.recv())
             .await
             .unwrap()
@@ -140,15 +138,15 @@ where
 
     /// Spawn the socket loop to get messages from the socket
     fn spawn_socket_loop(
-        rx_tx: mpsc::Sender<Result<Message<uds_protocol::Response<DiagTypes>>, MessageError>>,
-        mut tx_rx: mpsc::Receiver<Message<uds_protocol::Request<DiagTypes>>>,
+        rx_tx: mpsc::Sender<Result<Message, MessageError>>,
+        mut tx_rx: mpsc::Receiver<Message>,
         mut socket_read_stream: FramedRead<
             OwnedReadHalf,
-            MessageCodec<uds_protocol::Response<DiagTypes>>,
+            MessageCodec,
         >,
         mut socket_write_sink: FramedWrite<
             OwnedWriteHalf,
-            MessageCodec<uds_protocol::Request<DiagTypes>>,
+            MessageCodec,
         >,
     ) {
         tokio::spawn(async move {

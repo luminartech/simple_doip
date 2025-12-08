@@ -1,7 +1,5 @@
 use std::io::{Read, Write};
 
-use uds_protocol::WireFormat;
-
 use crate::messages::{
     AliveCheckResponse, DiagnosticMessage, DiagnosticMessageAck, DiagnosticPowerModeCode,
     EntityStatusResponse, MessageError, PayloadType, RoutingActivationResponse,
@@ -14,11 +12,11 @@ use super::{NackCode, RoutingActivationRequest};
 /// messages. This is the main payload type for DoIP messages.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub enum Payload<DiagnosticsDefinition> {
+pub enum Payload {
     DoIPNack(NackCode),
     AliveCheckRequest,
     AliveCheckResponse(AliveCheckResponse),
-    DiagnosticMessage(DiagnosticMessage<DiagnosticsDefinition>),
+    DiagnosticMessage(DiagnosticMessage),
     DiagnosticMessageAck(DiagnosticMessageAck),
     DiagnosticMessageNack,
     EntityStatusRequest,
@@ -31,7 +29,7 @@ pub enum Payload<DiagnosticsDefinition> {
     VehicleIdentificationResponse(VehicleIdentificationResponse),
 }
 
-impl<DiagnosticsDefinitions: WireFormat> Payload<DiagnosticsDefinitions> {
+impl Payload {
     pub fn read<R: Read>(
         mut payload_bytes: &mut R,
         payload_type: PayloadType,
