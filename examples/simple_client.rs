@@ -1,5 +1,6 @@
 use doip::{
     client::{Client, ClientOptions},
+    connection::ConnectorSocket,
     logical_address::LogicalAddress,
     messages::{ActivationTypeCode, ProtocolVersion},
     TCP_PORT, TESTER_LOGICAL_ADDRESS,
@@ -36,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
         suppress_tester_present: true, // Suppress the reply from the server
     };
 
-    let mut client = Client::connect(custom_options).await?;
+    let mut client = Client::<ConnectorSocket>::connect(custom_options).await?;
 
     // Create a UDS Diagnostic Session Control request as raw bytes
     // Service ID: 0x10 (Diagnostic Session Control)

@@ -19,7 +19,6 @@ use std::{
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{error, warn};
-use uds_protocol::WireFormat;
 
 pub struct ClientConnectionInfo {
     /// Client IP address
@@ -31,7 +30,7 @@ pub struct ClientConnectionInfo {
 /// Implement this trait to create a custom DoIP server.
 /// Most protocol functions have a simple, default implementation
 #[async_trait]
-pub trait ServerConnectionHandler<ReadDefinitions: WireFormat, WriteDefinitions: WireFormat> {
+pub trait ServerConnectionHandler {
     // Required Functions
     // These functions must be implemented by the server implementation
 
@@ -151,26 +150,20 @@ pub trait ServerConnectionHandler<ReadDefinitions: WireFormat, WriteDefinitions:
     }
 }
 
-pub struct Server<R, S, T> {
+pub struct Server<T> {
     connection_handler: Arc<T>,
     active_connections: AtomicUsize,
-    _phantom_r: std::marker::PhantomData<R>,
-    _phantom_s: std::marker::PhantomData<S>,
 }
 
-impl<R, S, T> Server<R, S, T>
+impl<T> Server<T>
 where
-    R: WireFormat,
-    S: WireFormat,
-    T: ServerConnectionHandler<R, S> + Sync,
+    T: ServerConnectionHandler + Sync,
 {
     pub fn new(connection_handler: T) -> Result<Self, Error> {
         // TODO: Validate the provided handler
         Ok(Server {
             connection_handler: Arc::new(connection_handler),
             active_connections: AtomicUsize::new(0),
-            _phantom_r: std::marker::PhantomData,
-            _phantom_s: std::marker::PhantomData,
         })
     }
 

@@ -2,19 +2,18 @@ use async_trait::async_trait;
 use doip::{
     logical_address::LogicalAddress,
     messages::{
-        DiagnosticAckCode, DiagnosticMessage, Message, RoutingActivationRequest,
+        DiagnosticMessage, Message, RoutingActivationRequest,
         RoutingActivationResponseCode,
     },
     server::{Server, ServerConnectionHandler},
     Error,
 };
 use tracing::{debug, info};
-use uds_protocol::{ProtocolRequest, ProtocolResponse, WireFormat};
 
 struct ServerHandler {}
 
 #[async_trait]
-impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandler {
+impl ServerConnectionHandler for ServerHandler {
     fn get_vin(&self) -> [u8; 17] {
         [0x00; 17]
     }
@@ -34,7 +33,7 @@ impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandle
     async fn routing_activation(
         &self,
         request: &RoutingActivationRequest,
-    ) -> Result<Message<ProtocolResponse>, Error> {
+    ) -> Result<Message, Error> {
         info!(
             "Routing activation request from {:?}",
             request.source_address
@@ -49,72 +48,30 @@ impl ServerConnectionHandler<ProtocolRequest, ProtocolResponse> for ServerHandle
             [0; 4],
             None,
         ))
-        // TODO: Much of this server code is temporarily disabled until we re-work the traits for DoIP entities
-        /*let response = {
-            Ok(RoutingActivationResponse {
-                logical_address_tester: request.source_address,
-                logical_address_of_doip_entity: 0x0001,
-                routing_activation_response_code:
-                    RoutingActivationResponseCode::RoutingSuccessfullyActivated,
-                reserved_oem: [0x00, 0x00, 0x00, 0x00],
-                oem_specific: Some([0, 0, 0, 0]),
-            })
-        };
-        Ok(RoutingActivationResponse {
-            logical_address_tester: source_address,
-            logical_address_of_doip_entity: 0x0001,
-            routing_activation_response_code:
-                RoutingActivationResponseCode::RoutingSuccessfullyActivated,
-            reserved_oem: [0x00, 0x00, 0x00, 0x00],
-            oem_specific: Some([0, 0, 0, 0]),
-        })*/
     }
 
     async fn diagnostic_message(
         &self,
         message: &DiagnosticMessage,
-    ) -> Result<Message<ProtocolResponse>, Error> {
+    ) -> Result<Message, Error> {
         debug!(
             "Received diagnostic message from {:?} to {:?}",
             message.source_address, message.target_address
         );
-        let mut previous_message_data = Vec::with_capacity(message.user_data.required_size());
-        message
-            .user_data
-            .encode(&mut previous_message_data)
-            .unwrap();
-        Ok(Message::diagnostic_message_ack(
+        // Simply echo back the received data as raw bytes
+        let response_data = message.user_data.clone();
+        
+        // Note: Using diagnostic_message() instead of diagnostic_message_ack()
+        // - diagnostic_message() sends actual diagnostic data (the echoed payload)
+        // - diagnostic_message_ack() would only send a transport-level acknowledgment
+        // This creates a proper echo response rather than just acknowledging receipt
+        Ok(Message::diagnostic_message(
             self.protocol_version(),
-            message.source_address,
-            message.target_address,
-            DiagnosticAckCode::RoutingConfirmationAck,
-            previous_message_data,
+            message.source_address,  // Keep original source as source
+            message.target_address,  // Keep original target as target
+            response_data,
         ))
     }
-    /*
-    ///
-    async fn routing_activation(
-        &self,
-        _client_info: &ClientConnectionInfo,
-        source_address: u16,
-        _activation_type: ActivationTypeCode,
-    ) -> Result<RoutingActivationResponse, Error>
-
-    async fn diagnostic_message(
-        &self,
-        _client_info: &ClientConnectionInfo,
-        source_address: u16,
-        target_address: u16,
-        user_data: Vec<u8>,
-    ) -> Result<DiagnosticMessageAck, Error> {
-        Ok(DiagnosticMessageAck {
-            source_address: source_address,
-            target_address: target_address,
-            ack_code: DiagnosticAckCode::RoutingConfirmationAck,
-            previous_message_data: user_data,
-        })
-    }
-    */
 }
 
 #[tokio::main]
