@@ -37,7 +37,14 @@ async fn main() -> anyhow::Result<()> {
         suppress_tester_present: true, // Suppress the reply from the server
     };
 
-    let mut client = Client::<ConnectorSocket>::connect(custom_options).await?;
+    
+    let mut client = match Client::<ConnectorSocket>::connect(custom_options).await {
+        Ok(client) => client,
+        Err(e) => {
+            info!("Failed to connect: {:?}", e);
+            return Err(e.into());
+        }
+    };
 
     // Create a UDS Diagnostic Session Control request as raw bytes
     // Service ID: 0x10 (Diagnostic Session Control)
