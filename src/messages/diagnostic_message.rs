@@ -7,7 +7,7 @@ use crate::LogicalAddress;
 use super::message_error::MessageError;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DiagnosticMessage<DiagnosticsDefinition> {
+pub struct DiagnosticMessage {
     pub source_address: LogicalAddress,
     pub target_address: LogicalAddress,
     pub user_data: Vec<u8>,

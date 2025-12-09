@@ -34,7 +34,7 @@ use crate::LogicalAddress;
 /// The payload contains diagnostic data and other DoIP protocol information
 /// The header is a fixed size struct that contains the protocol version, payload type, and payload length
 #[derive(Clone, Debug, PartialEq)]
-pub struct Message<W> {
+pub struct Message {
     pub header: header::Header,
     pub payload: Payload,
 }
