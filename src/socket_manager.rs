@@ -8,7 +8,7 @@ use crate::{
     connection,
     message_codec::MessageCodec,
     messages::{Message, MessageError},
-    Error, TCP_PORT, TCP_TIMEOUT_GENERAL_INACTIVITY,
+    Error, TCP_TIMEOUT_GENERAL_INACTIVITY,
 };
 use futures::{SinkExt, StreamExt};
 use std::{net::SocketAddr, time::Duration};
@@ -61,8 +61,8 @@ where
         let (rx, tx) = match Conn::establish_connection(gateway_address).await {
             Ok((rx, tx)) => (rx, tx),
             Err(e) => {
-                error!("Failed to establish connection: {}", e);
-                return Err(Error::ConnectionClosed);
+                error!("Failed to establish connection: {e} on {gateway_address}");
+                return Err(e);
             }
         };
 
@@ -77,7 +77,7 @@ where
         Ok(Self {
             receiver: rx_rx,
             sender: tx_tx,
-            local_port: TCP_PORT, // TODO: Double check this
+            local_port: gateway_address.port(),
             session_id: 0,
             _phantom: std::marker::PhantomData,
         })
@@ -173,10 +173,33 @@ where
                             // Decoding the message can fail, so we handle that here
                             Some(Err(e)) => {
                                 last_activity = tokio::time::Instant::now();
-                                error!(concat!("Internal Error decoding message: {:?}\n",
-                                "This usually means that the library is not set up to read this message type. ",
+                                match e {
+                                    MessageError::Io(ref io_err) => {
+                                        if io_err.kind() == std::io::ErrorKind::ConnectionReset {
+                                            info!(concat!("Connection reset by peer, closing socket\n", "{:?}"), io_err);
+                                            // The socket has been closed by the remote end, so we should exit
+                                            break;
+                                        };
+                                        error!(concat!("{:?}\n",
+                                            "Check that you are not sending too many requests to the server.",
+                                            "The server may be closing the connection due to overload."
+                                        ), io_err);
+                                        // The socket has been closed by the remote end, so we should exit
+                                        break;
+                                    }
+                                    MessageError::UdsProtocol(ref uds_error) => {
+                                        error!(concat!("UDS Protocol Error decoding message: {:?}\n",
+                                            "This usually means that the message sent was malformed or unexpected. ",
+                                            "Please check either the uds_protocol Response implementation, ",
+                                            "or the underlying types in the DiagnosticDefinition associated type"), uds_error);
+                                    }
+                                    _ => {
+                                        error!(concat!("Internal Error decoding message: {:?}\n",
+                                    "This usually means that the library is not set up to read this message type. ",
                                     "Please check either the uds_protocol Response implementation, ",
                                     "or the underlying types in the DiagnosticDefinition associated type"), e.to_string());
+                                    }
+                                };
 
                                 // send a MessageError to the receiver
                                 let _ = rx_tx.send(Err(e)).await;
@@ -184,7 +207,7 @@ where
                             Some(message) => {
                                 // Update the last activity time
                                 last_activity = tokio::time::Instant::now();
-                                trace!("Received response from socket: {:?}", message);
+                                trace!("A: STREAM INCOMING: {:?}", message);
                                 match rx_tx.send( message ).await {
                                     Ok(_) => {}
                                     Err(_) => {
@@ -208,7 +231,7 @@ where
                                 // Update the last activity time
                                 last_activity = tokio::time::Instant::now();
 
-                                trace!("Sending request to socket: {:?}", message);
+                                trace!("OUTGOING: {:?}", message);
                                 match socket_write_sink.send(&message).await {
                                     Ok(_) => {}
                                     Err(e) => {

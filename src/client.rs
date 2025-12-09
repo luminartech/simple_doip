@@ -1,13 +1,18 @@
 use crate::{
     client_inner::{ControlMessage, CreateMessageResult, Inner},
     connection,
-    messages::{ActivationTypeCode, Message, MessageError, ProtocolVersion},
-    Error, LogicalAddress,
+    messages::{
+        ActivationTypeCode, Message, MessageError, ProtocolVersion, RoutingActivationResponse,
+    },
+    Error, LogicalAddress, TCP_TIMEOUT_INITIAL_INACTIVITY,
 };
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
-use uds_protocol::DiagnosticDefinition;
+use uds_protocol::{DiagnosticDefinition, Request, Response};
 
 #[derive(Debug, strum::Display)]
 /// Send updates to the user
@@ -50,7 +55,7 @@ pub struct ClientOptions {
     pub routing_activation_options: Option<RoutingActivationOptions>,
     /// Timer for sending the UDS Tester Present messages
     /// Not necessary for DefaultSession, but useful for keeping the connection alive
-    pub tester_present_interval: std::time::Duration,
+    pub tester_present_interval: tokio::time::Duration,
 
     /// Whether to suppress the UDS TesterPresent reply from the server
     pub suppress_tester_present: bool,
@@ -98,20 +103,7 @@ where
     /// The target port defaults to [`crate::TCP_PORT`].
     pub async fn connect(client_options: ClientOptions) -> Result<Self, Error> {
         let (control_sender, update_receiver) = Inner::<_, Conn>::spawn(client_options);
-        // Automatically send a routing activation request if the client options specify it
-        if let Some(routing_activation_options) = client_options.routing_activation_options {
-            let message = Message::<uds_protocol::Request<DiagTypes>>::routing_activation_request(
-                client_options.protocol_version,
-                client_options.client_logical_address,
-                routing_activation_options.activation_type,
-                routing_activation_options.oem_specific,
-            );
-
-            // Send the message and wait for a response
-            let CreateMessageResult(response, message) = ControlMessage::create_message(message);
-            control_sender.send(message).await.unwrap();
-            let _ = response.await;
-        }
+        Self::bind_socket(&control_sender, &client_options).await?;
 
         Ok(Self {
             client_options,
@@ -125,18 +117,87 @@ where
     ///
     /// * Standard ISO-13400 clients will bind to the local address and port of the server
     /// * See [Inner::bind_socket] for more details
-    pub async fn bind_socket(&mut self, gateway_address: SocketAddr) -> Result<u16, Error> {
-        let (response, message) = ControlMessage::create_bind_socket_message(gateway_address);
-        self.control_sender
-            .send(message)
-            .await
-            .map_err(|_| Error::ConnectionClosed)?;
-        let port = response
-            .await
-            .map_err(|_| Error::ConnectionClosed)?
-            .map_err(|_| Error::SocketNotBound)?;
+    async fn bind_socket(
+        control_sender: &mpsc::Sender<ControlMessage<Response<DiagTypes>, Request<DiagTypes>>>,
+        client_options: &ClientOptions,
+    ) -> Result<u16, Error> {
+        let (response, message) =
+            ControlMessage::create_bind_socket_message(client_options.server_address);
+        control_sender.send(message).await.map_err(|_| {
+            Error::BindFailed("Could not send BindSocket message to inner client".into())
+        })?;
+        let port = response.await.map_err(|_| Error::ConnectionClosed)?;
 
-        Ok(port)
+        // Automatically send a routing activation request if the client options specify it
+        'routing: {
+            if let Some(routing_activation_options) = client_options.routing_activation_options {
+                let message = Message::routing_activation_request(
+                    client_options.protocol_version,
+                    client_options.client_logical_address,
+                    routing_activation_options.activation_type,
+                    routing_activation_options.oem_specific,
+                );
+
+                // Send the message and wait for a response
+                let (response, message) =
+                    ControlMessage::create_routing_activation_message(&message);
+                control_sender
+                    .send(message)
+                    .await
+                    .map_err(|_| Error::RoutingActivationFailed)
+                    .inspect_err(|e| debug!("Failed to send routing activation request: {e}"))
+                    .inspect(|_| trace!("Routing activation request sent successfully"))?;
+                let res = tokio::time::timeout(TCP_TIMEOUT_INITIAL_INACTIVITY, response).await;
+                // Elapsed error handling
+                let Ok(res) = res else {
+                    tracing::warn!("Timeout waiting for routing activation response. Server may not support routing activation.");
+                    break 'routing;
+                };
+                let Ok(res) = res else {
+                    tracing::warn!("Routing activation response channel closed. Server may not support routing activation.");
+                    break 'routing;
+                };
+                // if the timeout specifically and keep working, the routing activation may not be supported
+                debug!("Routing Activation Response received: {:?}", res);
+                match res {
+                    Ok(Message { payload, header: _ }) => {
+                        let RoutingActivationResponse {
+                            logical_address_tester,
+                            logical_address_of_doip_entity,
+                            routing_activation_response_code,
+                            reserved_oem,
+                            oem_specific,
+                        } = match payload {
+                            crate::messages::Payload::RoutingActivationResponse(resp) => resp,
+                            _ => {
+                                todo!(
+                                "Responded with something other than a routing activation response"
+                            );
+                                // return Err(Error::MessageError(MessageError::InvalidPayloadType));
+                            }
+                        };
+                        info!("Routing Activation Response received:");
+                        info!("  Logical Address Tester: {:04X}", logical_address_tester.0);
+                        info!(
+                            "  Logical Address of DoIP Entity: {:04X}",
+                            logical_address_of_doip_entity.0
+                        );
+                        info!(
+                            "  Routing Activation Response Code: {:?}",
+                            routing_activation_response_code
+                        );
+                        info!("  Reserved OEM: {:02X?}", reserved_oem);
+                        if let Some(oem) = oem_specific {
+                            info!("  OEM Specific: {:02X?}", oem);
+                        }
+                    }
+                    Err(_) => {
+                        return Err(Error::ConnectionClosed);
+                    }
+                }
+            }
+        }
+        port
     }
 
     /// Unbind the socket from the local address and port.
@@ -149,8 +210,21 @@ where
     /// Returns an Option of a Response if there was one in flight when the client or server disconnected
     pub async fn reconnect(
         &mut self,
-    ) -> Result<Option<Message<uds_protocol::Request<DiagTypes>>>, Error> {
-        todo!("Reconnect not implemented yet");
+    ) -> Result<Option<Message<uds_protocol::Response<DiagTypes>>>, Error> {
+        let _ = Self::bind_socket(&self.control_sender, &self.client_options).await?;
+        trace!("Reconnected, checking for in-flight messages over 5 seconds");
+        let res =
+            tokio::time::timeout(Duration::from_millis(5000), self.update_receiver.recv()).await;
+        // Elapsed error handling, no response in flight
+        let Ok(res) = res else {
+            return Ok(None);
+        };
+        let Some(msg_res) = res else {
+            return Ok(None);
+        };
+        let Ok(msg) = msg_res else { return Ok(None) };
+        debug!("Reconnected, received in-flight message: {:?}", msg);
+        Ok(Some(msg))
     }
 
     /// Automatically send UDS tester present's to the server

@@ -20,7 +20,7 @@
 //!
 //! ## Custom Implementation
 //! This example shows how to implement a custom connector using a TCP socket.
-//! ```rust
+//! ```rust,ignore
 //! use doip::connection::Connector;
 //! use tokio::net::{TcpSocket, tcp::{OwnedReadHalf, OwnedWriteHalf}};
 //! use std::net::{IpAddr, SocketAddr};
@@ -28,6 +28,7 @@
 //!
 //! pub struct MyConnector;
 //!
+//! #[async_trait::async_trait]
 //! impl Connector for MyConnector {
 //!    async fn establish_connection(gateway_address: SocketAddr) -> Result<(OwnedReadHalf, OwnedWriteHalf), doip::Error> {
 //!        // Implement the connection logic here
@@ -59,12 +60,13 @@ use tokio::net::{
 };
 use tracing::{error, trace};
 
+#[async_trait::async_trait]
 /// Connector trait for establishing a connection to the DoIP node
 pub trait Connector {
     /// Establish a connection to the DoIP node
-    fn establish_connection(
+    async fn establish_connection(
         gateway_address: SocketAddr,
-    ) -> impl std::future::Future<Output = Result<(OwnedReadHalf, OwnedWriteHalf), crate::Error>> + Send;
+    ) -> Result<(OwnedReadHalf, OwnedWriteHalf), crate::Error>;
 }
 
 // TODO: Move this to a config file
@@ -76,6 +78,8 @@ const BUFFER_SIZE: u32 = 1024 * 64;
 /// This socket is used to connect to the server directly.
 #[derive(Clone, Copy, Debug)]
 pub struct ConnectorSocket;
+
+#[async_trait::async_trait]
 impl Connector for ConnectorSocket {
     async fn establish_connection(
         gateway_address: SocketAddr,

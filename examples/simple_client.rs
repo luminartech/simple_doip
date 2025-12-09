@@ -32,14 +32,12 @@ async fn main() -> anyhow::Result<()> {
             activation_type: ActivationTypeCode::Default,
             oem_specific: None,
         }),
-        tester_present_interval: std::time::Duration::from_secs(5), // 5 seconds for testing
+        // 2 second interval recommended by UDS 14229-2 (S3client)
+        tester_present_interval: std::time::Duration::from_secs(2),
         suppress_tester_present: true, // Suppress the reply from the server
     };
 
     let mut client = Client::<UdsSpec>::connect(custom_options).await?;
-    let port = client.bind_socket(custom_options.server_address).await?;
-
-    info!("Bound to port: {}", port);
 
     let request = ProtocolRequest::diagnostic_session_control(
         false,

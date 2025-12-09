@@ -34,4 +34,11 @@ pub enum Error {
     SocketClosedUnexpectedly,
     #[error("Invalid client type")]
     InvalidClientType,
+    #[error("Failed to bind to socket: {0}")]
+    BindFailed(String),
+    #[error("Failed route activation")]
+    RoutingActivationFailed,
+    /// Request may have been suppressed, so this is a non-fatal error
+    #[error("Response timeout exceeded")]
+    ResponseTimeoutExceeded,
 }
