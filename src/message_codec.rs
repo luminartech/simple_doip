@@ -5,19 +5,13 @@ use tracing::info;
 
 /// Codec for the DoIP messages, used to encode and decode messages from
 /// the TCP stream
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MessageCodec {
     // No phantom data needed since we're no longer generic
 }
 
 impl MessageCodec {
     pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl Default for MessageCodec {
-    fn default() -> Self {
         Self {}
     }
 }
