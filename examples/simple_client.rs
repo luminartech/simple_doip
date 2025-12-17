@@ -37,7 +37,6 @@ async fn main() -> anyhow::Result<()> {
         suppress_tester_present: true, // Suppress the reply from the server
     };
 
-    
     let mut client = match Client::<ConnectorSocket>::connect(custom_options).await {
         Ok(client) => client,
         Err(e) => {

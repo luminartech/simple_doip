@@ -17,7 +17,7 @@ impl DiagnosticMessage {
     pub fn read<R: Read>(reader: &mut R) -> Result<Self, MessageError> {
         let source_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
         let target_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
-        
+
         // Read remaining bytes as opaque user data
         let mut user_data = Vec::new();
         reader.read_to_end(&mut user_data)?;

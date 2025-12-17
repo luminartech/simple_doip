@@ -82,10 +82,7 @@ where
     }
 
     /// Send a message to the target address
-    pub async fn send(
-        &mut self,
-        message: Message,
-    ) -> Result<(), Error> {
+    pub async fn send(&mut self, message: Message) -> Result<(), Error> {
         self.sender.send(message).await.map_err(|e| {
             error!("Failed to send message: {}", e);
             Error::ConnectionClosed
@@ -95,9 +92,7 @@ where
     }
 
     /// Receive a message from the receiver/Request channel
-    pub async fn receive(
-        &mut self,
-    ) -> Option<Result<Message, MessageError>> {
+    pub async fn receive(&mut self) -> Option<Result<Message, MessageError>> {
         self.receiver.recv().await
     }
 
@@ -140,14 +135,8 @@ where
     fn spawn_socket_loop(
         rx_tx: mpsc::Sender<Result<Message, MessageError>>,
         mut tx_rx: mpsc::Receiver<Message>,
-        mut socket_read_stream: FramedRead<
-            OwnedReadHalf,
-            MessageCodec,
-        >,
-        mut socket_write_sink: FramedWrite<
-            OwnedWriteHalf,
-            MessageCodec,
-        >,
+        mut socket_read_stream: FramedRead<OwnedReadHalf, MessageCodec>,
+        mut socket_write_sink: FramedWrite<OwnedWriteHalf, MessageCodec>,
     ) {
         tokio::spawn(async move {
             // General TCP activity timeout

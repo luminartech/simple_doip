@@ -2,8 +2,7 @@ use async_trait::async_trait;
 use doip::{
     logical_address::LogicalAddress,
     messages::{
-        DiagnosticMessage, Message, RoutingActivationRequest,
-        RoutingActivationResponseCode,
+        DiagnosticMessage, Message, RoutingActivationRequest, RoutingActivationResponseCode,
     },
     server::{Server, ServerConnectionHandler},
     Error,
@@ -50,25 +49,22 @@ impl ServerConnectionHandler for ServerHandler {
         ))
     }
 
-    async fn diagnostic_message(
-        &self,
-        message: &DiagnosticMessage,
-    ) -> Result<Message, Error> {
+    async fn diagnostic_message(&self, message: &DiagnosticMessage) -> Result<Message, Error> {
         debug!(
             "Received diagnostic message from {:?} to {:?}",
             message.source_address, message.target_address
         );
         // Simply echo back the received data as raw bytes
         let response_data = message.user_data.clone();
-        
+
         // Note: Using diagnostic_message() instead of diagnostic_message_ack()
         // - diagnostic_message() sends actual diagnostic data (the echoed payload)
         // - diagnostic_message_ack() would only send a transport-level acknowledgment
         // This creates a proper echo response rather than just acknowledging receipt
         Ok(Message::diagnostic_message(
             self.protocol_version(),
-            message.source_address,  // Keep original source as source
-            message.target_address,  // Keep original target as target
+            message.source_address, // Keep original source as source
+            message.target_address, // Keep original target as target
             response_data,
         ))
     }

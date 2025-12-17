@@ -205,8 +205,7 @@ mod tests {
     #[test]
     fn test_valid_messages() {
         let buf: [u8; 9] = [0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03];
-        let deserialized_message: Message =
-            Message::read(&mut buf.as_ref()).unwrap();
+        let deserialized_message: Message = Message::read(&mut buf.as_ref()).unwrap();
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2012);
         assert!(deserialized_message.header.payload_type == PayloadType::NegativeAcknowledge);
         assert!(deserialized_message.header.payload_length == 1);
@@ -214,8 +213,7 @@ mod tests {
             0x01, 0xFE, 0x00, 0x01, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00,
         ];
-        let deserialized_message: Message =
-            Message::read(&mut buf.as_ref()).unwrap();
+        let deserialized_message: Message = Message::read(&mut buf.as_ref()).unwrap();
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2010);
         assert!(
             deserialized_message.header.payload_type == PayloadType::VehicleIdentificationRequest

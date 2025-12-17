@@ -43,10 +43,7 @@ impl Decoder for MessageCodec {
                 let _ = src.split_to(8);
                 // We have the full message, split off the payload from the rx buffer
                 let payload_bytes = src.split_to(header.payload_length as usize);
-                let payload = Payload::read(
-                    &mut payload_bytes.as_ref(),
-                    header.payload_type,
-                )?;
+                let payload = Payload::read(&mut payload_bytes.as_ref(), header.payload_type)?;
                 Ok(Some(Message { header, payload }))
             }
         } else {
@@ -57,16 +54,10 @@ impl Decoder for MessageCodec {
     }
 }
 
-impl Encoder<&Message>
-    for MessageCodec
-{
+impl Encoder<&Message> for MessageCodec {
     type Error = MessageError;
 
-    fn encode(
-        &mut self,
-        message: &Message,
-        dst: &mut BytesMut,
-    ) -> Result<(), Self::Error> {
+    fn encode(&mut self, message: &Message, dst: &mut BytesMut) -> Result<(), Self::Error> {
         message.write(&mut dst.writer())?;
         Ok(())
     }

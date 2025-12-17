@@ -53,10 +53,7 @@ pub trait ServerConnectionHandler {
         request: &RoutingActivationRequest,
     ) -> Result<Message, Error>;
 
-    async fn diagnostic_message(
-        &self,
-        message: &DiagnosticMessage,
-    ) -> Result<Message, Error>;
+    async fn diagnostic_message(&self, message: &DiagnosticMessage) -> Result<Message, Error>;
 
     // Optional Functions
     // These functions *may* be overridden to provide custom behavior
@@ -125,10 +122,7 @@ pub trait ServerConnectionHandler {
     }
 
     /// Respond to an Alive Check request
-    async fn alive_check(
-        &self,
-        client_info: &ClientConnectionInfo,
-    ) -> Result<Message, Error> {
+    async fn alive_check(&self, client_info: &ClientConnectionInfo) -> Result<Message, Error> {
         Ok(Message::alive_check_response(
             self.protocol_version(),
             client_info.logical_address,

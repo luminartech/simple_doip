@@ -13,7 +13,6 @@ use std::{
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
 
-
 #[derive(Debug, strum::Display)]
 /// Send updates to the user
 pub enum ClientUpdate {
@@ -87,8 +86,7 @@ pub struct Client<Conn = connection::ConnectorSocket> {
     /// Sends messages from the user to the inner client
     control_sender: mpsc::Sender<ControlMessage>,
     /// Receives messages from the inner client to the user
-    update_receiver:
-        mpsc::Receiver<Result<Message, MessageError>>,
+    update_receiver: mpsc::Receiver<Result<Message, MessageError>>,
     _phantom: std::marker::PhantomData<Conn>,
 }
 
@@ -205,9 +203,7 @@ where
     }
 
     /// Returns an Option of a Response if there was one in flight when the client or server disconnected
-    pub async fn reconnect(
-        &mut self,
-    ) -> Result<Option<Message>, Error> {
+    pub async fn reconnect(&mut self) -> Result<Option<Message>, Error> {
         let _ = Self::bind_socket(&self.control_sender, &self.client_options).await?;
         trace!("Reconnected, checking for in-flight messages over 5 seconds");
         let res =
@@ -257,10 +253,7 @@ where
     }
 
     /// Send a request to the server and wait for a response (which is returned)
-    async fn send_message(
-        &mut self,
-        control: Message,
-    ) -> Result<SendResult<Message>, Error> {
+    async fn send_message(&mut self, control: Message) -> Result<SendResult<Message>, Error> {
         // Create new request and response channels to await the response of
         let CreateMessageResult(response, message) = ControlMessage::create_message(control);
         // Sends to Inner client

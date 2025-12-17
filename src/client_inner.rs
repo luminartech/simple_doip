@@ -14,7 +14,6 @@ use tokio::{
 };
 use tracing::{debug, trace};
 
-
 /// Messages used to control the DOIP entities
 #[allow(unused)]
 #[derive(Debug)]
@@ -28,14 +27,8 @@ pub(super) enum ControlMessage {
 
     BindSocket(SocketAddr, oneshot::Sender<Result<u16, Error>>),
     UnbindSocket(oneshot::Sender<Result<(), Error>>),
-    UDSMessage(
-        Message,
-        oneshot::Sender<Result<SendResult<Message>, Error>>,
-    ),
-    RoutingActivation(
-        Message,
-        oneshot::Sender<Result<Message, Error>>,
-    ),
+    UDSMessage(Message, oneshot::Sender<Result<SendResult<Message>, Error>>),
+    RoutingActivation(Message, oneshot::Sender<Result<Message, Error>>),
     AwaitResponse(
         /// the Request message that was sent
         Message,
@@ -65,10 +58,7 @@ impl ControlMessage {
     #[allow(unused)]
     pub fn create_routing_activation_message(
         message: &Message,
-    ) -> (
-        oneshot::Receiver<Result<Message, Error>>,
-        Self,
-    ) {
+    ) -> (oneshot::Receiver<Result<Message, Error>>, Self) {
         trace!(message = "RoutingActivationRequest");
         Self::create_oneshot(|sender| Self::RoutingActivation(message.clone(), sender))
     }
@@ -77,9 +67,7 @@ impl ControlMessage {
     /// Returns:
     /// * a oneshot receiver for the UDS Response (ReadDefinitions == Response)
     /// * a ControlMessage to be sent to the inner client
-    pub fn create_message(
-        message: Message,
-    ) -> CreateMessageResult {
+    pub fn create_message(message: Message) -> CreateMessageResult {
         let (rx, msg) = Self::create_oneshot(|sender| Self::UDSMessage(message, sender));
         CreateMessageResult(rx, msg)
     }
@@ -145,21 +133,16 @@ where
     Conn: crate::connection::Connector + 'static + Send + Sync,
 {
     /// Spawns the inner client to run in the background and returns the send and recieve channels
-    pub fn spawn(
-        client_options: ClientOptions,
-    ) -> (
-        ControlSender,
-        UpdateReceiver<MessageError>,
-    ) {
+    pub fn spawn(client_options: ClientOptions) -> (ControlSender, UpdateReceiver<MessageError>) {
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);
         let (update_sender, update_receiver) = mpsc::channel(16);
         // Create a simple tester present message as bytes
         // This is a basic UDS tester present: [0x3E, 0x80] (service 0x3E with suppress positive response)
         let tester_present_bytes = if client_options.suppress_tester_present {
-            vec![0x3E, 0x80]  // Tester Present with suppress positive response
+            vec![0x3E, 0x80] // Tester Present with suppress positive response
         } else {
-            vec![0x3E, 0x00]  // Tester Present without suppress positive response
+            vec![0x3E, 0x00] // Tester Present without suppress positive response
         };
         let tester_present_message = Message::diagnostic_message(
             client_options.protocol_version,
@@ -190,7 +173,8 @@ where
             Ok(socket.port())
         } else {
             // Bind the socket
-            let socket_manager: SocketManager<Conn> = SocketManager::bind(self.client_options, gateway_address).await?;
+            let socket_manager: SocketManager<Conn> =
+                SocketManager::bind(self.client_options, gateway_address).await?;
             self.connection_state = ConnectionState::Initialized;
             let port = socket_manager.port();
             debug!("Bound socket to port: {}", port);
@@ -206,7 +190,6 @@ where
     async fn unbind_socket(&mut self) -> Result<(), Error> {
         // Check if the socket is already bound
         if let Some(socket_manager) = self.tcp_data_socket.take() {
-
             self.run = false;
             // Unbind the socket
             socket_manager.shut_down().await;
@@ -236,10 +219,7 @@ where
     ///
     /// Errors:
     /// [Error::SocketNotBound] - if the socket is not bound
-    async fn send_to_socket(
-        &mut self,
-        message: Message,
-    ) -> Result<(), Error> {
+    async fn send_to_socket(&mut self, message: Message) -> Result<(), Error> {
         if let Some(socket) = &mut self.tcp_data_socket {
             self.last_tester_present = tokio::time::Instant::now();
             socket.send(message).await
@@ -351,7 +331,7 @@ where
                 // Since DoIP is now transport-agnostic, we can't determine
                 // if a response is suppressed from the opaque payload.
                 // This logic should be handled at the application (UDS) layer.
-                let was_suppressed = false;  // Always false at transport layer
+                let was_suppressed = false; // Always false at transport layer
                 match send_result {
                     Ok(_) => {
                         let (await_sender, await_receiver) = oneshot::channel();
