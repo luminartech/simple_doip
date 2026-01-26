@@ -7,8 +7,6 @@
 //! ## Design
 //!
 
-pub mod traits;
-
 pub mod messages;
 
 pub mod socket_manager;
