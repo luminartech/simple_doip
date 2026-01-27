@@ -29,9 +29,8 @@ impl From<FurtherActionRequired> for u8 {
     fn from(value: FurtherActionRequired) -> Self {
         match value {
             FurtherActionRequired::NoFurtherActionRequired => 0x00,
-            FurtherActionRequired::Reserved(value) => value,
             FurtherActionRequired::RoutingActivationRequiredToInitiateCentralSecurity => 0x10,
-            FurtherActionRequired::VehicleManufacturerSpecific(value) => value,
+            FurtherActionRequired::Reserved(value) | FurtherActionRequired::VehicleManufacturerSpecific(value) => value,
         }
     }
 }

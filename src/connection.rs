@@ -1,5 +1,5 @@
 //! # Connection Module
-//! This module provides the [Connector] trait and its default implementation [ConnectorSocket].
+//! This module provides the [Connector] trait and its default implementation [`ConnectorSocket`].
 //!
 //! # Examples
 //! ## Default Implementation
@@ -61,9 +61,9 @@ use tokio::net::{
 use tracing::{error, trace};
 
 #[async_trait::async_trait]
-/// Connector trait for establishing a connection to the DoIP node
+/// Connector trait for establishing a connection to the `DoIP` node
 pub trait Connector {
-    /// Establish a connection to the DoIP node
+    /// Establish a connection to the `DoIP` node
     async fn establish_connection(
         gateway_address: SocketAddr,
     ) -> Result<(OwnedReadHalf, OwnedWriteHalf), crate::Error>;

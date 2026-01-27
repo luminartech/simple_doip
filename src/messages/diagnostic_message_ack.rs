@@ -13,7 +13,7 @@ use super::message_error::MessageError;
 /// Diagnostic Acknowledgement Codes
 ///
 /// These codes are used to indicate the status of a diagnostic message
-/// sent from a tester to a DoIP server.
+/// sent from a tester to a `DoIP` server.
 ///
 /// Contains both positive and negative acknowledgement codes.
 #[derive(Clone, Copy, strum::Display, Eq, PartialEq)]
@@ -36,11 +36,13 @@ pub enum DiagnosticAckCode {
 
 impl DiagnosticAckCode {
     /// Returns true if the code is a positive acknowledgement
+    #[must_use]
     pub fn is_positive_ack(&self) -> bool {
         matches!(self, DiagnosticAckCode::RoutingConfirmationAck)
     }
 
     /// Returns true if the code is a negative acknowledgement
+    #[must_use]
     pub fn is_negative_ack(&self) -> bool {
         !self.is_positive_ack()
     }
@@ -48,35 +50,32 @@ impl DiagnosticAckCode {
 
 impl From<u8> for DiagnosticAckCode {
     fn from(value: u8) -> Self {
-        use DiagnosticAckCode::*;
         match value {
-            0x00 => RoutingConfirmationAck,
-            0x01 => Reserved(value),
-            0x02 => InvalidSourceAddress,
-            0x03 => UnknownTargetAddress,
-            0x04 => DiagnosticMessageTooLarge,
-            0x05 => OutOfMemory,
-            0x06 => TargetUnreachable,
-            0x07 => UnknownNetwork,
-            0x08 => TransportProtocolError,
-            0x09..=0xFF => Reserved(value),
+            0x00 => DiagnosticAckCode::RoutingConfirmationAck,
+            0x02 => DiagnosticAckCode::InvalidSourceAddress,
+            0x03 => DiagnosticAckCode::UnknownTargetAddress,
+            0x04 => DiagnosticAckCode::DiagnosticMessageTooLarge,
+            0x05 => DiagnosticAckCode::OutOfMemory,
+            0x06 => DiagnosticAckCode::TargetUnreachable,
+            0x07 => DiagnosticAckCode::UnknownNetwork,
+            0x08 => DiagnosticAckCode::TransportProtocolError,
+            _ => DiagnosticAckCode::Reserved(value),
         }
     }
 }
 
 impl From<DiagnosticAckCode> for u8 {
     fn from(value: DiagnosticAckCode) -> Self {
-        use DiagnosticAckCode::*;
         match value {
-            RoutingConfirmationAck => 0x00,
-            Reserved(value) => value,
-            InvalidSourceAddress => 0x02,
-            UnknownTargetAddress => 0x03,
-            DiagnosticMessageTooLarge => 0x04,
-            OutOfMemory => 0x05,
-            TargetUnreachable => 0x06,
-            UnknownNetwork => 0x07,
-            TransportProtocolError => 0x08,
+            DiagnosticAckCode::RoutingConfirmationAck => 0x00,
+            DiagnosticAckCode::Reserved(value) => value,
+            DiagnosticAckCode::InvalidSourceAddress => 0x02,
+            DiagnosticAckCode::UnknownTargetAddress => 0x03,
+            DiagnosticAckCode::DiagnosticMessageTooLarge => 0x04,
+            DiagnosticAckCode::OutOfMemory => 0x05,
+            DiagnosticAckCode::TargetUnreachable => 0x06,
+            DiagnosticAckCode::UnknownNetwork => 0x07,
+            DiagnosticAckCode::TransportProtocolError => 0x08,
         }
     }
 }

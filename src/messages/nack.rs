@@ -12,56 +12,54 @@ use super::message_error::MessageError;
 pub enum NackCode {
     /// Protocol or inverse protocol version mismatch
     ///
-    /// DoIP entity action: Close socket
+    /// `DoIP` entity action: Close socket
     IncorrectPatternFormat = 0x00,
 
-    /// Payload type is not supported by DoIP entity
+    /// Payload type is not supported by `DoIP` entity
     ///
-    /// DoIP entity action: Discard DoIP message
+    /// `DoIP` entity action: Discard `DoIP` message
     UnknownPayloadType = 0x01,
 
-    /// Payload length (without header) is larger than maximum data size (MDS) supported by DoIP entity
+    /// Payload length (without header) is larger than maximum data size (MDS) supported by `DoIP` entity
     ///
-    /// DoIP entity action: Discard DoIP message
+    /// `DoIP` entity action: Discard `DoIP` message
     MessageTooLarge = 0x02,
 
-    /// Payload length exceeds currently available DoIP protocol handler memory of the DoIP entity
+    /// Payload length exceeds currently available `DoIP` protocol handler memory of the `DoIP` entity
     ///
-    /// DoIP entity action: Discard DoIP message
+    /// `DoIP` entity action: Discard `DoIP` message
     OutOfMemory = 0x03,
 
     /// Payload length param does not match the expected length for the specific payload type.
     /// Includes payload-type-specific min length, fixed length, and max length checks
     ///
-    /// DoIP entity action: Close socket
+    /// `DoIP` entity action: Close socket
     InvalidPayloadLength = 0x04,
     Reserved(u8),
 }
 
 impl From<u8> for NackCode {
     fn from(value: u8) -> Self {
-        use NackCode::*;
         match value {
-            0x00 => IncorrectPatternFormat,
-            0x01 => UnknownPayloadType,
-            0x02 => MessageTooLarge,
-            0x03 => OutOfMemory,
-            0x04 => InvalidPayloadLength,
-            _ => Reserved(value),
+            0x00 => NackCode::IncorrectPatternFormat,
+            0x01 => NackCode::UnknownPayloadType,
+            0x02 => NackCode::MessageTooLarge,
+            0x03 => NackCode::OutOfMemory,
+            0x04 => NackCode::InvalidPayloadLength,
+            _ => NackCode::Reserved(value),
         }
     }
 }
 
 impl From<NackCode> for u8 {
     fn from(value: NackCode) -> Self {
-        use NackCode::*;
         match value {
-            IncorrectPatternFormat => 0x00,
-            UnknownPayloadType => 0x01,
-            MessageTooLarge => 0x02,
-            OutOfMemory => 0x03,
-            InvalidPayloadLength => 0x04,
-            Reserved(value) => value,
+            NackCode::IncorrectPatternFormat => 0x00,
+            NackCode::UnknownPayloadType => 0x01,
+            NackCode::MessageTooLarge => 0x02,
+            NackCode::OutOfMemory => 0x03,
+            NackCode::InvalidPayloadLength => 0x04,
+            NackCode::Reserved(value) => value,
         }
     }
 }

@@ -3,7 +3,7 @@
 use crate::{
     client::{ClientOptions, SendResult},
     connection_state::ConnectionState,
-    messages::*,
+    messages::{Message, MessageError, Payload},
     socket_manager::SocketManager,
     Error,
 };
@@ -14,7 +14,7 @@ use tokio::{
 };
 use tracing::{debug, trace};
 
-/// Messages used to control the DOIP entities
+/// Messages used to control the `DoIP` entities
 #[allow(unused)]
 #[derive(Debug)]
 pub(super) enum ControlMessage {
@@ -64,10 +64,10 @@ impl ControlMessage {
         Self::create_oneshot(|sender| Self::RoutingActivation(message.clone(), sender))
     }
 
-    /// Takes in a UDS Message Request (WriteDefinitions == Request)
+    /// Takes in a UDS Message Request (`WriteDefinitions` == Request)
     /// Returns:
-    /// * a oneshot receiver for the UDS Response (ReadDefinitions == Response)
-    /// * a ControlMessage to be sent to the inner client
+    /// * a oneshot receiver for the UDS Response (`ReadDefinitions` == Response)
+    /// * a `ControlMessage` to be sent to the inner client
     pub fn create_message(message: Message) -> CreateMessageResult {
         let (rx, msg) = Self::create_oneshot(|sender| Self::UDSMessage(message, sender));
         CreateMessageResult(rx, msg)
@@ -88,11 +88,10 @@ impl ControlMessage {
 
 /// Inner client responsible for the handling of the connection details,
 /// including creating 2 channels for sending and receiving messages.
-/// it manages its inner state asynchronously, only propagating the
+/// It manages its inner state asynchronously, only propagating the
 /// results to the outer client when the message is ready.
 ///
 /// The inner state enters an asynchronous loop which runs in the background
-///
 pub(super) struct Inner<Conn> {
     client_options: ClientOptions,
     /// MPSC Receiver used to receive control messages from outer client
@@ -109,7 +108,7 @@ pub(super) struct Inner<Conn> {
     /// Socket manager for TCP data socket if bound
     tcp_data_socket: Option<SocketManager<Conn>>,
 
-    /// Represents the DoIP connection state of the socket
+    /// Represents the `DoIP` connection state of the socket
     connection_state: ConnectionState,
 
     /// Whether to keep the inner client running
@@ -220,7 +219,7 @@ where
     /// Also keeps track of the last time a message was sent to the socket for Tester Present purposes
     ///
     /// Errors:
-    /// [Error::SocketNotBound] - if the socket is not bound
+    /// [`Error::SocketNotBound`] - if the socket is not bound
     async fn send_to_socket(&mut self, message: Message) -> Result<(), Error> {
         if let Some(socket) = &mut self.tcp_data_socket {
             self.last_tester_present = tokio::time::Instant::now();
@@ -244,7 +243,82 @@ where
         }
     }
 
-    /// Handle the [Inner::active_request] that was set in the [Inner::run] loop.
+    /// Handle a UDS diagnostic message by sending it to the socket and spawning
+    /// a task to await and forward the response
+    async fn handle_uds_message(
+        &mut self,
+        message: Message,
+        response: oneshot::Sender<Result<SendResult<Message>, Error>>,
+    ) {
+        if self.tcp_data_socket.is_none() {
+            if response.send(Err(Error::SocketNotBound)).is_err() {
+                debug!("Failed to send response: Socket not bound");
+            }
+            return;
+        }
+        let send_result = self.send_to_socket(message.clone()).await;
+
+        // Wait for the initial diagnostic message timeout before considering the message suppressed or timed out
+        tokio::time::sleep_until(
+            self.last_tester_present + crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL,
+        )
+        .await;
+        // Since `DoIP` is now transport-agnostic, we can't determine
+        // if a response is suppressed from the opaque payload.
+        // This logic should be handled at the application (UDS) layer.
+        let was_suppressed = false; // Always false at transport layer
+        if send_result.is_ok() {
+            let (await_sender, await_receiver) = oneshot::channel();
+
+            self.active_request = Some(ControlMessage::AwaitResponse(
+                message.clone(),
+                await_sender,
+            ));
+            // Converts from the SendResult return to a regular AwaitResponse
+            // and spawns a task to await the response
+            tokio::spawn(async move {
+                match await_receiver.await {
+                    Ok(Ok(response_message)) => {
+                        if response
+                            .send(Ok(SendResult::Response(response_message)))
+                            .is_err()
+                        {
+                            debug!("Failed to send response");
+                        }
+                    }
+                    Ok(Err(Error::ResponseTimeoutExceeded)) => {
+                        if was_suppressed {
+                            if response.send(Ok(SendResult::Suppressed)).is_err() {
+                                debug!("Failed to send suppressed response after timeout");
+                            }
+                        } else if response
+                            .send(Err(Error::ResponseTimeoutExceeded))
+                            .is_err()
+                        {
+                            debug!("Failed to send timeout error response");
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        if response.send(Err(e)).is_err() {
+                            debug!("Failed to send error response");
+                        }
+                    }
+                    Err(_) => {
+                        debug!("Failed to receive response");
+                        let _ = response.send(Err(Error::ConnectionClosed));
+                    }
+                }
+            });
+        } else {
+            debug!("Failed to send UDS message");
+            if response.send(Err(Error::SocketNotBound)).is_err() {
+                debug!("Failed to send response: Socket not bound");
+            }
+        }
+        debug!("Handling UDS message: {:?}", message);
+    }
+
+    /// Handle the [`Inner::active_request`] that was set in the [`Inner::run`] loop.
     ///
     /// The `response` is a oneshot channel that is used to (generally) send the response back to the facade client
     ///
@@ -305,101 +379,75 @@ where
                 let send_result = self.send_to_socket(message.clone()).await;
 
                 // Await for the response through the run loop
-                match send_result {
-                    Ok(_) => {
-                        self.await_response_deadline = Some(
-                            tokio::time::Instant::now() + crate::TCP_TIMEOUT_INITIAL_INACTIVITY,
-                        );
-                        self.active_request =
-                            Some(ControlMessage::AwaitResponse(message.to_owned(), response))
-                    }
-                    Err(_) => todo!(),
-                };
+                if send_result.is_ok() {
+                    self.await_response_deadline = Some(
+                        tokio::time::Instant::now() + crate::TCP_TIMEOUT_INITIAL_INACTIVITY,
+                    );
+                    self.active_request =
+                        Some(ControlMessage::AwaitResponse(message.clone(), response));
+                } else {
+                    todo!();
+                }
             }
             ControlMessage::UDSMessage(message, response) => {
-                if self.tcp_data_socket.is_none() {
-                    if response.send(Err(Error::SocketNotBound)).is_err() {
-                        debug!("Failed to send response: Socket not bound");
-                    }
-                    return;
-                }
-                let send_result = self.send_to_socket(message.clone()).await;
-
-                // Wait for the initial diagnostic message timeout before considering the message suppressed or timed out
-                tokio::time::sleep_until(
-                    self.last_tester_present + crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL,
-                )
-                .await;
-                // Since DoIP is now transport-agnostic, we can't determine
-                // if a response is suppressed from the opaque payload.
-                // This logic should be handled at the application (UDS) layer.
-                let was_suppressed = false; // Always false at transport layer
-                match send_result {
-                    Ok(_) => {
-                        let (await_sender, await_receiver) = oneshot::channel();
-
-                        self.active_request = Some(ControlMessage::AwaitResponse(
-                            message.to_owned(),
-                            await_sender,
-                        ));
-                        // Converts from the SendResult return to a regular AwaitResponse
-                        // and spawns a task to await the response
-                        tokio::spawn(async move {
-                            match await_receiver.await {
-                                Ok(Ok(response_message)) => {
-                                    // If we received a response with a
-                                    if response
-                                        .send(Ok(SendResult::Response(response_message)))
-                                        .is_err()
-                                    {
-                                        debug!("Failed to send response");
-                                    }
-                                }
-                                Ok(Err(Error::ResponseTimeoutExceeded)) => {
-                                    if was_suppressed {
-                                        // If the message was suppressed, we should not send an error
-                                        if response.send(Ok(SendResult::Suppressed)).is_err() {
-                                            debug!(
-                                                "Failed to send suppressed response after timeout"
-                                            );
-                                        }
-                                    } else {
-                                        // Let the caller know that the response timed out
-                                        if response
-                                            .send(Err(Error::ResponseTimeoutExceeded))
-                                            .is_err()
-                                        {
-                                            debug!("Failed to send timeout error response");
-                                        }
-                                    }
-                                }
-                                Ok(Err(e)) => {
-                                    if response.send(Err(e)).is_err() {
-                                        debug!("Failed to send error response");
-                                    }
-                                }
-                                Err(_) => {
-                                    debug!("Failed to receive response");
-                                    let _ = response.send(Err(Error::ConnectionClosed));
-                                    // If the receiver was dropped, we should exit
-                                }
-                            }
-                        });
-                    }
-                    Err(_) => {
-                        debug!("Failed to send UDS message");
-                        if response.send(Err(Error::SocketNotBound)).is_err() {
-                            debug!("Failed to send response: Socket not bound");
-                        }
-                    }
-                }
-                // Handle UDS message
-                debug!("Handling UDS message: {:?}", message);
+                self.handle_uds_message(message, response).await;
             }
             ControlMessage::AwaitResponse(message, response) => {
                 trace!("Awaiting response for message: {:?}", message);
                 // This is handled in the run loop while receiving messages
                 self.active_request = Some(ControlMessage::AwaitResponse(message, response));
+            }
+        }
+    }
+
+    /// Process a message received from the socket. Returns `true` if the run loop should exit.
+    async fn process_received_message(&mut self, message: Result<Message, Error>) -> bool {
+        match message {
+            Ok(received_message) => {
+                match received_message.payload {
+                    Payload::AliveCheckRequest => {
+                        trace!("Received Alive Check Request");
+                        let _ = self.tcp_data_socket
+                            .as_mut()
+                            .unwrap()
+                            .send(Message::alive_check_response(
+                                self.client_options.protocol_version,
+                                self.client_options.client_logical_address,
+                            ))
+                            .await;
+                    }
+                    Payload::DiagnosticMessageAck(_) => {
+                        trace!("Received Diagnostic Message Ack, waiting for full response");
+                    }
+                    _ => trace!("Received message: {received_message:?}"),
+                }
+                if let Some(active) = self.active_request.take() {
+                    if let ControlMessage::AwaitResponse(request_message, response) = active {
+                        trace!("Received response for request: {:?}", request_message);
+                        trace!("{received_message:?}");
+                        if request_message.is_response(received_message.header.payload_type) {
+                            debug!("Received expected response, sending to the update channel");
+                            if response.send(Ok(received_message)).is_err() {
+                                return true;
+                            }
+                        } else if response.send(Err(Error::UnexpectedMessageType(received_message.header.payload_type))).is_err() {
+                            return true;
+                        }
+                    }
+                } else {
+                    trace!("No active request, sending received message to update channel");
+                    self.run = true;
+                    if self.update_sender.send(Ok(received_message)).await.is_err() {
+                        tracing::error!("Failed to send received message to update channel");
+                        self.run = false;
+                        return true;
+                    }
+                }
+                false
+            }
+            Err(e) => {
+                debug!("Error receiving message from socket: {:?}", e);
+                true
             }
         }
     }
@@ -410,9 +458,9 @@ where
         tokio::spawn(async move {
             debug!("Starting DOIP processing loop");
             loop {
+                let mut socket_message: Option<Result<Message, Error>> = None;
                 let Self {
                     control_receiver,
-                    update_sender,
                     tcp_data_socket,
                     active_request,
                     await_response_deadline,
@@ -424,7 +472,7 @@ where
                 } = &mut self;
                 select! {
                     // Only sleep if there is a deadline set
-                    _ = async {
+                    () = async {
                         if let Some(deadline) = *await_response_deadline {
                             tokio::time::sleep_until(deadline).await;
                         }
@@ -438,7 +486,7 @@ where
                         *await_response_deadline = None;
                     }
                     // Handle the UDS TesterPresent heartbeat
-                    _ = tokio::time::sleep_until(*last_tester_present + client_options.tester_present_interval), if *run => {
+                    () = tokio::time::sleep_until(*last_tester_present + client_options.tester_present_interval), if *run => {
                         let Some(socket_manager) = tcp_data_socket.as_mut() else {
                             debug!("No socket manager available, skipping tester present message");
                             continue;
@@ -454,9 +502,6 @@ where
                     }
                     // Receive a control message
                     ctrl_opt = control_receiver.recv() => {
-                        // We should never have an active request already
-                        // But maybe we should gracefully handle this
-                        // and just ignore the new request?
                         if ctrl_opt.is_none() {
                             debug!("Control channel closed, shutting down inner client");
                             *run = false;
@@ -470,68 +515,12 @@ where
                     message = Inner::receive_socket(tcp_data_socket) => {
                         *last_tester_present = tokio::time::Instant::now();
                         trace!("B: STREAM INCOMING from socket: {message:?}");
-                        match message {
-                            Ok(received_message) => {
-                                match received_message.payload {
-                                    Payload::AliveCheckRequest => {
-                                        trace!("Received Alive Check Request");
-                                        // Send the alive check response automatically
-                                        let _ = tcp_data_socket
-                                            .as_mut()
-                                            .unwrap()
-                                            .send(Message::alive_check_response(
-                                                client_options.protocol_version,
-                                                client_options.client_logical_address,
-                                            ))
-                                            .await;
-                                    }
-                                    Payload::DiagnosticMessageAck(_) => {
-                                        trace!("Received Diagnostic Message Ack, waiting for full response");
-                                    }
-                                    _ => {
-                                        trace!("Received message: {received_message:?}");
-                                    }
-                                }
-                                if let Some(active) = active_request.take() {
-                                    // If the active request is an AwaitResponse that matches the received message,
-                                    // send the response to the update channel
-                                    if let ControlMessage::AwaitResponse(request_message, response) = active {
-                                        trace!("Received response for request: {:?}", request_message);
-                                        trace!("{received_message:?}");
-                                        if request_message.is_response(received_message.header.payload_type) {
-                                            debug!("Received expected response, sending to the update channel");
-                                        // if received_message.header.payload_type == request_message.header.payload_type {
-                                            if response.send(Ok(received_message)).is_err() {
-                                                // The receiver has been dropped, so we should exit
-                                                break;
-                                            }
-                                        } else {
-                                            // If the message is not the expected response, send an error
-                                            if response.send(Err(Error::UnexpectedMessageType(received_message.header.payload_type))).is_err() {
-                                                // The receiver has been dropped, so we should exit
-                                                break;
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    trace!("No active request, sending received message to update channel");
-                                    *run = true;
-                                    // Resend the received message to the update channel
-                                    // TODO: Check that the update_sender is correct??
-                                    if update_sender.send(Ok(received_message)).await.is_err() {
-                                        tracing::error!("Failed to send received message to update channel");
-                                        *run = false;
-                                        // The receiver has been dropped, so we should exit
-                                        break;
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                debug!("Error receiving message from socket: {:?}", e);
-                                // Handle the error
-                                break;
-                            }
-                        }
+                        socket_message = Some(message);
+                    }
+                }
+                if let Some(msg) = socket_message {
+                    if self.process_received_message(msg).await {
+                        break;
                     }
                 }
                 self.handle_control_message().await;

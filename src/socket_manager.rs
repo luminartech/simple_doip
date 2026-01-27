@@ -1,4 +1,4 @@
-//! The SocketManager is responsible for managing the socket connection and
+//! The `SocketManager` is responsible for managing the socket connection and
 //! handling the messages sent and received over the socket.
 //!
 //! It is responsible for binding the socket, sending and receiving messages,
@@ -39,9 +39,13 @@ impl<Conn> SocketManager<Conn>
 where
     Conn: connection::Connector + 'static + Send + Sync,
 {
-    /// Creates a new SocketManager instance
+    /// Creates a new `SocketManager` instance
     ///
     /// TCP socket is bound to the specified address
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the client logical address is invalid or the
+    /// TCP connection cannot be established
     pub async fn bind(
         client_options: ClientOptions,
         gateway_address: SocketAddr,
@@ -82,6 +86,9 @@ where
     }
 
     /// Send a message to the target address
+    ///
+    /// # Errors
+    /// Returns an [`Error::ConnectionClosed`] if the message cannot be sent
     pub async fn send(&mut self, message: Message) -> Result<(), Error> {
         self.sender.send(message).await.map_err(|e| {
             error!("Failed to send message: {}", e);
@@ -97,6 +104,9 @@ where
     }
 
     /// Receive a message from the socket, returning `None` if the timeout elapses
+    ///
+    /// # Panics
+    /// Panics if the internal receiver channel is closed
     pub async fn receive_timeout(
         &mut self,
         timeout: Duration,
@@ -107,11 +117,13 @@ where
     }
 
     /// Return the current session ID
+    #[must_use]
     pub fn session_id(&self) -> u16 {
         self.session_id
     }
 
     /// Return the local TCP port this socket is bound to
+    #[must_use]
     pub fn port(&self) -> u16 {
         self.local_port
     }
@@ -147,7 +159,7 @@ where
 
             loop {
                 select! {
-                    _ = tokio::time::sleep_until(last_activity + TCP_TIMEOUT_GENERAL_INACTIVITY) => {
+                    () = tokio::time::sleep_until(last_activity + TCP_TIMEOUT_GENERAL_INACTIVITY) => {
                         info!("General inactivity timeout reached, closing socket");
                         // TODO: Do we need to send an update message to update the connection state?
                         // or should the connection state be located in the socket manager?
@@ -161,24 +173,20 @@ where
                             // Decoding the message can fail, so we handle that here
                             Some(Err(e)) => {
                                 last_activity = tokio::time::Instant::now();
-                                match e {
-                                    MessageError::Io(ref io_err) => {
-                                        if io_err.kind() == std::io::ErrorKind::ConnectionReset {
-                                            info!(concat!("Connection reset by peer, closing socket\n", "{:?}"), io_err);
-                                            // The socket has been closed by the remote end, so we should exit
-                                            break;
-                                        };
-                                        error!(concat!("{:?}\n",
-                                            "Check that you are not sending too many requests to the server.",
-                                            "The server may be closing the connection due to overload."
-                                        ), io_err);
+                                if let MessageError::Io(ref io_err) = e {
+                                    if io_err.kind() == std::io::ErrorKind::ConnectionReset {
+                                        info!(concat!("Connection reset by peer, closing socket\n", "{:?}"), io_err);
                                         // The socket has been closed by the remote end, so we should exit
                                         break;
                                     }
-                                    _ => {
-                                        error!("Error decoding message: {:?}", e.to_string());
-                                    }
-                                };
+                                    error!(concat!("{:?}\n",
+                                        "Check that you are not sending too many requests to the server.",
+                                        "The server may be closing the connection due to overload."
+                                    ), io_err);
+                                    // The socket has been closed by the remote end, so we should exit
+                                    break;
+                                }
+                                error!("Error decoding message: {:?}", e.to_string());
 
                                 // send a MessageError to the receiver
                                 let _ = rx_tx.send(Err(e)).await;
@@ -187,13 +195,10 @@ where
                                 // Update the last activity time
                                 last_activity = tokio::time::Instant::now();
                                 trace!("A: STREAM INCOMING: {:?}", message);
-                                match rx_tx.send( message ).await {
-                                    Ok(_) => {}
-                                    Err(_) => {
-                                        info!("Socket Dropping");
-                                        // The receiver has been dropped, so we should exit
-                                        break;
-                                    }
+                                if rx_tx.send(message).await.is_err() {
+                                    info!("Socket Dropping");
+                                    // The receiver has been dropped, so we should exit
+                                    break;
                                 }
                             }
                             None => {
@@ -205,25 +210,18 @@ where
                     },
                     // maps to self.receiver
                     message = tx_rx.recv() => {
-                        match message {
-                            Some(message) => {
-                                // Update the last activity time
-                                last_activity = tokio::time::Instant::now();
+                        let Some(message) = message else {
+                            debug!("Socket Dropping");
+                            // The sender has been dropped, so we should exit
+                            break;
+                        };
+                        // Update the last activity time
+                        last_activity = tokio::time::Instant::now();
 
-                                trace!("OUTGOING: {:?}", message);
-                                match socket_write_sink.send(&message).await {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        error!("Error sending message to socket: {:?}", e);
-                                        break;
-                                    }
-                                }
-                            }
-                            None => {
-                                debug!("Socket Dropping");
-                                // The sender has been dropped, so we should exit
-                                break;
-                            }
+                        trace!("OUTGOING: {:?}", message);
+                        if let Err(e) = socket_write_sink.send(&message).await {
+                            error!("Error sending message to socket: {:?}", e);
+                            break;
                         }
                     }
                 }

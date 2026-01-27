@@ -5,8 +5,8 @@ use tracing::info;
 /// Logical addressing is used to identify the ECU
 ///
 /// A physical logical address uniquely represents a diagnostic application
-/// layer entity within any DoIP entity or on any server of the in-vehicle networks
-/// connected via DoIP gateways. See ISO 13400-2 section 7.8
+/// layer entity within any `DoIP` entity or on any server of the in-vehicle networks
+/// connected via `DoIP` gateways. See ISO 13400-2 section 7.8
 pub struct LogicalAddress(pub u16);
 
 impl LogicalAddress {

@@ -1,4 +1,4 @@
-//! Represents the header of a DoIP message
+//! Represents the header of a `DoIP` message
 //!
 //! Will check the protocol version and inverse protocol version to ensure
 //! the message is valid.
@@ -11,7 +11,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use super::message_error::MessageError;
 
-/// DoIP Protocol Version
+/// `DoIP` Protocol Version
 #[derive(Clone, Copy, strum::Display, Eq, PartialEq)]
 #[repr(u8)]
 pub enum ProtocolVersion {
@@ -31,6 +31,7 @@ pub enum ProtocolVersion {
 impl ProtocolVersion {
     /// Returns the expected inverse value of the protocol version
     /// for verification of the message
+    #[must_use]
     pub fn inverse(&self) -> u8 {
         match self {
             ProtocolVersion::Reserved => 0xFF,
@@ -77,7 +78,7 @@ impl Debug for ProtocolVersion {
     }
 }
 
-/// DoIP Message Payload Type
+/// `DoIP` Message Payload Type
 #[derive(Clone, Copy, strum::Display, Eq, PartialEq)]
 #[repr(u16)]
 pub enum PayloadType {
@@ -133,17 +134,15 @@ impl From<u16> for PayloadType {
             0x0006 => PayloadType::RoutingActivationResponse,
             0x0007 => PayloadType::AliveCheckRequest,
             0x0008 => PayloadType::AliveCheckResponse,
-            0x0009..=0x4000 => PayloadType::Reserved(value),
             0x4001 => PayloadType::DoIPEntityStatusRequest,
             0x4002 => PayloadType::DoIPEntityStatusResponse,
             0x4003 => PayloadType::DiagnosticPowerModeInfoRequest,
             0x4004 => PayloadType::DiagnosticPowerModeInfoResponse,
-            0x4005..=0x8000 => PayloadType::Reserved(value),
             0x8001 => PayloadType::DiagnosticMessage,
             0x8002 => PayloadType::DiagnosticMessagePositiveAcknowledge,
             0x8003 => PayloadType::DiagnosticMessageNegativeAcknowledge,
-            0x8004..=0xEFFF => PayloadType::Reserved(value),
             0xF000..=0xFFFF => PayloadType::ReservedVehicleManufacturer(value),
+            _ => PayloadType::Reserved(value),
         }
     }
 }
@@ -160,7 +159,6 @@ impl From<PayloadType> for u16 {
             PayloadType::RoutingActivationResponse => 0x0006,
             PayloadType::AliveCheckRequest => 0x0007,
             PayloadType::AliveCheckResponse => 0x0008,
-            PayloadType::Reserved(value) => value,
             PayloadType::DoIPEntityStatusRequest => 0x4001,
             PayloadType::DoIPEntityStatusResponse => 0x4002,
             PayloadType::DiagnosticPowerModeInfoRequest => 0x4003,
@@ -168,7 +166,7 @@ impl From<PayloadType> for u16 {
             PayloadType::DiagnosticMessage => 0x8001,
             PayloadType::DiagnosticMessagePositiveAcknowledge => 0x8002,
             PayloadType::DiagnosticMessageNegativeAcknowledge => 0x8003,
-            PayloadType::ReservedVehicleManufacturer(value) => value,
+            PayloadType::Reserved(value) | PayloadType::ReservedVehicleManufacturer(value) => value,
         }
     }
 }
@@ -181,18 +179,18 @@ impl Debug for PayloadType {
     }
 }
 
-/// DoIP Message Header
+/// `DoIP` Message Header
 ///
 /// The header is 8 bytes long and contains the following fields:
-/// * [ProtocolVersion] (1 byte)
+/// * [`ProtocolVersion`] (1 byte)
 /// * Inverse Protocol Version (1 byte)
-/// * [PayloadType] (2 bytes)
+/// * [`PayloadType`] (2 bytes)
 /// * Payload Length (4 bytes)
 #[derive(Clone, PartialEq)]
 pub struct Header {
     /// Client Protocol Version
     pub protocol_version: ProtocolVersion,
-    /// Bitwise inverse of protocol_version for verification
+    /// Bitwise inverse of `protocol_version` for verification
     pub inverse_protocol_version: u8,
     /// Client Payload Type
     pub payload_type: PayloadType,
@@ -201,7 +199,8 @@ pub struct Header {
 }
 
 impl Header {
-    /// Create a new DoIP message header
+    /// Create a new `DoIP` message header
+    #[must_use]
     pub fn new(
         protocol_version: ProtocolVersion,
         payload_type: PayloadType,
@@ -228,7 +227,7 @@ impl Header {
             })
         }
     }
-    /// Deserialize a DoIP header from a byte stream
+    /// Deserialize a `DoIP` header from a byte stream
     pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Header, MessageError> {
         let protocol_version = reader.read_u8()?.into();
         let inverse_protocol_version = reader.read_u8()?;

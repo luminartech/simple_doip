@@ -16,23 +16,21 @@ pub enum DiagnosticPowerModeCode {
 
 impl From<u8> for DiagnosticPowerModeCode {
     fn from(value: u8) -> Self {
-        use DiagnosticPowerModeCode::*;
         match value {
-            0x00 => NotReady,
-            0x01 => Ready,
-            0x02 => NotSupported,
-            _ => Reserved(value),
+            0x00 => DiagnosticPowerModeCode::NotReady,
+            0x01 => DiagnosticPowerModeCode::Ready,
+            0x02 => DiagnosticPowerModeCode::NotSupported,
+            _ => DiagnosticPowerModeCode::Reserved(value),
         }
     }
 }
 impl From<DiagnosticPowerModeCode> for u8 {
     fn from(value: DiagnosticPowerModeCode) -> Self {
-        use DiagnosticPowerModeCode::*;
         match value {
-            NotReady => 0x00,
-            Ready => 0x01,
-            NotSupported => 0x02,
-            Reserved(value) => value,
+            DiagnosticPowerModeCode::NotReady => 0x00,
+            DiagnosticPowerModeCode::Ready => 0x01,
+            DiagnosticPowerModeCode::NotSupported => 0x02,
+            DiagnosticPowerModeCode::Reserved(value) => value,
         }
     }
 }

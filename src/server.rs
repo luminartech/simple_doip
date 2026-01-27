@@ -26,8 +26,8 @@ pub struct ClientConnectionInfo {
     /// Client logical address
     pub logical_address: LogicalAddress,
 }
-/// Trait for handling DoIP connections as a server.
-/// Implement this trait to create a custom DoIP server.
+/// Trait for handling `DoIP` connections as a server.
+/// Implement this trait to create a custom `DoIP` server.
 /// Most protocol functions have a simple, default implementation
 #[async_trait]
 pub trait ServerConnectionHandler {
@@ -60,6 +60,9 @@ pub trait ServerConnectionHandler {
     // Default functionality is very simplistic and may not be suitable for production use
 
     /// Respond to an Identification request with the identity parameters provided by the trait implementer
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the identification response cannot be constructed
     fn received_vehicle_identification_request(
         &self,
         _client_info: &ClientConnectionInfo,
@@ -76,6 +79,9 @@ pub trait ServerConnectionHandler {
     /// Identify vehicle by Entity ID (EID).
     /// Since the request includes the entity ID, my understanding is that only the vehicle in question should respond.
     /// The default implementation returns none if the request is not directed to the server in question
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the identification response cannot be constructed
     fn vehicle_identification_with_eid(
         &self,
         _client_info: &ClientConnectionInfo,
@@ -100,6 +106,9 @@ pub trait ServerConnectionHandler {
     /// Identify vehicle by Vehicle Identification Number (VIN).
     /// Since the request includes the VIN, my understanding is that only the vehicle in question should respond.
     /// The default implementation returns none if the request is not directed to the server in question
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the identification response cannot be constructed
     fn vehicle_identification_with_vin(
         &self,
         _client_info: &ClientConnectionInfo,
@@ -153,6 +162,10 @@ impl<T> Server<T>
 where
     T: ServerConnectionHandler + Sync,
 {
+    /// Create a new `DoIP` server with the given connection handler
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the server cannot be initialized
     pub fn new(connection_handler: T) -> Result<Self, Error> {
         // TODO: Validate the provided handler
         Ok(Server {
@@ -161,6 +174,13 @@ where
         })
     }
 
+    /// Start listening for incoming `DoIP` TCP connections
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the TCP listener cannot be bound
+    ///
+    /// # Panics
+    /// Panics if accepting a new TCP client connection fails
     pub async fn run_server(&self) -> Result<(), Error> {
         // TODO: Vehicle Announcement over UDP
 
@@ -183,6 +203,13 @@ where
         }
     }
 
+    /// Handle an individual client TCP connection, reading and responding to messages
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if message handling or response encoding fails
+    ///
+    /// # Panics
+    /// Panics if a codec decoding error occurs on the client stream
     pub async fn handle_client_connection(
         &self,
         client_socket_addr: SocketAddr,

@@ -29,9 +29,9 @@ use std::io::{Read, Write};
 
 use crate::LogicalAddress;
 
-/// Message contains the payload and header info of a DoIP message
+/// Message contains the payload and header info of a `DoIP` message
 ///
-/// The payload contains diagnostic data and other DoIP protocol information
+/// The payload contains diagnostic data and other `DoIP` protocol information
 /// The header is a fixed size struct that contains the protocol version, payload type, and payload length
 #[derive(Clone, Debug, PartialEq)]
 pub struct Message {
@@ -41,6 +41,7 @@ pub struct Message {
 
 impl Message {
     /// Check whether the given payload type is a valid response to this message
+    #[must_use]
     pub fn is_response(&self, payload_type: PayloadType) -> bool {
         match self.header.payload_type {
             PayloadType::RoutingActivationRequest => {
@@ -69,6 +70,7 @@ impl Message {
     }
 
     /// Construct an alive check request message
+    #[must_use]
     pub fn alive_check_request(protocol_version: ProtocolVersion) -> Message {
         Message {
             header: Header::new(protocol_version, PayloadType::AliveCheckRequest, 0),
@@ -77,6 +79,7 @@ impl Message {
     }
 
     /// Construct an alive check response message
+    #[must_use]
     pub fn alive_check_response(
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
@@ -89,12 +92,14 @@ impl Message {
     }
 
     /// Construct a diagnostic message carrying opaque user data
+    #[must_use]
     pub fn diagnostic_message(
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
         target_address: LogicalAddress,
         message: Vec<u8>,
     ) -> Message {
+        #[allow(clippy::cast_possible_truncation)]
         let payload_size = message.len() as u32 + 4;
         let message = DiagnosticMessage {
             source_address,
@@ -112,6 +117,7 @@ impl Message {
     }
 
     /// Construct a diagnostic message acknowledgement
+    #[must_use]
     pub fn diagnostic_message_ack(
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
@@ -129,13 +135,19 @@ impl Message {
             header: Header::new(
                 protocol_version,
                 PayloadType::DiagnosticMessagePositiveAcknowledge,
-                5 + ack.previous_message_data.len() as u32,
+                #[allow(clippy::cast_possible_truncation)]
+                { 5 + ack.previous_message_data.len() as u32 },
             ),
             payload: Payload::DiagnosticMessageAck(ack),
         }
     }
 
     /// Construct a routing activation request message
+    ///
+    /// # Panics
+    /// Panics if the routing activation request cannot be serialized to bytes
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
     pub fn routing_activation_request(
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
@@ -164,6 +176,7 @@ impl Message {
     }
 
     /// Construct a routing activation response message
+    #[must_use]
     pub fn routing_activation_response(
         protocol_version: ProtocolVersion,
         logical_address_tester: LogicalAddress,
@@ -188,7 +201,7 @@ impl Message {
 }
 
 impl Message {
-    /// Deserialize a complete DoIP message (header + payload) from a byte stream
+    /// Deserialize a complete `DoIP` message (header + payload) from a byte stream
     ///
     /// # Errors
     /// Returns a [`MessageError`] if the header or payload cannot be deserialized

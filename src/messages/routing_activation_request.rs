@@ -42,9 +42,8 @@ impl From<ActivationTypeCode> for u8 {
         match value {
             ActivationTypeCode::Default => 0x00,
             ActivationTypeCode::RegulationRequired => 0x01,
-            ActivationTypeCode::Reserved(value) => value,
             ActivationTypeCode::CentralSecurity => 0xE0,
-            ActivationTypeCode::VehicleManufacturerSpecific(value) => value,
+            ActivationTypeCode::Reserved(value) | ActivationTypeCode::VehicleManufacturerSpecific(value) => value,
         }
     }
 }
@@ -57,7 +56,7 @@ impl UpperHex for ActivationTypeCode {
 }
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct RoutingActivationRequest {
-    /// Address of DoIP entity that requests routing activation.
+    /// Address of `DoIP` entity that requests routing activation.
     pub source_address: LogicalAddress,
     pub activation_type: ActivationTypeCode,
     pub reserved: [u8; 4],

@@ -3,7 +3,7 @@ use bytes::{BufMut, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::info;
 
-/// Codec for the DoIP messages, used to encode and decode messages from
+/// Codec for the `DoIP` messages, used to encode and decode messages from
 /// the TCP stream
 #[derive(Debug, Default)]
 pub struct MessageCodec {
@@ -11,7 +11,8 @@ pub struct MessageCodec {
 }
 
 impl MessageCodec {
-    /// Create a new DoIP message codec
+    /// Create a new `DoIP` message codec
+    #[must_use]
     pub fn new() -> Self {
         Self {}
     }

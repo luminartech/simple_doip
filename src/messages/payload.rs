@@ -8,8 +8,8 @@ use crate::messages::{
 
 use super::{NackCode, RoutingActivationRequest};
 
-/// Maps [PayloadType] to the corresponding `Payload` type when reading and writing
-/// messages. This is the main payload type for DoIP messages.
+/// Maps [`PayloadType`] to the corresponding `Payload` type when reading and writing
+/// messages. This is the main payload type for `DoIP` messages.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Payload {
@@ -43,9 +43,9 @@ impl Payload {
                 Self::AliveCheckResponse(AliveCheckResponse::read(&mut payload_bytes)?)
             }
             PayloadType::NegativeAcknowledge => Self::DoIPNack(NackCode::read(&mut payload_bytes)?),
-            PayloadType::VehicleIdentificationRequest => Self::VehicleIdentificationRequest,
-            PayloadType::VehicleIdentificationRequestWithEID => Self::VehicleIdentificationRequest,
-            PayloadType::VehicleIdentificationRequestWithVIN => Self::VehicleIdentificationRequest,
+            PayloadType::VehicleIdentificationRequest
+            | PayloadType::VehicleIdentificationRequestWithEID
+            | PayloadType::VehicleIdentificationRequestWithVIN => Self::VehicleIdentificationRequest,
             PayloadType::VehicleAnnouncement => Self::VehicleAnnouncement,
             PayloadType::RoutingActivationRequest => {
                 Self::RoutingActivationRequest(RoutingActivationRequest::read(payload_bytes)?)
@@ -77,7 +77,10 @@ impl Payload {
     pub fn write<W: Write>(&self, writer: &mut W) -> Result<usize, MessageError> {
         Ok(match self {
             Payload::DoIPNack(nack) => nack.write(writer)?,
-            Payload::AliveCheckRequest => 0,
+            Payload::AliveCheckRequest
+            | Payload::DiagnosticMessageNack
+            | Payload::EntityStatusRequest
+            | Payload::VehicleIdentificationRequest => 0,
             Payload::AliveCheckResponse(alive_check_response) => {
                 alive_check_response.write(writer)?
             }
@@ -85,8 +88,6 @@ impl Payload {
             Payload::DiagnosticMessageAck(diagnostic_message_ack) => {
                 diagnostic_message_ack.write(writer)?
             }
-            Payload::DiagnosticMessageNack => 0,
-            Payload::EntityStatusRequest => 0,
             Payload::EntityStatusResponse(entity_status_response) => {
                 entity_status_response.write(writer)?
             }
@@ -99,7 +100,6 @@ impl Payload {
             Payload::RoutingActivationResponse(routing_activation_response) => {
                 routing_activation_response.write(writer)?
             }
-            Payload::VehicleIdentificationRequest => 0,
             Payload::VehicleIdentificationResponse(vehicle_identification_response) => {
                 vehicle_identification_response.write(writer)?
             }

@@ -10,34 +10,34 @@ use super::message_error::MessageError;
 #[repr(u8)]
 pub enum RoutingActivationResponseCode {
     /// Routing activation denied due to unknown source address.
-    ///  * Do not activate routing and close this TCP_DATA socket.
+    ///  * Do not activate routing and close this `TCP_DATA` socket.
     DeniedUnknownSourceAddress = 0x00,
-    /// Routing activation denied because all concurrently supported TCP_DATA sockets are registered and active.
-    /// * Do not activate routing and close this TCP_DATA socket.
+    /// Routing activation denied because all concurrently supported `TCP_DATA` sockets are registered and active.
+    /// * Do not activate routing and close this `TCP_DATA` socket.
     DeniedAllTcpSocketsRegisteredAndActive = 0x01,
-    /// Routing activation denied because the SA received is different from the table connection entry on the already activated TCP_DATA socket.
-    /// * Do not activate routing and close this TCP_DATA socket.
+    /// Routing activation denied because the SA received is different from the table connection entry on the already activated `TCP_DATA` socket.
+    /// * Do not activate routing and close this `TCP_DATA` socket.
     DeniedSourceAddressAlreadyActivated = 0x02,
-    /// Routing activation denied because the SA is already registered and active on a different TCP_DATA socket.
-    /// * Do not activate routing and close this TCP_DATA socket.
+    /// Routing activation denied because the SA is already registered and active on a different `TCP_DATA` socket.
+    /// * Do not activate routing and close this `TCP_DATA` socket.
     DeniedSourceAddressAlreadyRegistered = 0x03,
     /// Routing activation denied due to missing authentication.
     /// * Do not activate routing and register.
     DeniedMissingAuthentication = 0x04,
     /// Routing activation denied due to rejected confirmation.
-    /// * Do not activate routing and close this TCP_DATA socket.
+    /// * Do not activate routing and close this `TCP_DATA` socket.
     DeniedRejectedConfirmation = 0x05,
     /// Routing activation denied due to unsupported routing activation type.
-    /// * Do not activate routing and close this TCP_DATA socket.
+    /// * Do not activate routing and close this `TCP_DATA` socket.
     DeniedUnsupportedRoutingActivationType = 0x06,
-    /// Routing activation denied because the specified activation type requires a secure TLS TCP_DATA socket.
-    /// * Do not activate routing and close this (non TLS) TCP_DATA socket.
+    /// Routing activation denied because the specified activation type requires a secure TLS `TCP_DATA` socket.
+    /// * Do not activate routing and close this (non TLS) `TCP_DATA` socket.
     DeniedEncryptedConnectionViaTLSRequired = 0x07,
     /// Reserved for future use.
     /// * Ignored by this library.
     Reserved(u8),
     /// Routing successfully activated.
-    /// * Activate routing and register SA on this TCP_DATA socket.
+    /// * Activate routing and register SA on this `TCP_DATA` socket.
     RoutingSuccessfullyActivated = 0x10,
     /// Routing is activated; confirmation required.
     /// * Only activate routing after confirmation from within the vehicle.
@@ -58,12 +58,10 @@ impl From<u8> for RoutingActivationResponseCode {
             0x05 => RoutingActivationResponseCode::DeniedRejectedConfirmation,
             0x06 => RoutingActivationResponseCode::DeniedUnsupportedRoutingActivationType,
             0x07 => RoutingActivationResponseCode::DeniedEncryptedConnectionViaTLSRequired,
-            0x08..=0x0F => RoutingActivationResponseCode::Reserved(value),
             0x10 => RoutingActivationResponseCode::RoutingSuccessfullyActivated,
             0x11 => RoutingActivationResponseCode::RoutingSuccessfullyActivatedConfirmationRequired,
-            0x12..=0xDF => RoutingActivationResponseCode::Reserved(value),
             0xE0..=0xFE => RoutingActivationResponseCode::VehicleManufacturerSpecific(value),
-            0xFF => RoutingActivationResponseCode::Reserved(value),
+            _ => RoutingActivationResponseCode::Reserved(value),
         }
     }
 }
@@ -79,10 +77,9 @@ impl From<RoutingActivationResponseCode> for u8 {
             RoutingActivationResponseCode::DeniedRejectedConfirmation => 0x05,
             RoutingActivationResponseCode::DeniedUnsupportedRoutingActivationType => 0x06,
             RoutingActivationResponseCode::DeniedEncryptedConnectionViaTLSRequired => 0x07,
-            RoutingActivationResponseCode::Reserved(value) => value,
             RoutingActivationResponseCode::RoutingSuccessfullyActivated => 0x10,
             RoutingActivationResponseCode::RoutingSuccessfullyActivatedConfirmationRequired => 0x11,
-            RoutingActivationResponseCode::VehicleManufacturerSpecific(value) => value,
+            RoutingActivationResponseCode::Reserved(value) | RoutingActivationResponseCode::VehicleManufacturerSpecific(value) => value,
         }
     }
 }
@@ -139,6 +136,6 @@ impl RoutingActivationResponse {
         if let Some(oem_specific) = self.oem_specific {
             writer.write_all(&oem_specific)?;
         }
-        Ok(9 + self.oem_specific.map(|_| 4).unwrap_or(0))
+        Ok(9 + self.oem_specific.map_or(0, |_| 4))
     }
 }

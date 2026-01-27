@@ -31,9 +31,9 @@ impl From<EntityStatusNodeType> for u8 {
 }
 
 /// This payload type serves the purpose of identifying certain operating
-/// conditions of the responding DoIP entity.
-/// This allows, for example a client DoIP entity to detect existing diagnostic
-/// communication sessions as well as the capabilities of a DoIP entity.
+/// conditions of the responding `DoIP` entity.
+/// This allows, for example a client `DoIP` entity to detect existing diagnostic
+/// communication sessions as well as the capabilities of a `DoIP` entity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EntityStatusResponse {
     pub node_type: EntityStatusNodeType,
