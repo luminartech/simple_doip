@@ -1,4 +1,4 @@
-use doip::{
+use simple_doip::{
     client::{Client, ClientOptions},
     connection::ConnectorSocket,
     logical_address::LogicalAddress,
@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
         client_address: IpAddr::from([0, 0, 0, 0]),
         client_logical_address: LogicalAddress(0x0E01),
         protocol_version: ProtocolVersion::V2012,
-        routing_activation_options: Some(doip::client::RoutingActivationOptions {
+        routing_activation_options: Some(simple_doip::client::RoutingActivationOptions {
             activation_type: ActivationTypeCode::Default,
             oem_specific: None,
         }),
@@ -51,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     let request_bytes = vec![0x10, 0x03];
 
     let resp = client
-        .send_diagnostic_message(doip::client::AddressType::Physical, request_bytes)
+        .send_diagnostic_message(simple_doip::client::AddressType::Physical, request_bytes)
         .await?;
     info!("Sent diagnostic message and received response {:#?}", resp);
     client.shut_down().await;

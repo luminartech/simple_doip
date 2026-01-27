@@ -154,7 +154,6 @@ where
                     // Once there is information in the Response/Read stream we'll do work on it
                     // and send it along to the receiver on the other end
                     //
-                    // The message will be decoded through the uds_protocol::Response
                     result = socket_read_stream.next() => {
                         match result {
                             // Decoding the message can fail, so we handle that here
@@ -174,17 +173,8 @@ where
                                         // The socket has been closed by the remote end, so we should exit
                                         break;
                                     }
-                                    MessageError::UdsProtocol(ref uds_error) => {
-                                        error!(concat!("UDS Protocol Error decoding message: {:?}\n",
-                                            "This usually means that the message sent was malformed or unexpected. ",
-                                            "Please check either the uds_protocol Response implementation, ",
-                                            "or the underlying types in the DiagnosticDefinition associated type"), uds_error);
-                                    }
                                     _ => {
-                                        error!(concat!("Internal Error decoding message: {:?}\n",
-                                    "This usually means that the library is not set up to read this message type. ",
-                                    "Please check either the uds_protocol Response implementation, ",
-                                    "or the underlying types in the DiagnosticDefinition associated type"), e.to_string());
+                                        error!("Error decoding message: {:?}", e.to_string());
                                     }
                                 };
 

@@ -14,6 +14,4 @@ pub enum MessageError {
     UnexpectedPayloadType(PayloadType),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error(transparent)]
-    UdsProtocol(#[from] uds_protocol::Error),
 }

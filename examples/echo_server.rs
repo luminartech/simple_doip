@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use doip::{
+use simple_doip::{
     logical_address::LogicalAddress,
     messages::{
         DiagnosticMessage, Message, RoutingActivationRequest, RoutingActivationResponseCode,
