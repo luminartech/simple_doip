@@ -83,6 +83,10 @@ pub struct VehicleIdentificationResponse {
 }
 
 impl VehicleIdentificationResponse {
+    /// Deserialize a vehicle identification response from a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be read
     pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
         let mut vin = [0x00; 17];
         reader.read_exact(&mut vin)?;
@@ -118,6 +122,10 @@ impl VehicleIdentificationResponse {
         })
     }
 
+    /// Serialize this vehicle identification response to a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be written
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_all(&self.vin)?;
         writer.write_u16::<BigEndian>(self.logical_address.into())?;

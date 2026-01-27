@@ -11,6 +11,7 @@ pub struct MessageCodec {
 }
 
 impl MessageCodec {
+    /// Create a new DoIP message codec
     pub fn new() -> Self {
         Self {}
     }

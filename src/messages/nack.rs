@@ -66,11 +66,18 @@ impl From<NackCode> for u8 {
     }
 }
 
-/// Nack read/write
 impl NackCode {
+    /// Deserialize a negative acknowledgement code from a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be read
     pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
         Ok(reader.read_u8()?.into())
     }
+    /// Serialize this negative acknowledgement code to a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be written
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u8((*self).into())?;
         Ok(1)

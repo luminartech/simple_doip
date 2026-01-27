@@ -40,6 +40,7 @@ pub struct Message {
 }
 
 impl Message {
+    /// Check whether the given payload type is a valid response to this message
     pub fn is_response(&self, payload_type: PayloadType) -> bool {
         match self.header.payload_type {
             PayloadType::RoutingActivationRequest => {
@@ -67,6 +68,7 @@ impl Message {
         }
     }
 
+    /// Construct an alive check request message
     pub fn alive_check_request(protocol_version: ProtocolVersion) -> Message {
         Message {
             header: Header::new(protocol_version, PayloadType::AliveCheckRequest, 0),
@@ -74,6 +76,7 @@ impl Message {
         }
     }
 
+    /// Construct an alive check response message
     pub fn alive_check_response(
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
@@ -85,6 +88,7 @@ impl Message {
         }
     }
 
+    /// Construct a diagnostic message carrying opaque user data
     pub fn diagnostic_message(
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
@@ -107,6 +111,7 @@ impl Message {
         }
     }
 
+    /// Construct a diagnostic message acknowledgement
     pub fn diagnostic_message_ack(
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
@@ -130,6 +135,7 @@ impl Message {
         }
     }
 
+    /// Construct a routing activation request message
     pub fn routing_activation_request(
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
@@ -157,6 +163,7 @@ impl Message {
         }
     }
 
+    /// Construct a routing activation response message
     pub fn routing_activation_response(
         protocol_version: ProtocolVersion,
         logical_address_tester: LogicalAddress,
@@ -181,6 +188,10 @@ impl Message {
 }
 
 impl Message {
+    /// Deserialize a complete DoIP message (header + payload) from a byte stream
+    ///
+    /// # Errors
+    /// Returns a [`MessageError`] if the header or payload cannot be deserialized
     // TODO: This needs careful review and should do a lot more error checking than it does now
     pub fn read<T: Read>(mut message_bytes: &mut T) -> Result<Message, MessageError> {
         let header = Header::read(&mut message_bytes)?;
@@ -189,6 +200,10 @@ impl Message {
         Ok(Message { header, payload })
     }
 
+    /// Serialize this message (header + payload) to a byte stream
+    ///
+    /// # Errors
+    /// Returns a [`MessageError`] if the header or payload cannot be serialized
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         let mut written = self.header.write(writer)?;
         written += &self.payload.write(writer)?;

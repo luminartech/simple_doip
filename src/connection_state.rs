@@ -33,6 +33,7 @@ pub(crate) enum ConnectionState {
 
 #[allow(unused)]
 impl ConnectionState {
+    /// Check whether the given payload type is permitted in the current connection state
     pub fn is_message_allowed(&self, payload_type: &PayloadType) -> bool {
         match self {
             // if in Listen or Finalize state, no messages are allowed

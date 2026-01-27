@@ -38,10 +38,18 @@ impl From<DiagnosticPowerModeCode> for u8 {
 }
 
 impl DiagnosticPowerModeCode {
+    /// Deserialize a diagnostic power mode code from a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be read
     pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
         Ok(reader.read_u8()?.into())
     }
 
+    /// Serialize this diagnostic power mode code to a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be written
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u8((*self).into())?;
         Ok(1)

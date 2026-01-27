@@ -99,6 +99,10 @@ pub struct RoutingActivationResponse {
 }
 
 impl RoutingActivationResponse {
+    /// Deserialize a routing activation response from a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be read
     pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
         let logical_address_tester = LogicalAddress(reader.read_u16::<BigEndian>()?);
         let logical_address_of_doip_entity = LogicalAddress(reader.read_u16::<BigEndian>()?);
@@ -123,6 +127,10 @@ impl RoutingActivationResponse {
         })
     }
 
+    /// Serialize this routing activation response to a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be written
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u16::<BigEndian>(self.logical_address_tester.into())?;
         writer.write_u16::<BigEndian>(self.logical_address_of_doip_entity.into())?;

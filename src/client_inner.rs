@@ -55,6 +55,7 @@ impl ControlMessage {
         (receiver, factory(sender))
     }
 
+    /// Create a control message to send a routing activation request
     #[allow(unused)]
     pub fn create_routing_activation_message(
         message: &Message,
@@ -79,6 +80,7 @@ impl ControlMessage {
         Self::create_oneshot(|sender| Self::BindSocket(gateway_address, sender))
     }
 
+    /// Create a control message to unbind the TCP socket
     pub fn create_unbind_socket_message() -> (oneshot::Receiver<Result<(), Error>>, Self) {
         Self::create_oneshot(Self::UnbindSocket)
     }

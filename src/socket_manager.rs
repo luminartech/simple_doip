@@ -96,7 +96,7 @@ where
         self.receiver.recv().await
     }
 
-    /// Receive a message with a timeout
+    /// Receive a message from the socket, returning `None` if the timeout elapses
     pub async fn receive_timeout(
         &mut self,
         timeout: Duration,
@@ -106,10 +106,12 @@ where
             .unwrap()
     }
 
+    /// Return the current session ID
     pub fn session_id(&self) -> u16 {
         self.session_id
     }
 
+    /// Return the local TCP port this socket is bound to
     pub fn port(&self) -> u16 {
         self.local_port
     }

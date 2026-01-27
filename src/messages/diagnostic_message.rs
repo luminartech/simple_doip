@@ -14,6 +14,10 @@ pub struct DiagnosticMessage {
 }
 
 impl DiagnosticMessage {
+    /// Deserialize a diagnostic message from a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be read
     pub fn read<R: Read>(reader: &mut R) -> Result<Self, MessageError> {
         let source_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
         let target_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
@@ -29,6 +33,10 @@ impl DiagnosticMessage {
         })
     }
 
+    /// Serialize this diagnostic message to a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be written
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u16::<BigEndian>(self.source_address.into())?;
         writer.write_u16::<BigEndian>(self.target_address.into())?;

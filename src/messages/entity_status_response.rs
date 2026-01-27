@@ -43,6 +43,10 @@ pub struct EntityStatusResponse {
 }
 
 impl EntityStatusResponse {
+    /// Deserialize an entity status response from a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be read
     pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
         let node_type = EntityStatusNodeType::from(reader.read_u8()?);
         let max_concurrent_tcp_sockets = reader.read_u8()?;
@@ -56,6 +60,10 @@ impl EntityStatusResponse {
         })
     }
 
+    /// Serialize this entity status response to a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be written
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u8(self.node_type.into())?;
         writer.write_u8(self.max_concurrent_tcp_sockets)?;

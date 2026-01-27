@@ -201,6 +201,7 @@ pub struct Header {
 }
 
 impl Header {
+    /// Create a new DoIP message header
     pub fn new(
         protocol_version: ProtocolVersion,
         payload_type: PayloadType,
@@ -227,6 +228,7 @@ impl Header {
             })
         }
     }
+    /// Deserialize a DoIP header from a byte stream
     pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Header, MessageError> {
         let protocol_version = reader.read_u8()?.into();
         let inverse_protocol_version = reader.read_u8()?;
@@ -241,6 +243,7 @@ impl Header {
         header.version_inverse_correct()?;
         Ok(header)
     }
+    /// Serialize this header to a byte stream
     pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u8(self.protocol_version.into())?;
         writer.write_u8(self.inverse_protocol_version)?;

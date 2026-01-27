@@ -86,6 +86,10 @@ impl fmt::Debug for RoutingActivationRequest {
 }
 
 impl RoutingActivationRequest {
+    /// Deserialize a routing activation request from a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be read
     pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
         let source_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
         let activation_type = ActivationTypeCode::from(reader.read_u8()?);
@@ -102,6 +106,10 @@ impl RoutingActivationRequest {
             reserved_vehicle_manufacturer,
         })
     }
+    /// Serialize this routing activation request to a byte stream
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the byte stream cannot be written
     // TODO: Investigate if we should write the optional vehicle manufacturer specific data if none
     pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
         writer.write_u16::<BigEndian>(self.source_address.into())?;

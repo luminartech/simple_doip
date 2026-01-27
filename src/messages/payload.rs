@@ -30,6 +30,10 @@ pub enum Payload {
 }
 
 impl Payload {
+    /// Deserialize a payload from a byte stream based on the given payload type
+    ///
+    /// # Errors
+    /// Returns a [`MessageError`] if the payload cannot be deserialized
     pub fn read<R: Read>(
         mut payload_bytes: &mut R,
         payload_type: PayloadType,
@@ -66,6 +70,10 @@ impl Payload {
         })
     }
 
+    /// Serialize this payload to a byte stream
+    ///
+    /// # Errors
+    /// Returns a [`MessageError`] if the payload cannot be serialized
     pub fn write<W: Write>(&self, writer: &mut W) -> Result<usize, MessageError> {
         Ok(match self {
             Payload::DoIPNack(nack) => nack.write(writer)?,
