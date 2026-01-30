@@ -35,6 +35,18 @@ pub(super) enum ControlMessage {
         /// the response channel to send the response to
         oneshot::Sender<Result<Message, Error>>,
     ),
+
+    /// Send diagnostic message and wait for DoIP ACK only (not full response)
+    SendDiagnosticMessageOnly(Message, oneshot::Sender<Result<(), Error>>),
+
+    /// Wait for next diagnostic response (no send)
+    ReceiveDiagnosticResponse(
+        std::time::Duration,
+        oneshot::Sender<Result<Message, Error>>,
+    ),
+
+    /// Internal: waiting for ACK only (after SendDiagnosticMessageOnly)
+    AwaitAck(oneshot::Sender<Result<(), Error>>),
 }
 
 /// Result type for the `create_message` function
@@ -84,6 +96,20 @@ impl ControlMessage {
     pub fn create_unbind_socket_message() -> (oneshot::Receiver<Result<(), Error>>, Self) {
         Self::create_oneshot(Self::UnbindSocket)
     }
+
+    /// Create a control message to send a diagnostic message and wait for ACK only
+    pub fn create_send_diagnostic_message_only(
+        message: Message,
+    ) -> (oneshot::Receiver<Result<(), Error>>, Self) {
+        Self::create_oneshot(|sender| Self::SendDiagnosticMessageOnly(message, sender))
+    }
+
+    /// Create a control message to receive the next diagnostic response
+    pub fn create_receive_diagnostic_response(
+        timeout: std::time::Duration,
+    ) -> (oneshot::Receiver<Result<Message, Error>>, Self) {
+        Self::create_oneshot(|sender| Self::ReceiveDiagnosticResponse(timeout, sender))
+    }
 }
 
 /// Inner client responsible for the handling of the connection details,
@@ -123,6 +149,11 @@ pub(super) struct Inner<Conn> {
     /// Tester Present request message to be sent
     /// This is used to send the Tester Present message periodically
     tester_present_message: Message,
+
+    /// Buffer for diagnostic responses that arrive between send and receive calls.
+    /// This handles the race condition where the server responds before
+    /// `receive_diagnostic_response()` is called.
+    pending_diagnostic_response: Option<Message>,
 }
 /// Sender for the control messages sent via the control channel
 type ControlSender = mpsc::Sender<ControlMessage>;
@@ -162,6 +193,7 @@ where
             run: true,
             last_tester_present: tokio::time::Instant::now(),
             tester_present_message,
+            pending_diagnostic_response: None,
         };
         inner.run();
         (control_sender, update_receiver)
@@ -385,8 +417,10 @@ where
                     );
                     self.active_request =
                         Some(ControlMessage::AwaitResponse(message.clone(), response));
-                } else {
-                    todo!();
+                } else if let Err(e) = send_result {
+                    if response.send(Err(e)).is_err() {
+                        debug!("Failed to send routing activation error response");
+                    }
                 }
             }
             ControlMessage::UDSMessage(message, response) => {
@@ -396,6 +430,50 @@ where
                 trace!("Awaiting response for message: {:?}", message);
                 // This is handled in the run loop while receiving messages
                 self.active_request = Some(ControlMessage::AwaitResponse(message, response));
+            }
+            ControlMessage::SendDiagnosticMessageOnly(message, response) => {
+                if self.tcp_data_socket.is_none() {
+                    if response.send(Err(Error::SocketNotBound)).is_err() {
+                        debug!("Failed to send response: Socket not bound");
+                    }
+                    return;
+                }
+                let send_result = self.send_to_socket(message).await;
+                if send_result.is_ok() {
+                    // Set up to wait for ACK only
+                    self.await_response_deadline = Some(
+                        tokio::time::Instant::now() + crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL,
+                    );
+                    self.active_request = Some(ControlMessage::AwaitAck(response));
+                } else if let Err(e) = send_result {
+                    let _ = response.send(Err(e));
+                }
+            }
+            ControlMessage::ReceiveDiagnosticResponse(timeout, response) => {
+                if self.tcp_data_socket.is_none() {
+                    if response.send(Err(Error::SocketNotBound)).is_err() {
+                        debug!("Failed to send response: Socket not bound");
+                    }
+                    return;
+                }
+
+                // Check if we already have a buffered response from a fast server
+                if let Some(buffered) = self.pending_diagnostic_response.take() {
+                    debug!("Returning buffered diagnostic response");
+                    let _ = response.send(Ok(buffered));
+                    return;
+                }
+
+                self.await_response_deadline = Some(tokio::time::Instant::now() + timeout);
+                // Use a placeholder message - we just want any diagnostic response
+                self.active_request = Some(ControlMessage::AwaitResponse(
+                    Message::default(),
+                    response,
+                ));
+            }
+            ControlMessage::AwaitAck(response) => {
+                // This is handled in the run loop while receiving messages
+                self.active_request = Some(ControlMessage::AwaitAck(response));
             }
         }
     }
@@ -416,8 +494,27 @@ where
                             ))
                             .await;
                     }
-                    Payload::DiagnosticMessageAck(_) => {
-                        trace!("Received Diagnostic Message Ack, waiting for full response");
+                    Payload::DiagnosticMessageAck(ref ack) => {
+                        // Handle AwaitAck - complete immediately on ACK
+                        if let Some(ControlMessage::AwaitAck(response)) = self.active_request.take()
+                        {
+                            self.await_response_deadline = None;
+                            if ack.ack_code.is_positive_ack() {
+                                trace!("Received positive ACK, completing send");
+                                let _ = response.send(Ok(()));
+                            } else {
+                                trace!("Received negative ACK: {:?}", ack.ack_code);
+                                let _ =
+                                    response.send(Err(Error::DiagnosticMessageNack(ack.ack_code)));
+                            }
+                            return false;
+                        }
+                        // For AwaitResponse, continue waiting for DiagnosticMessage
+                        if ack.ack_code.is_positive_ack() {
+                            trace!("Received Diagnostic Message Ack, waiting for full response");
+                            return false;
+                        }
+                        // Negative ACK for AwaitResponse - fall through to handle as error
                     }
                     _ => trace!("Received message: {received_message:?}"),
                 }
@@ -435,12 +532,21 @@ where
                         }
                     }
                 } else {
-                    trace!("No active request, sending received message to update channel");
-                    self.run = true;
-                    if self.update_sender.send(Ok(received_message)).await.is_err() {
-                        tracing::error!("Failed to send received message to update channel");
-                        self.run = false;
-                        return true;
+                    // No active request - check if this is a DiagnosticMessage we should buffer
+                    if matches!(received_message.payload, Payload::DiagnosticMessage(_)) {
+                        debug!(
+                            "Buffering diagnostic response (no active request): {:?}",
+                            received_message
+                        );
+                        self.pending_diagnostic_response = Some(received_message);
+                    } else {
+                        trace!("No active request, sending received message to update channel");
+                        self.run = true;
+                        if self.update_sender.send(Ok(received_message)).await.is_err() {
+                            tracing::error!("Failed to send received message to update channel");
+                            self.run = false;
+                            return true;
+                        }
                     }
                 }
                 false

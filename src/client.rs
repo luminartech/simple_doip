@@ -291,4 +291,57 @@ where
             info!(".");
         }
     }
+
+    /// Send a diagnostic message and wait for DoIP-level ACK only.
+    ///
+    /// Does NOT wait for the diagnostic response - use `receive_diagnostic_response()` for that.
+    /// This is useful for UDS-layer timeout handling where NRC 0x78 (Response Pending) requires
+    /// waiting for subsequent responses without re-sending the request.
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the socket is not bound, the message cannot be sent,
+    /// or a negative ACK is received.
+    pub async fn send_diagnostic_message_only(
+        &mut self,
+        address_type: AddressType,
+        user_data: Vec<u8>,
+    ) -> Result<(), Error> {
+        let message = Message::diagnostic_message(
+            self.client_options.protocol_version,
+            self.client_options.client_logical_address,
+            match address_type {
+                AddressType::Logical => self.client_options.server_logical_address,
+                AddressType::Physical => self.client_options.server_physical_address,
+            },
+            user_data,
+        );
+
+        let (response, ctrl_msg) = ControlMessage::create_send_diagnostic_message_only(message);
+        self.control_sender
+            .send(ctrl_msg)
+            .await
+            .map_err(|e| Error::SendError(e.to_string()))?;
+        response.await.map_err(|_| Error::ConnectionClosed)?
+    }
+
+    /// Wait for the next diagnostic message response.
+    ///
+    /// Call this after `send_diagnostic_message_only()` to receive the response.
+    /// Can be called multiple times to handle NRC 0x78 (Response Pending) scenarios
+    /// where the server needs more time to process the request.
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the socket is not bound, the response times out,
+    /// or the connection is closed.
+    pub async fn receive_diagnostic_response(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Message, Error> {
+        let (response, ctrl_msg) = ControlMessage::create_receive_diagnostic_response(timeout);
+        self.control_sender
+            .send(ctrl_msg)
+            .await
+            .map_err(|e| Error::SendError(e.to_string()))?;
+        response.await.map_err(|_| Error::ConnectionClosed)?
+    }
 }

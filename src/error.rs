@@ -1,5 +1,5 @@
 use crate::{
-    messages::{MessageError, NackCode, PayloadType},
+    messages::{DiagnosticAckCode, MessageError, NackCode, PayloadType},
     LogicalAddress,
 };
 use thiserror::Error;
@@ -41,4 +41,7 @@ pub enum Error {
     /// Request may have been suppressed, so this is a non-fatal error
     #[error("Response timeout exceeded")]
     ResponseTimeoutExceeded,
+    /// Diagnostic message was rejected with negative ACK
+    #[error("Diagnostic message NACK: {0:?}")]
+    DiagnosticMessageNack(DiagnosticAckCode),
 }

@@ -224,6 +224,20 @@ impl Message {
     }
 }
 
+impl Default for Message {
+    /// Create a default diagnostic message (used as a placeholder when waiting for any response)
+    fn default() -> Self {
+        Message {
+            header: Header::new(ProtocolVersion::V2012, PayloadType::DiagnosticMessage, 0),
+            payload: Payload::DiagnosticMessage(DiagnosticMessage {
+                source_address: LogicalAddress(0),
+                target_address: LogicalAddress(0),
+                user_data: Vec::new(),
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
