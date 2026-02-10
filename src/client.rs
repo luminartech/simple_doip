@@ -1,5 +1,5 @@
 use crate::{
-    client_inner::{ControlMessage, CreateMessageResult, Inner},
+    client_inner::{ControlMessage, Inner},
     connection,
     messages::{
         ActivationTypeCode, Message, MessageError, ProtocolVersion, RoutingActivationResponse,
@@ -238,46 +238,6 @@ where
         todo!("Auto tester present not implemented yet");
     }
 
-    /// Send a UDS message to the server
-    ///
-    /// This is a generic message that can be used to send any UDS message
-    ///
-    /// # Errors
-    /// Returns an [`Error`] if the socket is not bound or the message cannot be sent
-    pub async fn send_diagnostic_message(
-        &mut self,
-        address_type: AddressType,
-        user_data: Vec<u8>,
-    ) -> Result<SendResult<Message>, Error> {
-        // Create a new message, send it to the server, and wait for a response
-
-        // Create a new message
-        let message = Message::diagnostic_message(
-            self.client_options.protocol_version,
-            self.client_options.client_logical_address,
-            match address_type {
-                AddressType::Logical => self.client_options.server_logical_address,
-                AddressType::Physical => self.client_options.server_physical_address,
-            },
-            user_data,
-        );
-
-        // Send the message and wait for a response
-        self.send_message(message).await
-    }
-
-    /// Send a request to the server and wait for a response (which is returned)
-    async fn send_message(&mut self, control: Message) -> Result<SendResult<Message>, Error> {
-        // Create new request and response channels to await the response of
-        let CreateMessageResult(response, message) = ControlMessage::create_message(control);
-        // Sends to Inner client
-        if let Err(e) = self.control_sender.send(message).await {
-            return Err(Error::SendError(e.to_string()));
-        }
-        // if its a RecvError the sender has been dropped
-        response.await.map_err(|_| Error::ConnectionClosed)?
-    }
-
     /// Shut down the client, closing the connection and cleaning up resources
     pub async fn shut_down(self) {
         let Self {
@@ -295,13 +255,13 @@ where
     /// Send a diagnostic message and wait for DoIP-level ACK only.
     ///
     /// Does NOT wait for the diagnostic response - use `receive_diagnostic_response()` for that.
-    /// This is useful for UDS-layer timeout handling where NRC 0x78 (Response Pending) requires
-    /// waiting for subsequent responses without re-sending the request.
+    /// This is the primary send method for UDS communication, allowing proper timeout handling
+    /// at the UDS layer (including NRC 0x78 Response Pending scenarios).
     ///
     /// # Errors
     /// Returns an [`Error`] if the socket is not bound, the message cannot be sent,
     /// or a negative ACK is received.
-    pub async fn send_diagnostic_message_only(
+    pub async fn send_diagnostic_message(
         &mut self,
         address_type: AddressType,
         user_data: Vec<u8>,
@@ -316,7 +276,7 @@ where
             user_data,
         );
 
-        let (response, ctrl_msg) = ControlMessage::create_send_diagnostic_message_only(message);
+        let (response, ctrl_msg) = ControlMessage::create_send_diagnostic_message(message);
         self.control_sender
             .send(ctrl_msg)
             .await

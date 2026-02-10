@@ -45,7 +45,9 @@ impl Payload {
             PayloadType::NegativeAcknowledge => Self::DoIPNack(NackCode::read(&mut payload_bytes)?),
             PayloadType::VehicleIdentificationRequest
             | PayloadType::VehicleIdentificationRequestWithEID
-            | PayloadType::VehicleIdentificationRequestWithVIN => Self::VehicleIdentificationRequest,
+            | PayloadType::VehicleIdentificationRequestWithVIN => {
+                Self::VehicleIdentificationRequest
+            }
             PayloadType::VehicleAnnouncement => Self::VehicleAnnouncement,
             PayloadType::RoutingActivationRequest => {
                 Self::RoutingActivationRequest(RoutingActivationRequest::read(payload_bytes)?)

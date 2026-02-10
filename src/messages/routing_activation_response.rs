@@ -79,7 +79,8 @@ impl From<RoutingActivationResponseCode> for u8 {
             RoutingActivationResponseCode::DeniedEncryptedConnectionViaTLSRequired => 0x07,
             RoutingActivationResponseCode::RoutingSuccessfullyActivated => 0x10,
             RoutingActivationResponseCode::RoutingSuccessfullyActivatedConfirmationRequired => 0x11,
-            RoutingActivationResponseCode::Reserved(value) | RoutingActivationResponseCode::VehicleManufacturerSpecific(value) => value,
+            RoutingActivationResponseCode::Reserved(value)
+            | RoutingActivationResponseCode::VehicleManufacturerSpecific(value) => value,
         }
     }
 }

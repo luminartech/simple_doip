@@ -1,7 +1,7 @@
 //! User → Client → control_sender → Inner → SocketManager.sender → TCP Socket → Server
 //! User ← Client ← update_receiver ← Inner ← SocketManager.receiver ← TCP Socket ← Server
 use crate::{
-    client::{ClientOptions, SendResult},
+    client::ClientOptions,
     connection_state::ConnectionState,
     messages::{Message, MessageError, Payload},
     socket_manager::SocketManager,
@@ -27,7 +27,6 @@ pub(super) enum ControlMessage {
 
     BindSocket(SocketAddr, oneshot::Sender<Result<u16, Error>>),
     UnbindSocket(oneshot::Sender<Result<(), Error>>),
-    UDSMessage(Message, oneshot::Sender<Result<SendResult<Message>, Error>>),
     RoutingActivation(Message, oneshot::Sender<Result<Message, Error>>),
     AwaitResponse(
         /// the Request message that was sent
@@ -37,26 +36,14 @@ pub(super) enum ControlMessage {
     ),
 
     /// Send diagnostic message and wait for DoIP ACK only (not full response)
-    SendDiagnosticMessageOnly(Message, oneshot::Sender<Result<(), Error>>),
+    SendDiagnosticMessage(Message, oneshot::Sender<Result<(), Error>>),
 
     /// Wait for next diagnostic response (no send)
-    ReceiveDiagnosticResponse(
-        std::time::Duration,
-        oneshot::Sender<Result<Message, Error>>,
-    ),
+    ReceiveDiagnosticResponse(std::time::Duration, oneshot::Sender<Result<Message, Error>>),
 
-    /// Internal: waiting for ACK only (after SendDiagnosticMessageOnly)
+    /// Internal: waiting for ACK only (after SendDiagnosticMessage)
     AwaitAck(oneshot::Sender<Result<(), Error>>),
 }
-
-/// Result type for the `create_message` function
-///
-/// Contains a oneshot receiver for the response and the control message to be sent
-/// to the inner client.
-pub(crate) struct CreateMessageResult(
-    pub oneshot::Receiver<Result<SendResult<Message>, Error>>,
-    pub ControlMessage,
-);
 
 impl ControlMessage {
     /// Helper method to create control messages with oneshot channels
@@ -76,15 +63,6 @@ impl ControlMessage {
         Self::create_oneshot(|sender| Self::RoutingActivation(message.clone(), sender))
     }
 
-    /// Takes in a UDS Message Request (`WriteDefinitions` == Request)
-    /// Returns:
-    /// * a oneshot receiver for the UDS Response (`ReadDefinitions` == Response)
-    /// * a `ControlMessage` to be sent to the inner client
-    pub fn create_message(message: Message) -> CreateMessageResult {
-        let (rx, msg) = Self::create_oneshot(|sender| Self::UDSMessage(message, sender));
-        CreateMessageResult(rx, msg)
-    }
-
     /// Builder for the bind socket message
     pub fn create_bind_socket_message(
         gateway_address: SocketAddr,
@@ -98,10 +76,10 @@ impl ControlMessage {
     }
 
     /// Create a control message to send a diagnostic message and wait for ACK only
-    pub fn create_send_diagnostic_message_only(
+    pub fn create_send_diagnostic_message(
         message: Message,
     ) -> (oneshot::Receiver<Result<(), Error>>, Self) {
-        Self::create_oneshot(|sender| Self::SendDiagnosticMessageOnly(message, sender))
+        Self::create_oneshot(|sender| Self::SendDiagnosticMessage(message, sender))
     }
 
     /// Create a control message to receive the next diagnostic response
@@ -199,23 +177,25 @@ where
         (control_sender, update_receiver)
     }
 
-    /// Binds the unicast socket to the specified address
+    /// Binds the unicast socket to the specified address.
+    /// If a socket already exists, it will be replaced with a new connection
+    /// (this handles reconnection after connection loss).
     async fn bind_socket(&mut self, gateway_address: SocketAddr) -> Result<u16, Error> {
-        // Check if the socket is already bound
-        if let Some(socket) = &self.tcp_data_socket {
-            Ok(socket.port())
-        } else {
-            // Bind the socket
-            let socket_manager: SocketManager<Conn> =
-                SocketManager::bind(self.client_options, gateway_address).await?;
-            self.connection_state = ConnectionState::Initialized;
-            let port = socket_manager.port();
-            debug!("Bound socket to port: {}", port);
-            self.tcp_data_socket = Some(socket_manager);
-            self.run = true;
-            // Send the socket bind message to the control channel
-            Ok(port)
+        // Close existing socket if any (handles reconnection)
+        if let Some(old_socket) = self.tcp_data_socket.take() {
+            debug!("Closing existing socket for reconnection");
+            old_socket.shut_down().await;
         }
+
+        // Bind a new socket
+        let socket_manager: SocketManager<Conn> =
+            SocketManager::bind(self.client_options, gateway_address).await?;
+        self.connection_state = ConnectionState::Initialized;
+        let port = socket_manager.port();
+        debug!("Bound socket to port: {}", port);
+        self.tcp_data_socket = Some(socket_manager);
+        self.run = true;
+        Ok(port)
     }
 
     /// Unbind the socket
@@ -273,81 +253,6 @@ where
             // If we don't have a receiver, we should return a future that never resolves
             future::pending().await
         }
-    }
-
-    /// Handle a UDS diagnostic message by sending it to the socket and spawning
-    /// a task to await and forward the response
-    async fn handle_uds_message(
-        &mut self,
-        message: Message,
-        response: oneshot::Sender<Result<SendResult<Message>, Error>>,
-    ) {
-        if self.tcp_data_socket.is_none() {
-            if response.send(Err(Error::SocketNotBound)).is_err() {
-                debug!("Failed to send response: Socket not bound");
-            }
-            return;
-        }
-        let send_result = self.send_to_socket(message.clone()).await;
-
-        // Wait for the initial diagnostic message timeout before considering the message suppressed or timed out
-        tokio::time::sleep_until(
-            self.last_tester_present + crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL,
-        )
-        .await;
-        // Since `DoIP` is now transport-agnostic, we can't determine
-        // if a response is suppressed from the opaque payload.
-        // This logic should be handled at the application (UDS) layer.
-        let was_suppressed = false; // Always false at transport layer
-        if send_result.is_ok() {
-            let (await_sender, await_receiver) = oneshot::channel();
-
-            self.active_request = Some(ControlMessage::AwaitResponse(
-                message.clone(),
-                await_sender,
-            ));
-            // Converts from the SendResult return to a regular AwaitResponse
-            // and spawns a task to await the response
-            tokio::spawn(async move {
-                match await_receiver.await {
-                    Ok(Ok(response_message)) => {
-                        if response
-                            .send(Ok(SendResult::Response(response_message)))
-                            .is_err()
-                        {
-                            debug!("Failed to send response");
-                        }
-                    }
-                    Ok(Err(Error::ResponseTimeoutExceeded)) => {
-                        if was_suppressed {
-                            if response.send(Ok(SendResult::Suppressed)).is_err() {
-                                debug!("Failed to send suppressed response after timeout");
-                            }
-                        } else if response
-                            .send(Err(Error::ResponseTimeoutExceeded))
-                            .is_err()
-                        {
-                            debug!("Failed to send timeout error response");
-                        }
-                    }
-                    Ok(Err(e)) => {
-                        if response.send(Err(e)).is_err() {
-                            debug!("Failed to send error response");
-                        }
-                    }
-                    Err(_) => {
-                        debug!("Failed to receive response");
-                        let _ = response.send(Err(Error::ConnectionClosed));
-                    }
-                }
-            });
-        } else {
-            debug!("Failed to send UDS message");
-            if response.send(Err(Error::SocketNotBound)).is_err() {
-                debug!("Failed to send response: Socket not bound");
-            }
-        }
-        debug!("Handling UDS message: {:?}", message);
     }
 
     /// Handle the [`Inner::active_request`] that was set in the [`Inner::run`] loop.
@@ -412,9 +317,8 @@ where
 
                 // Await for the response through the run loop
                 if send_result.is_ok() {
-                    self.await_response_deadline = Some(
-                        tokio::time::Instant::now() + crate::TCP_TIMEOUT_INITIAL_INACTIVITY,
-                    );
+                    self.await_response_deadline =
+                        Some(tokio::time::Instant::now() + crate::TCP_TIMEOUT_INITIAL_INACTIVITY);
                     self.active_request =
                         Some(ControlMessage::AwaitResponse(message.clone(), response));
                 } else if let Err(e) = send_result {
@@ -423,15 +327,12 @@ where
                     }
                 }
             }
-            ControlMessage::UDSMessage(message, response) => {
-                self.handle_uds_message(message, response).await;
-            }
             ControlMessage::AwaitResponse(message, response) => {
                 trace!("Awaiting response for message: {:?}", message);
                 // This is handled in the run loop while receiving messages
                 self.active_request = Some(ControlMessage::AwaitResponse(message, response));
             }
-            ControlMessage::SendDiagnosticMessageOnly(message, response) => {
+            ControlMessage::SendDiagnosticMessage(message, response) => {
                 if self.tcp_data_socket.is_none() {
                     if response.send(Err(Error::SocketNotBound)).is_err() {
                         debug!("Failed to send response: Socket not bound");
@@ -466,10 +367,8 @@ where
 
                 self.await_response_deadline = Some(tokio::time::Instant::now() + timeout);
                 // Use a placeholder message - we just want any diagnostic response
-                self.active_request = Some(ControlMessage::AwaitResponse(
-                    Message::default(),
-                    response,
-                ));
+                self.active_request =
+                    Some(ControlMessage::AwaitResponse(Message::default(), response));
             }
             ControlMessage::AwaitAck(response) => {
                 // This is handled in the run loop while receiving messages
@@ -485,7 +384,8 @@ where
                 match received_message.payload {
                     Payload::AliveCheckRequest => {
                         trace!("Received Alive Check Request");
-                        let _ = self.tcp_data_socket
+                        let _ = self
+                            .tcp_data_socket
                             .as_mut()
                             .unwrap()
                             .send(Message::alive_check_response(
@@ -527,7 +427,12 @@ where
                             if response.send(Ok(received_message)).is_err() {
                                 return true;
                             }
-                        } else if response.send(Err(Error::UnexpectedMessageType(received_message.header.payload_type))).is_err() {
+                        } else if response
+                            .send(Err(Error::UnexpectedMessageType(
+                                received_message.header.payload_type,
+                            )))
+                            .is_err()
+                        {
                             return true;
                         }
                     }

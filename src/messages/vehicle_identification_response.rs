@@ -30,7 +30,8 @@ impl From<FurtherActionRequired> for u8 {
         match value {
             FurtherActionRequired::NoFurtherActionRequired => 0x00,
             FurtherActionRequired::RoutingActivationRequiredToInitiateCentralSecurity => 0x10,
-            FurtherActionRequired::Reserved(value) | FurtherActionRequired::VehicleManufacturerSpecific(value) => value,
+            FurtherActionRequired::Reserved(value)
+            | FurtherActionRequired::VehicleManufacturerSpecific(value) => value,
         }
     }
 }

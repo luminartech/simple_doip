@@ -42,7 +42,9 @@ impl ConnectionState {
             Self::RegisteredRoutingActive => return true,
             // if in any other state, only routing activation and alive check messages are allowed
             _ => match payload_type {
-                PayloadType::AliveCheckRequest | PayloadType::AliveCheckResponse => return self.allows_alive_check(),
+                PayloadType::AliveCheckRequest | PayloadType::AliveCheckResponse => {
+                    return self.allows_alive_check()
+                }
                 PayloadType::RoutingActivationRequest | PayloadType::RoutingActivationResponse => {
                     return self.allows_all_messages();
                 }

@@ -136,7 +136,9 @@ impl Message {
                 protocol_version,
                 PayloadType::DiagnosticMessagePositiveAcknowledge,
                 #[allow(clippy::cast_possible_truncation)]
-                { 5 + ack.previous_message_data.len() as u32 },
+                {
+                    5 + ack.previous_message_data.len() as u32
+                },
             ),
             payload: Payload::DiagnosticMessageAck(ack),
         }

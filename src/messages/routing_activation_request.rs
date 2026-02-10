@@ -43,7 +43,8 @@ impl From<ActivationTypeCode> for u8 {
             ActivationTypeCode::Default => 0x00,
             ActivationTypeCode::RegulationRequired => 0x01,
             ActivationTypeCode::CentralSecurity => 0xE0,
-            ActivationTypeCode::Reserved(value) | ActivationTypeCode::VehicleManufacturerSpecific(value) => value,
+            ActivationTypeCode::Reserved(value)
+            | ActivationTypeCode::VehicleManufacturerSpecific(value) => value,
         }
     }
 }
