@@ -296,10 +296,10 @@ where
                         Some(tokio::time::Instant::now() + crate::TCP_TIMEOUT_INITIAL_INACTIVITY);
                     self.active_request =
                         Some(ControlMessage::AwaitResponse(message.clone(), response));
-                } else if let Err(e) = send_result {
-                    if response.send(Err(e)).is_err() {
-                        debug!("Failed to send routing activation error response");
-                    }
+                } else if let Err(e) = send_result
+                    && response.send(Err(e)).is_err()
+                {
+                    debug!("Failed to send routing activation error response");
                 }
             }
             ControlMessage::AwaitResponse(message, response) => {
@@ -461,10 +461,10 @@ where
                         }
                     }, if active_request.is_some() && await_response_deadline.is_some() => {
                         debug!("Await response deadline reached, server did not respond, which may mean you will not receive Negative Response or message was suppressed");
-                        if let Some(ControlMessage::AwaitResponse(_, response)) = active_request.take() {
-                            if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
-                                debug!("Failed to send suppressed response");
-                            }
+                        if let Some(ControlMessage::AwaitResponse(_, response)) = active_request.take()
+                            && response.send(Err(Error::ResponseTimeoutExceeded)).is_err()
+                        {
+                            debug!("Failed to send suppressed response");
                         }
                         *await_response_deadline = None;
                     }
@@ -485,10 +485,10 @@ where
                         socket_message = Some(message);
                     }
                 }
-                if let Some(msg) = socket_message {
-                    if self.process_received_message(msg).await {
-                        break;
-                    }
+                if let Some(msg) = socket_message
+                    && self.process_received_message(msg).await
+                {
+                    break;
                 }
                 self.handle_control_message().await;
             }
