@@ -52,12 +52,6 @@ pub struct ClientOptions {
     pub protocol_version: ProtocolVersion,
     /// The activation type to use when sending the routing activation request
     pub routing_activation_options: Option<RoutingActivationOptions>,
-    /// Timer for sending the UDS Tester Present messages
-    /// Not necessary for `DefaultSession`, but useful for keeping the connection alive
-    pub tester_present_interval: tokio::time::Duration,
-
-    /// Whether to suppress the UDS `TesterPresent` reply from the server
-    pub suppress_tester_present: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -229,13 +223,6 @@ where
         let Ok(msg) = msg_res else { return Ok(None) };
         debug!("Reconnected, received in-flight message: {:?}", msg);
         Ok(Some(msg))
-    }
-
-    /// Automatically send UDS tester present's to the server
-    /// This is useful for keeping the connection alive as a set and forget
-    pub fn auto_tester_present(send_tester_present: bool) {
-        trace!("Auto tester present: {}", send_tester_present);
-        todo!("Auto tester present not implemented yet");
     }
 
     /// Shut down the client, closing the connection and cleaning up resources

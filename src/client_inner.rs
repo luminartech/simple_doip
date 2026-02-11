@@ -121,13 +121,6 @@ pub(super) struct Inner<Conn> {
     /// when the outer client is dropped
     run: bool,
 
-    // tester_present_heartbeat: tokio::time::Interval,
-    last_tester_present: tokio::time::Instant,
-
-    /// Tester Present request message to be sent
-    /// This is used to send the Tester Present message periodically
-    tester_present_message: Message,
-
     /// Buffer for diagnostic responses that arrive between send and receive calls.
     /// This handles the race condition where the server responds before
     /// `receive_diagnostic_response()` is called.
@@ -147,19 +140,6 @@ where
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);
         let (update_sender, update_receiver) = mpsc::channel(16);
-        // Create a simple tester present message as bytes
-        // This is a basic UDS tester present: [0x3E, 0x80] (service 0x3E with suppress positive response)
-        let tester_present_bytes = if client_options.suppress_tester_present {
-            vec![0x3E, 0x80] // Tester Present with suppress positive response
-        } else {
-            vec![0x3E, 0x00] // Tester Present without suppress positive response
-        };
-        let tester_present_message = Message::diagnostic_message(
-            client_options.protocol_version,
-            client_options.client_logical_address,
-            client_options.server_physical_address,
-            tester_present_bytes,
-        );
         let inner = Inner::<Conn> {
             client_options,
             control_receiver,
@@ -169,8 +149,6 @@ where
             tcp_data_socket: None,
             connection_state: ConnectionState::Listen,
             run: true,
-            last_tester_present: tokio::time::Instant::now(),
-            tester_present_message,
             pending_diagnostic_response: None,
         };
         inner.run();
@@ -228,13 +206,10 @@ where
 
     /// Send a message to the socket manager
     ///
-    /// Also keeps track of the last time a message was sent to the socket for Tester Present purposes
-    ///
     /// Errors:
     /// [`Error::SocketNotBound`] - if the socket is not bound
     async fn send_to_socket(&mut self, message: Message) -> Result<(), Error> {
         if let Some(socket) = &mut self.tcp_data_socket {
-            self.last_tester_present = tokio::time::Instant::now();
             socket.send(message).await
         } else {
             Err(Error::SocketNotBound)
@@ -463,8 +438,8 @@ where
         }
     }
 
-    /// The run loop will handle sending Tester Present messages, receives messages from the socket,
-    /// and handles control messages (like UDS Requests, Routing Activation) from the outer client.
+    /// The run loop receives messages from the socket and handles control messages
+    /// (like UDS Requests, Routing Activation) from the outer client.
     fn run(mut self) {
         tokio::spawn(async move {
             debug!("Starting DOIP processing loop");
@@ -475,10 +450,7 @@ where
                     tcp_data_socket,
                     active_request,
                     await_response_deadline,
-                    client_options,
                     run,
-                    last_tester_present,
-                    tester_present_message,
                     ..
                 } = &mut self;
                 select! {
@@ -496,21 +468,6 @@ where
                         }
                         *await_response_deadline = None;
                     }
-                    // Handle the UDS TesterPresent heartbeat
-                    () = tokio::time::sleep_until(*last_tester_present + client_options.tester_present_interval), if *run => {
-                        let Some(socket_manager) = tcp_data_socket.as_mut() else {
-                            debug!("No socket manager available, skipping tester present message");
-                            continue;
-                        };
-                        if last_tester_present.elapsed() < client_options.tester_present_interval {
-                            continue;
-                        }
-                        if let Err(e) = socket_manager.send(tester_present_message.clone()).await {
-                            debug!("Failed to send tester present message: {:?}", e);
-                        } else {
-                            *last_tester_present = tokio::time::Instant::now();
-                        }
-                    }
                     // Receive a control message
                     ctrl_opt = control_receiver.recv() => {
                         if ctrl_opt.is_none() {
@@ -524,7 +481,6 @@ where
                     }
                     // Receive a message from the socket
                     message = Inner::receive_socket(tcp_data_socket) => {
-                        *last_tester_present = tokio::time::Instant::now();
                         trace!("B: STREAM INCOMING from socket: {message:?}");
                         socket_message = Some(message);
                     }
