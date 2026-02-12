@@ -432,8 +432,25 @@ where
                 false
             }
             Err(e) => {
-                debug!("Error receiving message from socket: {:?}", e);
-                true
+                debug!("Socket error, cleaning up connection: {:?}", e);
+                // Clean up the broken socket but keep the inner task running
+                // so that reconnection via BindSocket is still possible.
+                if let Some(socket) = self.tcp_data_socket.take() {
+                    socket.shut_down().await;
+                }
+                self.await_response_deadline = None;
+                self.connection_state = ConnectionState::Listen;
+                // Notify any active request of the connection error
+                match self.active_request.take() {
+                    Some(ControlMessage::AwaitResponse(_, response)) => {
+                        let _ = response.send(Err(e));
+                    }
+                    Some(ControlMessage::AwaitAck(response)) => {
+                        let _ = response.send(Err(e));
+                    }
+                    _ => {}
+                }
+                false
             }
         }
     }
