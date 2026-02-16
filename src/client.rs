@@ -118,7 +118,9 @@ where
         control_sender.send(message).await.map_err(|_| {
             Error::BindFailed("Could not send BindSocket message to inner client".into())
         })?;
-        let port = response.await.map_err(|_| Error::ConnectionClosed)?;
+        let port = response
+            .await
+            .map_err(|_| Error::BindFailed("Connection task terminated unexpectedly".into()))?;
 
         // Automatically send a routing activation request if the client options specify it
         'routing: {
@@ -186,8 +188,8 @@ where
                             info!("  OEM Specific: {:02X?}", oem);
                         }
                     }
-                    Err(_) => {
-                        return Err(Error::ConnectionClosed);
+                    Err(e) => {
+                        return Err(e);
                     }
                 }
             }

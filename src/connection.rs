@@ -109,7 +109,7 @@ impl Connector for ConnectorSocket {
             }
             Ok(Err(e)) => {
                 error!("Failed to connect to socket({}): {}", gateway_address, e);
-                Err(crate::Error::ConnectionClosed)
+                Err(crate::Error::NetworkError(e))
             }
             Err(e) => {
                 error!("Connection timed out");
