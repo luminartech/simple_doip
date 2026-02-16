@@ -1,10 +1,10 @@
 use crate::{
+    Error, LogicalAddress, TCP_TIMEOUT_INITIAL_INACTIVITY,
     client_inner::{ControlMessage, Inner},
     connection,
     messages::{
         ActivationTypeCode, Message, MessageError, ProtocolVersion, RoutingActivationResponse,
     },
-    Error, LogicalAddress, TCP_TIMEOUT_INITIAL_INACTIVITY,
 };
 use std::{
     net::{IpAddr, SocketAddr},
@@ -142,11 +142,15 @@ where
                 let res = tokio::time::timeout(TCP_TIMEOUT_INITIAL_INACTIVITY, response).await;
                 // Elapsed error handling
                 let Ok(res) = res else {
-                    tracing::warn!("Timeout waiting for routing activation response. Server may not support routing activation.");
+                    tracing::warn!(
+                        "Timeout waiting for routing activation response. Server may not support routing activation."
+                    );
                     break 'routing;
                 };
                 let Ok(res) = res else {
-                    tracing::warn!("Routing activation response channel closed. Server may not support routing activation.");
+                    tracing::warn!(
+                        "Routing activation response channel closed. Server may not support routing activation."
+                    );
                     break 'routing;
                 };
                 // if the timeout specifically and keep working, the routing activation may not be supported

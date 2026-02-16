@@ -1,19 +1,19 @@
 use crate::{
+    Error, TCP_PORT,
     logical_address::LogicalAddress,
     message_codec::MessageCodec,
     messages::{
         DiagnosticMessage, DiagnosticPowerModeCode, FurtherActionRequired, Message, Payload,
         ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse, VinGidSyncStatus,
     },
-    Error, TCP_PORT,
 };
 use async_trait::async_trait;
 use futures::{SinkExt, StreamExt};
 use std::{
     net::{IpAddr, SocketAddr},
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 use tokio::net::{TcpListener, TcpStream};

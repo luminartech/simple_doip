@@ -1,9 +1,9 @@
 use simple_doip::{
+    TCP_PORT, TESTER_LOGICAL_ADDRESS,
     client::{Client, ClientOptions},
     connection::ConnectorSocket,
     logical_address::LogicalAddress,
     messages::{ActivationTypeCode, ProtocolVersion},
-    TCP_PORT, TESTER_LOGICAL_ADDRESS,
 };
 use std::net::{IpAddr, SocketAddr};
 use tracing::info;

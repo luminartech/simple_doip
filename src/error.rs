@@ -1,6 +1,6 @@
 use crate::{
-    messages::{DiagnosticAckCode, MessageError, NackCode, PayloadType},
     LogicalAddress,
+    messages::{DiagnosticAckCode, MessageError, NackCode, PayloadType},
 };
 use thiserror::Error;
 

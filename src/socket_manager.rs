@@ -4,11 +4,11 @@
 //! It is responsible for binding the socket, sending and receiving messages,
 //! and shutting down the socket when it is no longer needed.
 use crate::{
+    Error, TCP_TIMEOUT_GENERAL_INACTIVITY,
     client::ClientOptions,
     connection,
     message_codec::MessageCodec,
     messages::{Message, MessageError},
-    Error, TCP_TIMEOUT_GENERAL_INACTIVITY,
 };
 use futures::{SinkExt, StreamExt};
 use std::{net::SocketAddr, time::Duration};

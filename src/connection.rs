@@ -55,8 +55,8 @@
 //! ```
 use std::{fmt::Debug, net::SocketAddr, time::Duration};
 use tokio::net::{
-    tcp::{OwnedReadHalf, OwnedWriteHalf},
     TcpSocket,
+    tcp::{OwnedReadHalf, OwnedWriteHalf},
 };
 use tracing::{debug, error, info, trace};
 

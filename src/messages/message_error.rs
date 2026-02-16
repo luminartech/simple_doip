@@ -8,7 +8,9 @@ pub enum MessageError {
     Nack(NackCode),
     #[error("Version Inverse Incorrect, Expected: {expected:X}, got: {value:X}")]
     VersionInverseIncorrect { expected: u8, value: u8 },
-    #[error("Payload length in header does match expected payload type length: {value:?}, expected: {expected:?}")]
+    #[error(
+        "Payload length in header does match expected payload type length: {value:?}, expected: {expected:?}"
+    )]
     PayloadLengthTooShort { value: usize, expected: u32 },
     #[error("Unexpected payload type found: {0:?}")]
     UnexpectedPayloadType(PayloadType),

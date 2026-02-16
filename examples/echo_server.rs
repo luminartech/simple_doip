@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use simple_doip::{
+    Error,
     logical_address::LogicalAddress,
     messages::{
         DiagnosticMessage, Message, RoutingActivationRequest, RoutingActivationResponseCode,
     },
     server::{Server, ServerConnectionHandler},
-    Error,
 };
 use tracing::{debug, info};
 

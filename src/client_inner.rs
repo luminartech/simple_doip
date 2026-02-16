@@ -1,11 +1,11 @@
 //! User → Client → control_sender → Inner → SocketManager.sender → TCP Socket → Server
 //! User ← Client ← update_receiver ← Inner ← SocketManager.receiver ← TCP Socket ← Server
 use crate::{
+    Error,
     client::ClientOptions,
     connection_state::ConnectionState,
     messages::{Message, MessageError, Payload},
     socket_manager::SocketManager,
-    Error,
 };
 use std::{future, net::SocketAddr};
 use tokio::{
