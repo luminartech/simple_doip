@@ -37,7 +37,7 @@
 //!        tcp_socket.set_reuseaddr(true)?;
 //!        tcp_socket.set_recv_buffer_size(1024 * 64)?;
 //!        tcp_socket.set_send_buffer_size(1024 * 64)?;
-//!        tcp_socket.set_nodelay(false)?;
+//!        tcp_socket.set_nodelay(true)?;
 //!        let tcp_stream = tokio::time::timeout(Duration::from_millis(5100), tcp_socket.connect(gateway_address)).await.unwrap().unwrap();
 //!        Ok(tcp_stream.into_split())
 //!     }
@@ -95,7 +95,7 @@ impl Connector for ConnectorSocket {
         tcp_socket.set_reuseaddr(true)?;
         tcp_socket.set_recv_buffer_size(BUFFER_SIZE)?;
         tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_nodelay(false)?;
+        tcp_socket.set_nodelay(true)?;
 
         match tokio::time::timeout(
             Duration::from_millis(5100),
@@ -139,7 +139,7 @@ impl Connector for ListenerSocket {
         tcp_socket.set_reuseaddr(true)?;
         tcp_socket.set_recv_buffer_size(BUFFER_SIZE)?;
         tcp_socket.set_send_buffer_size(BUFFER_SIZE)?;
-        tcp_socket.set_nodelay(false)?;
+        tcp_socket.set_nodelay(true)?;
 
         tcp_socket.bind(gateway_address).map_err(|e| {
             if e.kind() == std::io::ErrorKind::AddrNotAvailable {
