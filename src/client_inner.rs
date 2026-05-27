@@ -125,6 +125,18 @@ type ControlSender = mpsc::Sender<ControlMessage>;
 /// Receiver for the update messages from the socket
 type UpdateReceiver<E> = mpsc::Receiver<Result<OwnedMessage, E>>;
 
+/// DoIP control frames the run loop answers in-band and must NOT use to
+/// resolve a pending diagnostic-response wait. An `AliveCheckRequest`
+/// from the entity is answered with an `AliveCheckResponse` in
+/// [`Inner::process_received_message`] and then swallowed so the loop
+/// keeps waiting for the real `DiagnosticMessage`. Surfacing it instead
+/// resolved the pending receive with the control frame, which the UDS
+/// layer (`uds_on_ip`) then rejected as
+/// "Expected DiagnosticMessage, got AliveCheckRequest".
+fn is_transparently_handled_control(payload: &OwnedPayload) -> bool {
+    matches!(payload, OwnedPayload::AliveCheckRequest)
+}
+
 impl<Conn> Inner<Conn>
 where
     Conn: crate::connection::Connector + 'static + Send + Sync,
@@ -383,7 +395,7 @@ where
             Ok(received_message) => {
                 match received_message.payload {
                     OwnedPayload::AliveCheckRequest => {
-                        trace!("Received Alive Check Request");
+                        trace!("Received Alive Check Request, answering in-band");
                         let _ = self
                             .tcp_data_socket
                             .as_mut()
@@ -432,6 +444,21 @@ where
                         // should surface as when making that change.
                     }
                     _ => trace!("Received message: {received_message:?}"),
+                }
+                // An in-band control frame (e.g. AliveCheckRequest, answered
+                // in the match above) must not resolve a pending response
+                // wait — keep the active request and keep listening for the
+                // real diagnostic response. Without this guard the frame
+                // reaches `take_await_response` below and fails the pending
+                // receive with `UnexpectedMessageType`, which the UDS layer
+                // (`uds_on_ip`) reports as "Expected DiagnosticMessage, got
+                // AliveCheckRequest".
+                if is_transparently_handled_control(&received_message.payload) {
+                    trace!(
+                        "Swallowing in-band control frame, not resolving pending receive: {:?}",
+                        received_message.header.payload_type
+                    );
+                    return false;
                 }
                 if let Some((request_message, response)) = self.take_await_response() {
                     // Note: unlike the `take_await_ack` path above, this one deliberately
@@ -571,5 +598,36 @@ where
                 self.handle_control_message().await;
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_transparently_handled_control;
+    use crate::messages::OwnedPayload;
+
+    #[test]
+    fn alive_check_request_is_handled_in_band_not_surfaced() {
+        // Regression: an AliveCheckRequest arriving while awaiting a
+        // diagnostic response must be answered + swallowed (keep
+        // waiting), not resolve the pending receive. Surfacing it made
+        // uds_on_ip fail with "Expected DiagnosticMessage, got
+        // AliveCheckRequest".
+        assert!(is_transparently_handled_control(
+            &OwnedPayload::AliveCheckRequest
+        ));
+    }
+
+    #[test]
+    fn substantive_frames_are_not_swallowed() {
+        assert!(!is_transparently_handled_control(
+            &OwnedPayload::DiagnosticMessageNack
+        ));
+        assert!(!is_transparently_handled_control(
+            &OwnedPayload::EntityStatusRequest
+        ));
+        assert!(!is_transparently_handled_control(
+            &OwnedPayload::VehicleIdentificationRequest
+        ));
     }
 }
