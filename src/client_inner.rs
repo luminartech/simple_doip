@@ -35,13 +35,13 @@ pub(super) enum ControlMessage {
         oneshot::Sender<Result<Message, Error>>,
     ),
 
-    /// Send diagnostic message and wait for DoIP ACK only (not full response)
+    /// Send diagnostic message and wait for `DoIP` ACK only (not full response)
     SendDiagnosticMessage(Message, oneshot::Sender<Result<(), Error>>),
 
     /// Wait for next diagnostic response (no send)
     ReceiveDiagnosticResponse(std::time::Duration, oneshot::Sender<Result<Message, Error>>),
 
-    /// Internal: waiting for ACK only (after SendDiagnosticMessage)
+    /// Internal: waiting for ACK only (after `SendDiagnosticMessage`)
     AwaitAck(oneshot::Sender<Result<(), Error>>),
 }
 
@@ -135,7 +135,7 @@ impl<Conn> Inner<Conn>
 where
     Conn: crate::connection::Connector + 'static + Send + Sync,
 {
-    /// Spawns the inner client to run in the background and returns the send and recieve channels
+    /// Spawns the inner client to run in the background and returns the send and receive channels
     pub fn spawn(client_options: ClientOptions) -> (ControlSender, UpdateReceiver<MessageError>) {
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);

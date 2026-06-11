@@ -44,3 +44,30 @@ impl DiagnosticMessage {
         Ok(4 + self.user_data.len())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::LogicalAddress;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_diagnostic_message_roundtrip(
+            src in any::<u16>(),
+            dst in any::<u16>(),
+            data in proptest::collection::vec(any::<u8>(), 0..256),
+        ) {
+            let msg = DiagnosticMessage {
+                source_address: LogicalAddress(src),
+                target_address: LogicalAddress(dst),
+                user_data: data,
+            };
+            let mut buf = Vec::new();
+            msg.write(&mut buf).unwrap();
+
+            let parsed = DiagnosticMessage::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(msg, parsed);
+        }
+    }
+}

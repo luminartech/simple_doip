@@ -56,10 +56,6 @@ impl Payload {
                 Self::RoutingActivationResponse(RoutingActivationResponse::read(payload_bytes)?)
             }
             PayloadType::AliveCheckRequest => Self::AliveCheckRequest,
-            PayloadType::DoIPEntityStatusRequest => todo!(),
-            PayloadType::DoIPEntityStatusResponse => todo!(),
-            PayloadType::DiagnosticPowerModeInfoRequest => todo!(),
-            PayloadType::DiagnosticPowerModeInfoResponse => todo!(),
             PayloadType::DiagnosticMessage => {
                 Self::DiagnosticMessage(DiagnosticMessage::read(payload_bytes)?)
             }
@@ -67,8 +63,14 @@ impl Payload {
                 Self::DiagnosticMessageAck(DiagnosticMessageAck::read(payload_bytes)?)
             }
             PayloadType::DiagnosticMessageNegativeAcknowledge => Self::DiagnosticMessageNack,
-            PayloadType::Reserved(_) => todo!(),
-            PayloadType::ReservedVehicleManufacturer(_) => todo!(),
+            PayloadType::DoIPEntityStatusRequest
+            | PayloadType::DoIPEntityStatusResponse
+            | PayloadType::DiagnosticPowerModeInfoRequest
+            | PayloadType::DiagnosticPowerModeInfoResponse
+            | PayloadType::Reserved(_)
+            | PayloadType::ReservedVehicleManufacturer(_) => {
+                return Err(MessageError::UnexpectedPayloadType(payload_type));
+            }
         })
     }
 
@@ -82,6 +84,7 @@ impl Payload {
             Payload::AliveCheckRequest
             | Payload::DiagnosticMessageNack
             | Payload::EntityStatusRequest
+            | Payload::VehicleAnnouncement
             | Payload::VehicleIdentificationRequest => 0,
             Payload::AliveCheckResponse(alive_check_response) => {
                 alive_check_response.write(writer)?
@@ -105,7 +108,6 @@ impl Payload {
             Payload::VehicleIdentificationResponse(vehicle_identification_response) => {
                 vehicle_identification_response.write(writer)?
             }
-            Payload::VehicleAnnouncement => todo!(),
         })
     }
 }

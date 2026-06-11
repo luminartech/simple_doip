@@ -1,0 +1,5 @@
+manual:
+  publish_path: "manual"
+
+release:
+    - "LTS/*"

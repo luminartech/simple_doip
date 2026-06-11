@@ -81,3 +81,28 @@ impl NackCode {
         Ok(1)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_nack_code_roundtrip(byte in any::<u8>()) {
+            let code = NackCode::from(byte);
+            let back: u8 = code.into();
+            prop_assert_eq!(byte, back);
+        }
+
+        #[test]
+        fn prop_nack_serde_roundtrip(byte in any::<u8>()) {
+            let code = NackCode::from(byte);
+            let mut buf = Vec::new();
+            code.write(&mut buf).unwrap();
+
+            let parsed = NackCode::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(code, parsed);
+        }
+    }
+}

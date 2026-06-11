@@ -1,0 +1,67 @@
+[default]
+extend-ignore-re = [
+    "(?i)0x[A-F0-9']+(UL{0,2})?", # Ignore hex values that can be false positives, including digit separators and a ULL-type suffix
+    "BITCON", # This is a register, not misspelling bitcoin
+    "AFE[0-9]", "AFE ", "AFE_", # Ignore AFEC register references
+    "serdes", "SerDes", # Ignore SerDes
+    "inttab_tc[0-9]_[A-F0-9]{3}", # Ignore linker map hex values
+    "tto_[A-z]*",
+    "LSO", # Ignore Laser Safety Office acronym
+    "FREQuency", # Ignore command example,
+    "[oO][tT]0[A-Za-z_]*", # Ignore variables starting with ot0
+    "PN", "Pn", # PN is partial network
+    "mak", "MAK", # ,.mak used as makefile extension
+    "Accelaration", "Conveniance", "ACTIV","TOOS",  #datatype enumeration from customer database
+    "Noe", #is part of CANoe
+    "Authentified", #variable name
+    "Synopsys", # Vendor name
+    "IFX_STM_RESOULTION", #iLLD drivers expect this to be misspelled
+    "LASer", # Ignore command
+    "ONly", # Ignore command
+    "STatus", # Ignore command
+    "TYP",
+    "Fillin",
+    "Ccontrol",
+    "TTyp",
+    "BRE",
+	"ComMConf_ComMChannel_.*", # Autosar generated parameter
+	"EthIfConf_EthIfController_BA_Halo_2EEI", # Autosar generated parameter
+	"TcpIpConf_TcpIpLocalAddr_.*", # Autosar generated parameters
+    "pdelay", "domianNumber", "wakeup", "SOMEIPXF_E_UNKNOWN_SER",  #autosar related terms / fields
+    "typ",
+    "OEN",
+    "afe",
+    "__GETTIN",
+    "\\.inttab_tc[0-9]_0ba", # Specific linker script section names
+    "0ba",  # Hexadecimal value in linker script section names
+    "foto_center",  #part of vector generated code
+    "dout", # Common RTL language
+    "gthe", # FPGA Component
+    "GTHE", # FPGA Component
+    "synopsys", # FPGA Tool Vendor
+    "SYNOPSYS", # FPGA Tool Vendor
+    "fiter", # Function in HLS
+    "alse", # Function in HLS
+    "ot", # OverTemp acronym
+    "inouts", # FPGA Term
+    "ser", # FPGA Term
+    "interm", # Abridged term
+    "eto", # Acronym
+    "arange", # np.arange
+    "aranges", # a-ranges?
+    "bre",
+    "MC_ACE_A3G_HSI_SCR",
+    "MIS",
+    "IFX_SCR_SCU_MODPISEL1_MIS_(LEN|MSK|OFF)",
+    "SCREN", # Register bitfield name
+    "SCREN_P", # Register bitfield name with _P suffix
+    "gir1\\.2-[a-zA-Z0-9\\-]+", # Ignore GObject Introspection library names (gir1.2-*)
+    "PER_SPACE_NO_ALOC1", # Linker script region name (intentional abbreviation)
+    "NO_ALOC1", # Abbreviated token in linker script
+    "EXCPT", # Macro abbreviation for exception flags
+    "shft", # Abbreviated form of shift used in RTL signal names
+    # Ignore blocks between `# spellchecker:off` and `# spellchecker:on`
+    "(?s)(#|//)\\s*spellchecker:off.*?\\n\\s*(#|//)\\s*spellchecker:on",
+    "FoV", "fov", # field of view
+    "NDArray", # numpy.typing.NDArray
+]

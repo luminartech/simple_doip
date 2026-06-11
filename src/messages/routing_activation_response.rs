@@ -140,3 +140,41 @@ impl RoutingActivationResponse {
         Ok(9 + self.oem_specific.map_or(0, |_| 4))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::LogicalAddress;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_routing_response_code_roundtrip(byte in any::<u8>()) {
+            let code = RoutingActivationResponseCode::from(byte);
+            let back: u8 = code.into();
+            prop_assert_eq!(byte, back);
+        }
+
+        #[test]
+        fn prop_routing_activation_response_roundtrip(
+            tester in any::<u16>(),
+            entity in any::<u16>(),
+            code_byte in any::<u8>(),
+            reserved_oem in any::<[u8; 4]>(),
+            oem_specific in proptest::option::of(any::<[u8; 4]>()),
+        ) {
+            let resp = RoutingActivationResponse {
+                logical_address_tester: LogicalAddress(tester),
+                logical_address_of_doip_entity: LogicalAddress(entity),
+                routing_activation_response_code: RoutingActivationResponseCode::from(code_byte),
+                reserved_oem,
+                oem_specific,
+            };
+            let mut buf = Vec::new();
+            resp.write(&mut buf).unwrap();
+
+            let parsed = RoutingActivationResponse::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(resp, parsed);
+        }
+    }
+}

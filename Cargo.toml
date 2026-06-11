@@ -2,6 +2,7 @@
 name = "simple_doip"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 async-trait = "0.1"
@@ -25,6 +26,8 @@ tracing-subscriber = { version = "0.3", features = ["fmt"] }
 
 [dev-dependencies]
 anyhow = "1"
+proptest = "1"
+test-strategy = "0.4"
 
 [features]
 default = ["client", "server"]

@@ -1,0 +1,45 @@
+[package]
+name = "simple_doip-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+simple_doip = { path = "..", features = ["client", "server"] }
+bytes = "1"
+tokio-util = { version = "0.7", features = ["codec"] }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_message_parse"
+path = "fuzz_targets/fuzz_message_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_payload_parse"
+path = "fuzz_targets/fuzz_payload_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_codec_decode"
+path = "fuzz_targets/fuzz_codec_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_roundtrip"
+path = "fuzz_targets/fuzz_roundtrip.rs"
+test = false
+doc = false
+bench = false

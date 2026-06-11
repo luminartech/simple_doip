@@ -1,0 +1,99 @@
+#
+pull_request_rules:
+  - name: Automatic semi-linear merge on label, approval and CI success (LTS)
+    conditions:
+      - -draft
+      - label=automerge
+      - "#review-requested=0"
+      - "#approved-reviews-by>=1"
+      - "#changes-requested-reviews-by=0"
+      - base~=^LTS/
+    actions:
+      queue:
+        name: LTS Branch Merge
+
+  - name: Automatic semi-linear merge on label, approval and CI success
+    conditions:
+      - -draft
+      - label=automerge
+      - "#review-requested=0"
+      - "#approved-reviews-by>=1"
+      - "#changes-requested-reviews-by=0"
+    actions:
+      queue:
+        name: default
+
+  - name: 🔀 Linear History Status 🔀
+    conditions:
+      - linear-history
+    actions:
+      post_check:
+        title: |
+          {% if check_succeed %}
+          Branch has linear history
+          {% else %}
+          Branch does not have linear history
+          {% endif %}
+        summary: |
+          {% if not check_succeed %}
+          Please rebase your branch, removing any merge commits -
+          https://luminartech.atlassian.net/wiki/spaces/EMBSYS/pages/1820787964/Mergify+Integration
+          https://www.bitsnbites.eu/a-tidy-linear-git-history/
+          {% endif %}
+
+merge_queue:
+  max_parallel_checks: 1
+  queued_label: null
+
+queue_rules:
+  - name: default
+    queue_conditions:
+      - linear-history
+      - base=master
+
+  - name: LTS Branch Merge
+    queue_conditions:
+      - linear-history
+      - base~=^LTS/
+
+priority_rules:
+  - name: hotfix (high priority)
+    conditions:
+      - label=hotfix
+    priority: high
+  - name: default (medium priority)
+    conditions: []
+    priority: medium
+
+defaults:
+  actions:
+    rebase:
+    backport:
+      bot_account: "lumci"
+      labels:
+        - automerge
+      body: |
+        This is an automatic backport of pull request #{{number}} done by [Mergify](https://mergify.com).
+        {{cherry_pick_error}}
+        {{ body }}
+
+  queue_rule:
+    merge_method: merge
+    update_method: rebase
+    update_bot_account: "lumci"
+    autosquash: true
+    queue_branch_prefix: mergify/merge-queue/
+    batch_size: 1
+    commit_message_template: |
+      {{ title | trim }} (PR #{{ number }})
+      {% set commit_msg = (
+            body | get_section("## Commit Message", "") or
+            body | get_section("# Commit Message", "")  or
+            body | get_section("## Commit Message Details", "") or
+            body | get_section("# Commit Message Details", "")
+        ) | trim %}
+      {%- if commit_msg %}
+
+      {{ commit_msg }}
+      {%- endif %}
+#

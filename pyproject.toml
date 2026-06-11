@@ -1,0 +1,82 @@
+
+[project]
+name = "simple_doip"
+version = "0.1.0"
+description = "This crate provides an ISO 13400-2 compliant DoIP implementation."
+requires-python = ">=3.12,<4"
+
+[dependency-groups]
+dev = [
+    "gcovr>=8.3",
+    "pytest-cov>=7.1.0",
+]
+the_way = [
+    "the-way",
+]
+
+[tool.uv.workspace]
+
+[tool.uv.sources]
+the-way = { git = "git+ssh://git@github.com/luminartech/the-way", tag = "v4.1.1" }
+
+[tool.setuptools]
+packages = []
+
+[tool.ruff]
+exclude = [
+  "tools/verify_vccm_placement.py",
+]
+line-length = 120
+# major + minor -> py311, py312, etc.
+target-version = "py312"
+
+
+[tool.ruff.lint]
+
+select = ["ALL"]
+ignore = [
+  "C901",
+  "D", # Documentation linting
+  "COM812", # Must be disabled to use formatter
+  "ISC001", # Must be disabled to use formatter
+  # E501 enforces line length and is more annoying than useful in most cases.
+  "E501",
+  "FIX002",
+  # INP001 flags implicit namespace packages, but its scanning method is flawed.
+  "INP001",
+  # PLR0913 catches when too many arguments are passed to a function and tries to keep it under 5,
+  # For some of our tests, this is simply not useful and quite annoying.
+  "PLR0913",
+  # PT006 checks for types within pytest parameterization, but this is not useful for us and
+  # it would be caught by the type checker.
+  "PT006",
+  # PT013 checks for incorrect pytest imports (Aliasing it, for example), however,
+  # we rarely if ever do this, and it often false-positives.
+  "PT013",
+  "TD002",
+  "TD003",
+  # S101 catches calls to assert, but we use assert statements in our tests. It is not useful to us,
+  # and frankly more than a little annoying.
+  "S101",
+  # S310 is often impractical to satisfy and regularly false-positives even constants.
+  "S310",
+  # S314 disallows using xml to parse data due to xml attacks, this is often overkill and we need to
+  #   use XML as defusedXML doesn't allow writing.
+  "S314",
+  # S603 requires us to validate a process before executing it,
+  # This check is often impossible to satisfy in a way that the linter can understand.
+  "S603",
+  # S607 requires us to use absolute paths when running subprocess commands.
+  # This is often impractical to satisfy and not worthwhile to do.
+  "S607",
+
+  # Complexity checks
+  "PLR0912",
+  "PLR0915",
+  # Allow typing generics for Python <3.9 compatibility
+  "PYI021",
+]
+
+# Address mypy colliding tests packages
+[tool.mypy]
+explicit_package_bases = true

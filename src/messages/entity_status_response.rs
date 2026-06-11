@@ -72,3 +72,38 @@ impl EntityStatusResponse {
         Ok(7)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_entity_node_type_roundtrip(byte in any::<u8>()) {
+            let code = EntityStatusNodeType::from(byte);
+            let back: u8 = code.into();
+            prop_assert_eq!(byte, back);
+        }
+
+        #[test]
+        fn prop_entity_status_response_roundtrip(
+            node_byte in any::<u8>(),
+            max_tcp in any::<u8>(),
+            open_tcp in any::<u8>(),
+            max_data in any::<u32>(),
+        ) {
+            let resp = EntityStatusResponse {
+                node_type: EntityStatusNodeType::from(node_byte),
+                max_concurrent_tcp_sockets: max_tcp,
+                open_tcp_sockets: open_tcp,
+                max_data_size: max_data,
+            };
+            let mut buf = Vec::new();
+            resp.write(&mut buf).unwrap();
+
+            let parsed = EntityStatusResponse::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(resp, parsed);
+        }
+    }
+}

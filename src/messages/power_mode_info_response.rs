@@ -53,3 +53,28 @@ impl DiagnosticPowerModeCode {
         Ok(1)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_power_mode_code_roundtrip(byte in any::<u8>()) {
+            let code = DiagnosticPowerModeCode::from(byte);
+            let back: u8 = code.into();
+            prop_assert_eq!(byte, back);
+        }
+
+        #[test]
+        fn prop_power_mode_code_serde_roundtrip(byte in any::<u8>()) {
+            let code = DiagnosticPowerModeCode::from(byte);
+            let mut buf = Vec::new();
+            code.write(&mut buf).unwrap();
+
+            let parsed = DiagnosticPowerModeCode::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(code, parsed);
+        }
+    }
+}

@@ -266,3 +266,40 @@ impl Debug for Header {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_protocol_version_roundtrip(byte in any::<u8>()) {
+            let version = ProtocolVersion::from(byte);
+            let back: u8 = version.into();
+            prop_assert_eq!(byte, back);
+        }
+
+        #[test]
+        fn prop_payload_type_roundtrip(value in any::<u16>()) {
+            let pt = PayloadType::from(value);
+            let back: u16 = pt.into();
+            prop_assert_eq!(value, back);
+        }
+
+        #[test]
+        fn prop_header_write_read_roundtrip(
+            version in any::<u8>().prop_map(ProtocolVersion::from),
+            pt in any::<u16>().prop_map(PayloadType::from),
+            length in any::<u32>(),
+        ) {
+            let header = Header::new(version, pt, length);
+            let mut buf = Vec::new();
+            header.write(&mut buf).unwrap();
+            prop_assert_eq!(buf.len(), 8);
+
+            let parsed = Header::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(header, parsed);
+        }
+    }
+}

@@ -1,0 +1,126 @@
+default_language_version:
+  python: python3.12
+default_stages: [pre-commit]
+default_install_hook_types: [pre-commit, prepare-commit-msg]
+repos:
+  - repo: meta
+    hooks:
+      # - id: check-hooks-apply
+      - id: check-useless-excludes
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+    - id: check-ast
+    - id: trailing-whitespace
+      exclude_types:
+        - markdown
+      exclude: .github/workflows/main.yml
+    - id: end-of-file-fixer
+      exclude_types:
+        - rust
+    - id: check-docstring-first
+    - id: check-yaml
+      args: [--allow-multiple-documents]
+    - id: check-json
+      exclude: .vscode/launch.json
+    - id: debug-statements
+    - id: requirements-txt-fixer
+    - id: check-added-large-files
+      args: [--maxkb=1024]
+      exclude_types:
+          - png
+          - jpeg
+          - pdf
+    - id: check-shebang-scripts-are-executable
+      exclude_types:
+        - batch
+        - rust
+    - id: check-executables-have-shebangs
+      exclude_types:
+        - batch
+    - id: check-merge-conflict
+    - id: mixed-line-ending
+      args: [--fix=lf]
+      exclude_types:
+        - powershell
+        - batch
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.22
+    hooks:
+    - id: mdformat
+      language_version: python3
+      additional_dependencies:
+          - linkify-it-py==1.0.3
+          - mdformat-gfm==0.3.5
+          - mdformat-myst==0.1.5
+          - mdformat-config==0.1.3
+          - mdformat-toc==0.3.0
+  - repo: https://github.com/asottile/add-trailing-comma
+    rev: v4.0.0
+    hooks:
+    - id: add-trailing-comma
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 'v0.14.4'
+    hooks:
+      - id: ruff
+        args: [ --fix, --exit-non-zero-on-fix ]
+      - id: ruff-format
+        args: [ "--line-length=120" ]
+  - repo: https://github.com/AnswerDotAI/nbdev
+    rev: 3.0.14
+    hooks:
+    - id: nbdev-clean
+      additional_dependencies: [execnb>=0.1.12]
+  - repo: https://github.com/nbQA-dev/nbQA
+    rev: 1.9.1
+    hooks:
+    - id: nbqa-ruff
+      additional_dependencies: [ruff==0.11.2]
+      args: [--fix, --exit-non-zero-on-fix, --ignore=T201, --ignore=E402, --ignore=B018]  # Allow print() in notebooks
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: forbid-binary
+        always_run: true
+        exclude_types:
+          - png
+          - jpeg
+          - pdf
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.18.2
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - types-requests==2.31.0.10
+          - pytest==7.1.2
+          - types-PyYAML==6.0.12.20250402
+          - types-python-dateutil==2.9.0.20240316
+          - types-docker==7.1.0.20241229
+          - types-docutils==0.22.2.20251006
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.39.1
+    hooks:
+      - id: typos
+        args: ["--config", ".typos.toml"]
+  - repo: https://github.com/sphinx-contrib/sphinx-lint
+    rev: v1.0.1
+    hooks:
+      - id: sphinx-lint
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.29.0
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.10.8
+    hooks:
+      - id: uv-lock
+  - repo: https://github.com/FeryET/pre-commit-rust
+    rev: v1.2.1
+    hooks:
+      - id: fmt
+      - id: cargo-check
