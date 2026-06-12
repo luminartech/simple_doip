@@ -237,7 +237,7 @@ jobs:
           fetch-depth: 0
       - uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
-          baseline-rev: main
+          package: simple_doip
 
   # =================================================================================================
   # Security & Supply Chain
