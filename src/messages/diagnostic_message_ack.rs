@@ -149,6 +149,7 @@ impl fmt::Debug for DiagnosticMessageAck {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_print() {
@@ -159,5 +160,34 @@ mod tests {
             previous_message_data: vec![0x01, 0x02, 0x03],
         };
         println!("{ack:?}");
+    }
+
+    proptest! {
+        #[test]
+        fn prop_diagnostic_ack_code_roundtrip(byte in any::<u8>()) {
+            let code = DiagnosticAckCode::from(byte);
+            let back: u8 = code.into();
+            prop_assert_eq!(byte, back);
+        }
+
+        #[test]
+        fn prop_diagnostic_message_ack_roundtrip(
+            src in any::<u16>(),
+            dst in any::<u16>(),
+            ack_byte in any::<u8>(),
+            prev_data in proptest::collection::vec(any::<u8>(), 0..128),
+        ) {
+            let ack = DiagnosticMessageAck {
+                source_address: LogicalAddress(src),
+                target_address: LogicalAddress(dst),
+                ack_code: DiagnosticAckCode::from(ack_byte),
+                previous_message_data: prev_data,
+            };
+            let mut buf = Vec::new();
+            ack.write(&mut buf).unwrap();
+
+            let parsed = DiagnosticMessageAck::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(ack, parsed);
+        }
     }
 }

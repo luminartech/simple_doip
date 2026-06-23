@@ -140,3 +140,76 @@ impl VehicleIdentificationResponse {
         Ok(33)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::LogicalAddress;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_further_action_roundtrip(byte in any::<u8>()) {
+            let code = FurtherActionRequired::from(byte);
+            let back: u8 = code.into();
+            prop_assert_eq!(byte, back);
+        }
+
+        #[test]
+        fn prop_vin_gid_sync_roundtrip(byte in any::<u8>()) {
+            let code = VinGidSyncStatus::from(byte);
+            let back: u8 = code.into();
+            prop_assert_eq!(byte, back);
+        }
+
+        #[test]
+        fn prop_vehicle_identification_response_roundtrip(
+            vin in any::<[u8; 17]>(),
+            addr in any::<u16>(),
+            entity_id in any::<[u8; 6]>(),
+            group_id_bytes in any::<[u8; 6]>().prop_filter(
+                "avoid all-zeros and all-0xFF which map to None",
+                |g| *g != [0x00; 6] && *g != [0xFF; 6]
+            ),
+            further_byte in any::<u8>(),
+            sync_byte in any::<u8>(),
+        ) {
+            let resp = VehicleIdentificationResponse {
+                vin,
+                logical_address: LogicalAddress(addr),
+                entity_id,
+                group_id: Some(group_id_bytes),
+                further_action: FurtherActionRequired::from(further_byte),
+                vin_gid_sync_status: VinGidSyncStatus::from(sync_byte),
+            };
+            let mut buf = Vec::new();
+            resp.write(&mut buf).unwrap();
+
+            let parsed = VehicleIdentificationResponse::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(resp, parsed);
+        }
+
+        #[test]
+        fn prop_vehicle_identification_response_none_group_roundtrip(
+            vin in any::<[u8; 17]>(),
+            addr in any::<u16>(),
+            entity_id in any::<[u8; 6]>(),
+            further_byte in any::<u8>(),
+            sync_byte in any::<u8>(),
+        ) {
+            let resp = VehicleIdentificationResponse {
+                vin,
+                logical_address: LogicalAddress(addr),
+                entity_id,
+                group_id: None,
+                further_action: FurtherActionRequired::from(further_byte),
+                vin_gid_sync_status: VinGidSyncStatus::from(sync_byte),
+            };
+            let mut buf = Vec::new();
+            resp.write(&mut buf).unwrap();
+
+            let parsed = VehicleIdentificationResponse::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(resp, parsed);
+        }
+    }
+}

@@ -7,7 +7,6 @@ use simple_doip::{
 };
 use std::net::{IpAddr, SocketAddr};
 use tracing::info;
-use tracing_subscriber;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -47,10 +46,10 @@ async fn main() -> anyhow::Result<()> {
     // Session Type: 0x03 (Extended Diagnostic Session)
     let request_bytes = vec![0x10, 0x03];
 
-    let resp = client
+    client
         .send_diagnostic_message(simple_doip::client::AddressType::Physical, request_bytes)
         .await?;
-    info!("Sent diagnostic message and received response {:#?}", resp);
+    info!("Sent diagnostic message and received ACK");
     client.shut_down().await;
     Ok(())
 }

@@ -122,3 +122,40 @@ impl RoutingActivationRequest {
         Ok(7)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::LogicalAddress;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn prop_activation_type_roundtrip(byte in any::<u8>()) {
+            let code = ActivationTypeCode::from(byte);
+            let back: u8 = code.into();
+            prop_assert_eq!(byte, back);
+        }
+
+        // NOTE: reserved_vehicle_manufacturer roundtrip is not tested because
+        // RoutingActivationRequest::read currently always returns None (TODO in impl).
+        #[test]
+        fn prop_routing_activation_request_roundtrip(
+            src in any::<u16>(),
+            act_type in any::<u8>().prop_map(ActivationTypeCode::from),
+            reserved in any::<[u8; 4]>(),
+        ) {
+            let req = RoutingActivationRequest {
+                source_address: LogicalAddress(src),
+                activation_type: act_type,
+                reserved,
+                reserved_vehicle_manufacturer: None,
+            };
+            let mut buf = Vec::new();
+            req.write(&mut buf).unwrap();
+
+            let parsed = RoutingActivationRequest::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(req, parsed);
+        }
+    }
+}

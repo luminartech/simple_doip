@@ -1,0 +1,12 @@
+image_name_prefix: simple_doip
+linux_images:
+  - IMAGE_NAME: rust
+    REGISTRY: harbor-eq-dc.sw-ci.kraken.as/firmware
+    DOCKERFILE: tools/docker/rust/Dockerfile
+    DOCKER_CONTEXT_PATH: tools/docker/rust
+    GITHUB_TAG: [x86, Linux, small]
+  - IMAGE_NAME: uv_minimal
+    REGISTRY: harbor-eq-dc.sw-ci.kraken.as/firmware
+    DOCKERFILE: tools/docker/uv_minimal/Dockerfile
+    DOCKER_CONTEXT_PATH: tools/docker/uv_minimal
+    GITHUB_TAG: [x86, Linux, x-small]

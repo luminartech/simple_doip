@@ -244,6 +244,7 @@ impl Default for Message {
 mod tests {
     use super::*;
     use header::{PayloadType, ProtocolVersion};
+    use proptest::prelude::*;
 
     /// Check that we properly decode and encode hex bytes
     #[test]
@@ -276,5 +277,89 @@ mod tests {
             Message::read(&mut buf.as_ref()),
             Err(MessageError::VersionInverseIncorrect { .. })
         ));
+    }
+
+    fn arb_protocol_version() -> impl Strategy<Value = ProtocolVersion> {
+        any::<u8>().prop_map(ProtocolVersion::from)
+    }
+
+    fn arb_activation_type() -> impl Strategy<Value = ActivationTypeCode> {
+        any::<u8>().prop_map(ActivationTypeCode::from)
+    }
+
+    proptest! {
+        #[test]
+        fn prop_full_diagnostic_message_roundtrip(
+            version in arb_protocol_version(),
+            src in any::<u16>(),
+            dst in any::<u16>(),
+            data in proptest::collection::vec(any::<u8>(), 0..512),
+        ) {
+            let msg = Message::diagnostic_message(
+                version,
+                LogicalAddress(src),
+                LogicalAddress(dst),
+                data,
+            );
+
+            let mut buf = Vec::new();
+            msg.write(&mut buf).unwrap();
+
+            let parsed = Message::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(msg, parsed);
+        }
+
+        #[test]
+        fn prop_full_routing_activation_request_roundtrip(
+            version in arb_protocol_version(),
+            src in any::<u16>(),
+            act_type in arb_activation_type(),
+        ) {
+            // NOTE: oem=None because RoutingActivationRequest::read always returns None (TODO)
+            let msg = Message::routing_activation_request(
+                version,
+                LogicalAddress(src),
+                act_type,
+                None,
+            );
+
+            let mut buf = Vec::new();
+            msg.write(&mut buf).unwrap();
+
+            let parsed = Message::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(msg, parsed);
+        }
+
+        #[test]
+        fn prop_full_alive_check_response_roundtrip(
+            version in arb_protocol_version(),
+            src in any::<u16>(),
+        ) {
+            let msg = Message::alive_check_response(version, LogicalAddress(src));
+
+            let mut buf = Vec::new();
+            msg.write(&mut buf).unwrap();
+
+            let parsed = Message::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(msg, parsed);
+        }
+
+        #[test]
+        fn prop_full_nack_message_roundtrip(
+            version in arb_protocol_version(),
+            nack_byte in any::<u8>(),
+        ) {
+            let nack_code = NackCode::from(nack_byte);
+            let msg = Message {
+                header: Header::new(version, PayloadType::NegativeAcknowledge, 1),
+                payload: Payload::DoIPNack(nack_code),
+            };
+
+            let mut buf = Vec::new();
+            msg.write(&mut buf).unwrap();
+
+            let parsed = Message::read(&mut buf.as_slice()).unwrap();
+            prop_assert_eq!(msg, parsed);
+        }
     }
 }

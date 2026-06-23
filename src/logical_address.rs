@@ -29,7 +29,7 @@ impl LogicalAddress {
             if *self >= Self::OBD_ADDRESS_RANGE.0 && *self <= Self::OBD_ADDRESS_RANGE.1 {
                 info!(
                     "Logical addresses in the 0xF000-0xF7F range are intended for internal \
-                data collection/on-board diagnotics only. Ensure that this is the intended use case."
+                data collection/on-board diagnostics only. Ensure that this is the intended use case."
                 );
             }
             true
@@ -108,6 +108,7 @@ macro_rules! client_logical_address {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_logical_address() {
@@ -116,5 +117,21 @@ mod tests {
         assert_eq!(addr.0, 0x0E00);
         assert_eq!(addr, LogicalAddress(0x0E00));
         assert_eq!(addr, 0x0E00);
+    }
+
+    proptest! {
+        #[test]
+        fn prop_logical_address_client_range(addr in 0x0E00u16..=0x0FFF) {
+            let la = LogicalAddress(addr);
+            prop_assert!(la.is_valid_client_address());
+        }
+
+        #[test]
+        fn prop_logical_address_outside_client_range(
+            addr in any::<u16>().prop_filter("outside client range", |a| *a < 0x0E00 || *a > 0x0FFF)
+        ) {
+            let la = LogicalAddress(addr);
+            prop_assert!(!la.is_valid_client_address());
+        }
     }
 }
