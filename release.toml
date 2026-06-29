@@ -1,0 +1,9 @@
+# cargo-release config for the standalone simple_doip repo.
+shared-version = false
+publish = false              # CI owns publishing
+registry = "crates-io"       # source of truth under Option B
+tag-name = "v{{version}}"
+tag-message = "simple_doip v{{version}}"
+pre-release-commit-message = "chore(release): v{{version}}"
+allow-branch = ["main"]
+pre-release-hook = ["cargo", "test", "--workspace", "--locked"]

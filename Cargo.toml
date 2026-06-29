@@ -2,6 +2,12 @@
 name = "simple_doip"
 version = "0.1.0"
 edition = "2024"
+description = "DoIP (Diagnostics over IP, ISO 13400) protocol implementation"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/luminartech/simple_doip"
+readme = "README.md"
+keywords = ["doip", "iso13400", "diagnostics", "automotive", "uds"]
+categories = ["network-programming"]
 
 [dependencies]
 async-trait = "0.1"
