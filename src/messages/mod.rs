@@ -2,6 +2,7 @@ mod alive_check_response;
 pub use alive_check_response::AliveCheckResponse;
 mod decode_util;
 mod diagnostic_message;
+mod encode_util;
 pub use diagnostic_message::DiagnosticMessage;
 mod diagnostic_message_ack;
 pub use diagnostic_message_ack::{DiagnosticAckCode, DiagnosticMessageAck};

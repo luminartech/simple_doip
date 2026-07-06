@@ -1,6 +1,7 @@
 use crate::logical_address::LogicalAddress;
 
 use super::decode_util::{read_array, read_u8, read_u16_be};
+use super::encode_util::{write_u8, write_u16_be};
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -132,9 +133,7 @@ impl Encode for VehicleIdentificationResponse {
     /// Returns [`MessageError::Io`] if the writer fails.
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
         writer.write_all(&self.vin).map_err(MessageError::io)?;
-        writer
-            .write_all(&u16::to_be_bytes(self.logical_address.into()))
-            .map_err(MessageError::io)?;
+        write_u16_be(writer, self.logical_address.into())?;
         writer
             .write_all(&self.entity_id)
             .map_err(MessageError::io)?;
@@ -143,12 +142,8 @@ impl Encode for VehicleIdentificationResponse {
         } else {
             writer.write_all(&[0x00; 6]).map_err(MessageError::io)?;
         }
-        writer
-            .write_all(&[self.further_action.into()])
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&[self.vin_gid_sync_status.into()])
-            .map_err(MessageError::io)?;
+        write_u8(writer, self.further_action.into())?;
+        write_u8(writer, self.vin_gid_sync_status.into())?;
         Ok(33)
     }
 }

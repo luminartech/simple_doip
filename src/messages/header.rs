@@ -5,6 +5,7 @@
 use core::fmt::Debug;
 
 use super::decode_util::{read_u8, read_u16_be, read_u32_be};
+use super::encode_util::{write_u8, write_u16_be, write_u32_be};
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -261,19 +262,10 @@ impl Encode for Header {
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
-        writer
-            .write_all(&[self.protocol_version.into()])
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&[self.inverse_protocol_version])
-            .map_err(MessageError::io)?;
-        let payload_type: u16 = self.payload_type.into();
-        writer
-            .write_all(&u16::to_be_bytes(payload_type))
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&u32::to_be_bytes(self.payload_length))
-            .map_err(MessageError::io)?;
+        write_u8(writer, self.protocol_version.into())?;
+        write_u8(writer, self.inverse_protocol_version)?;
+        write_u16_be(writer, self.payload_type.into())?;
+        write_u32_be(writer, self.payload_length)?;
         Ok(Header::SIZE)
     }
 }

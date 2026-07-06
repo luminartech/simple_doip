@@ -3,6 +3,7 @@ use core::fmt;
 use crate::logical_address::LogicalAddress;
 
 use super::decode_util::{read_u8, read_u16_be};
+use super::encode_util::{write_u8, write_u16_be};
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -127,15 +128,9 @@ impl<D: AsRef<[u8]>> Encode for DiagnosticMessageAck<D> {
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
-        writer
-            .write_all(&u16::to_be_bytes(self.source_address.into()))
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&u16::to_be_bytes(self.target_address.into()))
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&[self.ack_code.into()])
-            .map_err(MessageError::io)?;
+        write_u16_be(writer, self.source_address.into())?;
+        write_u16_be(writer, self.target_address.into())?;
+        write_u8(writer, self.ack_code.into())?;
         let previous_message_data = self.previous_message_data.as_ref();
         writer
             .write_all(previous_message_data)

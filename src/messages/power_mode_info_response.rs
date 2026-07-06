@@ -1,4 +1,5 @@
 use super::decode_util::read_u8;
+use super::encode_util::write_u8;
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -54,9 +55,7 @@ impl Encode for DiagnosticPowerModeCode {
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
-        writer
-            .write_all(&[(*self).into()])
-            .map_err(MessageError::io)?;
+        write_u8(writer, (*self).into())?;
         Ok(1)
     }
 }
