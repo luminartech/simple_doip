@@ -3,18 +3,20 @@ use crate::{
     logical_address::LogicalAddress,
     message_codec::MessageCodec,
     messages::{
-        DiagnosticMessage, DiagnosticPowerModeCode, FurtherActionRequired, Message, Payload,
+        DiagnosticMessage, DiagnosticPowerModeCode, FurtherActionRequired, OwnedMessage, Payload,
         ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse, VinGidSyncStatus,
     },
 };
 use async_trait::async_trait;
 use futures::{SinkExt, StreamExt};
 use std::{
+    boxed::Box,
     net::{IpAddr, SocketAddr},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
+    vec::Vec,
 };
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
@@ -51,9 +53,12 @@ pub trait ServerConnectionHandler {
     async fn routing_activation(
         &self,
         request: &RoutingActivationRequest,
-    ) -> Result<Message, Error>;
+    ) -> Result<OwnedMessage, Error>;
 
-    async fn diagnostic_message(&self, message: &DiagnosticMessage) -> Result<Message, Error>;
+    async fn diagnostic_message(
+        &self,
+        message: &DiagnosticMessage<Vec<u8>>,
+    ) -> Result<OwnedMessage, Error>;
 
     // Optional Functions
     // These functions *may* be overridden to provide custom behavior
@@ -131,8 +136,8 @@ pub trait ServerConnectionHandler {
     }
 
     /// Respond to an Alive Check request
-    async fn alive_check(&self, client_info: &ClientConnectionInfo) -> Result<Message, Error> {
-        Ok(Message::alive_check_response(
+    async fn alive_check(&self, client_info: &ClientConnectionInfo) -> Result<OwnedMessage, Error> {
+        Ok(OwnedMessage::alive_check_response(
             self.protocol_version(),
             client_info.logical_address,
         ))
@@ -244,8 +249,8 @@ where
     async fn handle_client_message(
         &self,
         client_socket_addr: SocketAddr,
-        request_message: Message,
-    ) -> Result<Message, Error> {
+        request_message: OwnedMessage,
+    ) -> Result<OwnedMessage, Error> {
         // TODO: Need to handle active sockets by adding clients to a map
         // client count should come from that map, as well as the logical address missing below
         let connection_info = ClientConnectionInfo {

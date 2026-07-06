@@ -2,6 +2,7 @@ use crate::{
     LogicalAddress,
     messages::{DiagnosticAckCode, MessageError, NackCode, PayloadType},
 };
+use std::string::String;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

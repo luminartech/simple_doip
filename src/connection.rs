@@ -53,7 +53,7 @@
 //!
 //!}
 //! ```
-use std::{fmt::Debug, net::SocketAddr, time::Duration};
+use std::{boxed::Box, fmt::Debug, net::SocketAddr, time::Duration};
 use tokio::net::{
     TcpSocket,
     tcp::{OwnedReadHalf, OwnedWriteHalf},
