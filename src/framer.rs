@@ -18,10 +18,15 @@ pub fn try_frame(buf: &[u8]) -> Result<Option<(MessageRef<'_>, usize)>, MessageE
         return Ok(None);
     }
     let (header, _) = Header::decode(&buf[..Header::SIZE])?;
-    let total = Header::SIZE + header.payload_length as usize;
-    if buf.len() < total {
+    let payload_len = header.payload_length as usize;
+    // Compare available payload bytes rather than computing `Header::SIZE + payload_len`
+    // directly: on 32-bit targets a hostile `payload_length` of `u32::MAX` would overflow
+    // that addition. `buf.len() - Header::SIZE` cannot underflow since we checked
+    // `buf.len() >= Header::SIZE` above.
+    if buf.len() - Header::SIZE < payload_len {
         return Ok(None);
     }
+    let total = Header::SIZE + payload_len; // now provably <= buf.len(), no overflow
     let (message, _) = MessageRef::decode(&buf[..total])?;
     Ok(Some((message, total)))
 }
@@ -48,6 +53,14 @@ mod tests {
             message.header.payload_type,
             crate::messages::PayloadType::NegativeAcknowledge
         );
+    }
+
+    #[test]
+    fn huge_payload_length_does_not_overflow() {
+        // 8-byte header with a hostile payload_length of u32::MAX. On 32-bit targets,
+        // Header::SIZE + payload_length would overflow usize if computed directly.
+        let buf: [u8; 8] = [0x02, 0xFD, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF];
+        assert!(matches!(try_frame(&buf), Ok(None)));
     }
 
     #[test]

@@ -31,7 +31,7 @@ pub mod connection;
 mod error;
 #[cfg(feature = "codec")]
 pub mod message_codec;
-#[cfg(any(feature = "client", feature = "server"))]
+#[cfg(feature = "client")]
 pub mod socket_manager;
 #[cfg(any(feature = "client", feature = "server"))]
 pub use error::Error;
