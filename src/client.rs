@@ -3,12 +3,14 @@ use crate::{
     client_inner::{ControlMessage, Inner},
     connection,
     messages::{
-        ActivationTypeCode, Message, MessageError, ProtocolVersion, RoutingActivationResponse,
+        ActivationTypeCode, MessageError, OwnedMessage, ProtocolVersion, RoutingActivationResponse,
     },
 };
 use std::{
     net::{IpAddr, SocketAddr},
+    string::ToString,
     time::Duration,
+    vec::Vec,
 };
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
@@ -17,7 +19,7 @@ use tracing::{debug, info, trace};
 /// Send updates to the user
 pub enum ClientUpdate {
     /// Unicase message from the server
-    Unicast(Message),
+    Unicast(OwnedMessage),
     /// Inner `DoIP` client error
     Error(Error),
 }
@@ -80,7 +82,7 @@ pub struct Client<Conn = connection::ConnectorSocket> {
     /// Sends messages from the user to the inner client
     control_sender: mpsc::Sender<ControlMessage>,
     /// Receives messages from the inner client to the user
-    update_receiver: mpsc::Receiver<Result<Message, MessageError>>,
+    update_receiver: mpsc::Receiver<Result<OwnedMessage, MessageError>>,
     _phantom: std::marker::PhantomData<Conn>,
 }
 
@@ -125,7 +127,7 @@ where
         // Automatically send a routing activation request if the client options specify it
         'routing: {
             if let Some(routing_activation_options) = client_options.routing_activation_options {
-                let message = Message::routing_activation_request(
+                let message = OwnedMessage::routing_activation_request(
                     client_options.protocol_version,
                     client_options.client_logical_address,
                     routing_activation_options.activation_type,
@@ -158,7 +160,7 @@ where
                 // if the timeout specifically and keep working, the routing activation may not be supported
                 debug!("Routing Activation Response received: {:?}", res);
                 match res {
-                    Ok(Message { payload, header: _ }) => {
+                    Ok(OwnedMessage { payload, header: _ }) => {
                         let crate::messages::Payload::RoutingActivationResponse(
                             RoutingActivationResponse {
                                 logical_address_tester,
@@ -214,7 +216,7 @@ where
     ///
     /// # Errors
     /// Returns an [`Error`] if the socket cannot be re-bound
-    pub async fn reconnect(&mut self) -> Result<Option<Message>, Error> {
+    pub async fn reconnect(&mut self) -> Result<Option<OwnedMessage>, Error> {
         let _ = Self::bind_socket(&self.control_sender, &self.client_options).await?;
         trace!("Reconnected, checking for in-flight messages over 5 seconds");
         let res =
@@ -259,7 +261,7 @@ where
         address_type: AddressType,
         user_data: Vec<u8>,
     ) -> Result<(), Error> {
-        let message = Message::diagnostic_message(
+        let message = OwnedMessage::diagnostic_message(
             self.client_options.protocol_version,
             self.client_options.client_logical_address,
             match address_type {
@@ -289,7 +291,7 @@ where
     pub async fn receive_diagnostic_response(
         &mut self,
         timeout: Duration,
-    ) -> Result<Message, Error> {
+    ) -> Result<OwnedMessage, Error> {
         let (response, ctrl_msg) = ControlMessage::create_receive_diagnostic_response(timeout);
         self.control_sender
             .send(ctrl_msg)

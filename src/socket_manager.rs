@@ -8,10 +8,10 @@ use crate::{
     client::ClientOptions,
     connection,
     message_codec::MessageCodec,
-    messages::{Message, MessageError},
+    messages::{MessageError, OwnedMessage},
 };
 use futures::{SinkExt, StreamExt};
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, string::ToString, time::Duration};
 use tokio::{
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
     select,
@@ -26,9 +26,9 @@ use tracing::{debug, error, info, trace};
 pub struct SocketManager<Conn> {
     /// Receiver used to receive messages from the socket
     /// This is the channel that the socket manager uses to send messages back up to the client
-    receiver: mpsc::Receiver<Result<Message, MessageError>>,
+    receiver: mpsc::Receiver<Result<OwnedMessage, MessageError>>,
     /// Sender used to send messages to the socket
-    sender: mpsc::Sender<Message>,
+    sender: mpsc::Sender<OwnedMessage>,
     local_port: u16,
     session_id: u16,
 
@@ -89,7 +89,7 @@ where
     ///
     /// # Errors
     /// Returns an [`Error::ConnectionClosed`] if the message cannot be sent
-    pub async fn send(&mut self, message: Message) -> Result<(), Error> {
+    pub async fn send(&mut self, message: OwnedMessage) -> Result<(), Error> {
         self.sender.send(message).await.map_err(|e| {
             error!("Failed to send message: {}", e);
             Error::ConnectionClosed
@@ -99,7 +99,7 @@ where
     }
 
     /// Receive a message from the receiver/Request channel
-    pub async fn receive(&mut self) -> Option<Result<Message, MessageError>> {
+    pub async fn receive(&mut self) -> Option<Result<OwnedMessage, MessageError>> {
         self.receiver.recv().await
     }
 
@@ -110,7 +110,7 @@ where
     pub async fn receive_timeout(
         &mut self,
         timeout: Duration,
-    ) -> Option<Result<Message, MessageError>> {
+    ) -> Option<Result<OwnedMessage, MessageError>> {
         tokio::time::timeout(timeout, self.receiver.recv())
             .await
             .unwrap()
@@ -147,8 +147,8 @@ where
 
     /// Spawn the socket loop to get messages from the socket
     fn spawn_socket_loop(
-        rx_tx: mpsc::Sender<Result<Message, MessageError>>,
-        mut tx_rx: mpsc::Receiver<Message>,
+        rx_tx: mpsc::Sender<Result<OwnedMessage, MessageError>>,
+        mut tx_rx: mpsc::Receiver<OwnedMessage>,
         mut socket_read_stream: FramedRead<OwnedReadHalf, MessageCodec>,
         mut socket_write_sink: FramedWrite<OwnedWriteHalf, MessageCodec>,
     ) {
@@ -174,7 +174,7 @@ where
                             Some(Err(e)) => {
                                 last_activity = tokio::time::Instant::now();
                                 if let MessageError::Io(ref io_err) = e {
-                                    if io_err.kind() == std::io::ErrorKind::ConnectionReset {
+                                    if *io_err == embedded_io::ErrorKind::ConnectionReset {
                                         info!(concat!("Connection reset by peer, closing socket\n", "{:?}"), io_err);
                                         // The socket has been closed by the remote end, so we should exit
                                         break;

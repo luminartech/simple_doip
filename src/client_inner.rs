@@ -4,10 +4,10 @@ use crate::{
     Error,
     client::ClientOptions,
     connection_state::ConnectionState,
-    messages::{Message, MessageError, Payload},
+    messages::{MessageError, OwnedMessage, Payload},
     socket_manager::SocketManager,
 };
-use std::{future, net::SocketAddr};
+use std::{format, future, net::SocketAddr};
 use tokio::{
     select,
     sync::{mpsc, oneshot},
@@ -20,26 +20,29 @@ use tracing::{debug, trace};
 pub(super) enum ControlMessage {
     /// No payload
     AliveCheckRequest(oneshot::Sender<Result<(), Error>>),
-    AliveCheckResponse(Message),
+    AliveCheckResponse(OwnedMessage),
     /// No oneshot needed, the response is sent
     /// and does not need to be awaited
-    SendNoResponse(Message),
+    SendNoResponse(OwnedMessage),
 
     BindSocket(SocketAddr, oneshot::Sender<Result<u16, Error>>),
     UnbindSocket(oneshot::Sender<Result<(), Error>>),
-    RoutingActivation(Message, oneshot::Sender<Result<Message, Error>>),
+    RoutingActivation(OwnedMessage, oneshot::Sender<Result<OwnedMessage, Error>>),
     AwaitResponse(
         /// the Request message that was sent
-        Message,
+        OwnedMessage,
         /// the response channel to send the response to
-        oneshot::Sender<Result<Message, Error>>,
+        oneshot::Sender<Result<OwnedMessage, Error>>,
     ),
 
     /// Send diagnostic message and wait for DoIP ACK only (not full response)
-    SendDiagnosticMessage(Message, oneshot::Sender<Result<(), Error>>),
+    SendDiagnosticMessage(OwnedMessage, oneshot::Sender<Result<(), Error>>),
 
     /// Wait for next diagnostic response (no send)
-    ReceiveDiagnosticResponse(std::time::Duration, oneshot::Sender<Result<Message, Error>>),
+    ReceiveDiagnosticResponse(
+        std::time::Duration,
+        oneshot::Sender<Result<OwnedMessage, Error>>,
+    ),
 
     /// Internal: waiting for ACK only (after SendDiagnosticMessage)
     AwaitAck(oneshot::Sender<Result<(), Error>>),
@@ -57,8 +60,8 @@ impl ControlMessage {
     /// Create a control message to send a routing activation request
     #[allow(unused)]
     pub fn create_routing_activation_message(
-        message: &Message,
-    ) -> (oneshot::Receiver<Result<Message, Error>>, Self) {
+        message: &OwnedMessage,
+    ) -> (oneshot::Receiver<Result<OwnedMessage, Error>>, Self) {
         trace!(message = "RoutingActivationRequest");
         Self::create_oneshot(|sender| Self::RoutingActivation(message.clone(), sender))
     }
@@ -77,7 +80,7 @@ impl ControlMessage {
 
     /// Create a control message to send a diagnostic message and wait for ACK only
     pub fn create_send_diagnostic_message(
-        message: Message,
+        message: OwnedMessage,
     ) -> (oneshot::Receiver<Result<(), Error>>, Self) {
         Self::create_oneshot(|sender| Self::SendDiagnosticMessage(message, sender))
     }
@@ -85,7 +88,7 @@ impl ControlMessage {
     /// Create a control message to receive the next diagnostic response
     pub fn create_receive_diagnostic_response(
         timeout: std::time::Duration,
-    ) -> (oneshot::Receiver<Result<Message, Error>>, Self) {
+    ) -> (oneshot::Receiver<Result<OwnedMessage, Error>>, Self) {
         Self::create_oneshot(|sender| Self::ReceiveDiagnosticResponse(timeout, sender))
     }
 }
@@ -101,7 +104,7 @@ pub(super) struct Inner<Conn> {
     /// MPSC Receiver used to receive control messages from outer client
     control_receiver: mpsc::Receiver<ControlMessage>,
     /// MPSC Sender used to send updates to outer client
-    update_sender: mpsc::Sender<Result<Message, MessageError>>,
+    update_sender: mpsc::Sender<Result<OwnedMessage, MessageError>>,
 
     /// active request in flight (if it exists) in case the connection is lost
     active_request: Option<ControlMessage>,
@@ -124,12 +127,12 @@ pub(super) struct Inner<Conn> {
     /// Buffer for diagnostic responses that arrive between send and receive calls.
     /// This handles the race condition where the server responds before
     /// `receive_diagnostic_response()` is called.
-    pending_diagnostic_response: Option<Message>,
+    pending_diagnostic_response: Option<OwnedMessage>,
 }
 /// Sender for the control messages sent via the control channel
 type ControlSender = mpsc::Sender<ControlMessage>;
 /// Receiver for the update messages from the socket
-type UpdateReceiver<E> = mpsc::Receiver<Result<Message, E>>;
+type UpdateReceiver<E> = mpsc::Receiver<Result<OwnedMessage, E>>;
 
 impl<Conn> Inner<Conn>
 where
@@ -197,7 +200,7 @@ where
             return Err(Error::SocketNotBound);
         }
         // Send to the tcp_data_socket
-        self.send_to_socket(Message::alive_check_response(
+        self.send_to_socket(OwnedMessage::alive_check_response(
             self.client_options.protocol_version,
             self.client_options.client_logical_address,
         ))
@@ -208,7 +211,7 @@ where
     ///
     /// Errors:
     /// [`Error::SocketNotBound`] - if the socket is not bound
-    async fn send_to_socket(&mut self, message: Message) -> Result<(), Error> {
+    async fn send_to_socket(&mut self, message: OwnedMessage) -> Result<(), Error> {
         if let Some(socket) = &mut self.tcp_data_socket {
             socket.send(message).await
         } else {
@@ -218,7 +221,7 @@ where
 
     async fn receive_socket(
         socket_manager: &mut Option<SocketManager<Conn>>,
-    ) -> Result<Message, Error> {
+    ) -> Result<OwnedMessage, Error> {
         if let Some(receiver) = socket_manager {
             match receiver.receive().await {
                 Some(message) => message.map_err(|_| Error::SocketClosedUnexpectedly),
@@ -246,7 +249,7 @@ where
         match control_message {
             ControlMessage::AliveCheckRequest(response) => {
                 let send_result = self
-                    .send_to_socket(Message::alive_check_request(
+                    .send_to_socket(OwnedMessage::alive_check_request(
                         self.client_options.protocol_version,
                     ))
                     .await;
@@ -256,7 +259,7 @@ where
             }
             ControlMessage::AliveCheckResponse(message) => {
                 let _ = self
-                    .send_to_socket(Message::alive_check_response(
+                    .send_to_socket(OwnedMessage::alive_check_response(
                         self.client_options.protocol_version,
                         self.client_options.client_logical_address,
                     ))
@@ -342,8 +345,10 @@ where
 
                 self.await_response_deadline = Some(tokio::time::Instant::now() + timeout);
                 // Use a placeholder message - we just want any diagnostic response
-                self.active_request =
-                    Some(ControlMessage::AwaitResponse(Message::default(), response));
+                self.active_request = Some(ControlMessage::AwaitResponse(
+                    OwnedMessage::default(),
+                    response,
+                ));
             }
             ControlMessage::AwaitAck(response) => {
                 // This is handled in the run loop while receiving messages
@@ -353,7 +358,7 @@ where
     }
 
     /// Process a message received from the socket. Returns `true` if the run loop should exit.
-    async fn process_received_message(&mut self, message: Result<Message, Error>) -> bool {
+    async fn process_received_message(&mut self, message: Result<OwnedMessage, Error>) -> bool {
         match message {
             Ok(received_message) => {
                 match received_message.payload {
@@ -363,7 +368,7 @@ where
                             .tcp_data_socket
                             .as_mut()
                             .unwrap()
-                            .send(Message::alive_check_response(
+                            .send(OwnedMessage::alive_check_response(
                                 self.client_options.protocol_version,
                                 self.client_options.client_logical_address,
                             ))
@@ -461,7 +466,7 @@ where
         tokio::spawn(async move {
             debug!("Starting DOIP processing loop");
             loop {
-                let mut socket_message: Option<Result<Message, Error>> = None;
+                let mut socket_message: Option<Result<OwnedMessage, Error>> = None;
                 let Self {
                     control_receiver,
                     tcp_data_socket,
