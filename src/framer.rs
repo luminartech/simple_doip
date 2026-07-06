@@ -3,7 +3,7 @@
 
 use crate::messages::{Decode, Header, MessageError, MessageRef};
 
-/// Try to extract one complete DoIP message from the front of `buf`.
+/// Try to extract one complete `DoIP` message from the front of `buf`.
 ///
 /// Returns `Ok(None)` if `buf` does not yet contain a complete message (read more
 /// bytes and call again). On success returns the decoded message (borrowing from
