@@ -9,22 +9,18 @@
 
 #![no_std]
 
-#[cfg(feature = "std")]
-extern crate std;
 #[cfg(feature = "alloc")]
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
-pub mod messages;
 pub mod connection_state;
 pub mod logical_address;
+pub mod messages;
 pub use logical_address::LogicalAddress;
 mod framer;
 pub use framer::try_frame;
 
-#[cfg(feature = "codec")]
-pub mod message_codec;
-#[cfg(any(feature = "client", feature = "server"))]
-pub mod socket_manager;
 #[cfg(feature = "client")]
 pub mod client;
 #[cfg(feature = "client")]
@@ -33,6 +29,10 @@ pub mod client_inner;
 pub mod connection;
 #[cfg(any(feature = "client", feature = "server"))]
 mod error;
+#[cfg(feature = "codec")]
+pub mod message_codec;
+#[cfg(any(feature = "client", feature = "server"))]
+pub mod socket_manager;
 #[cfg(any(feature = "client", feature = "server"))]
 pub use error::Error;
 #[cfg(feature = "server")]

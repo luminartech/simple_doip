@@ -36,3 +36,23 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt -- --check
+
+  feature-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup target add thumbv7em-none-eabihf
+      - run: cargo check --no-default-features
+      - run: cargo check --no-default-features --features alloc
+      - run: cargo check --no-default-features --features std
+      - run: cargo check --features client,server
+      - run: cargo check --no-default-features --target thumbv7em-none-eabihf
+      - run: cargo clippy --all-targets --features client,server -- -D warnings
+      - run: cargo test --no-default-features
+      - run: cargo test --features client,server
+      - run: cargo build --example bare_metal_codec --no-default-features
+      - run: cargo run --example bare_metal_codec --no-default-features
