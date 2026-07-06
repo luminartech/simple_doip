@@ -3,7 +3,8 @@ use core::fmt::UpperHex;
 
 use crate::LogicalAddress;
 
-use super::decode_util::{read_array, read_u8, read_u16_be};
+use super::decode_util::{read_array, read_optional_array, read_u8, read_u16_be};
+use super::encode_util::{write_u8, write_u16_be};
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -96,12 +97,7 @@ impl<'a> Decode<'a> for RoutingActivationRequest {
 
         let (reserved, rest) = read_array::<4>(rest)?;
 
-        let (reserved_vehicle_manufacturer, rest) = if rest.len() >= 4 {
-            let (value, rest) = read_array::<4>(rest)?;
-            (Some(value), rest)
-        } else {
-            (None, rest)
-        };
+        let (reserved_vehicle_manufacturer, rest) = read_optional_array::<4>(rest)?;
 
         Ok((
             Self {
@@ -130,12 +126,8 @@ impl Encode for RoutingActivationRequest {
     /// Returns [`MessageError::Io`] if the writer fails.
     // TODO: Investigate if we should write the optional vehicle manufacturer specific data if none
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
-        writer
-            .write_all(&u16::to_be_bytes(self.source_address.into()))
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&[self.activation_type.into()])
-            .map_err(MessageError::io)?;
+        write_u16_be(writer, self.source_address.into())?;
+        write_u8(writer, self.activation_type.into())?;
         writer.write_all(&self.reserved).map_err(MessageError::io)?;
         if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {
             writer

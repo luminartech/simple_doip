@@ -1,6 +1,7 @@
 use crate::logical_address::LogicalAddress;
 
-use super::decode_util::{read_array, read_u8, read_u16_be};
+use super::decode_util::{read_array, read_optional_array, read_u8, read_u16_be};
+use super::encode_util::{write_u8, write_u16_be};
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -111,12 +112,7 @@ impl<'a> Decode<'a> for RoutingActivationResponse {
 
         let (reserved_oem, rest) = read_array::<4>(rest)?;
 
-        let (oem_specific, rest) = if rest.len() >= 4 {
-            let (value, rest) = read_array::<4>(rest)?;
-            (Some(value), rest)
-        } else {
-            (None, rest)
-        };
+        let (oem_specific, rest) = read_optional_array::<4>(rest)?;
 
         Ok((
             RoutingActivationResponse {
@@ -141,17 +137,9 @@ impl Encode for RoutingActivationResponse {
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
-        writer
-            .write_all(&u16::to_be_bytes(self.logical_address_tester.into()))
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&u16::to_be_bytes(
-                self.logical_address_of_doip_entity.into(),
-            ))
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&[self.routing_activation_response_code.into()])
-            .map_err(MessageError::io)?;
+        write_u16_be(writer, self.logical_address_tester.into())?;
+        write_u16_be(writer, self.logical_address_of_doip_entity.into())?;
+        write_u8(writer, self.routing_activation_response_code.into())?;
         writer
             .write_all(&self.reserved_oem)
             .map_err(MessageError::io)?;

@@ -34,3 +34,19 @@ pub(crate) fn read_array<const N: usize>(buf: &[u8]) -> Result<([u8; N], &[u8]),
     array.copy_from_slice(bytes);
     Ok((array, rest))
 }
+
+/// Read an optional fixed-size array from the front of `buf`.
+///
+/// Returns `Ok((Some(array), rest))` when at least `N` bytes are available, or
+/// `Ok((None, buf))` (leaving `buf` untouched) when fewer than `N` bytes remain. Used
+/// for trailing optional fields such as the manufacturer/OEM-specific tail of routing
+/// activation messages.
+pub(crate) fn read_optional_array<const N: usize>(
+    buf: &[u8],
+) -> Result<(Option<[u8; N]>, &[u8]), MessageError> {
+    if buf.len() < N {
+        return Ok((None, buf));
+    }
+    let (array, rest) = read_array::<N>(buf)?;
+    Ok((Some(array), rest))
+}

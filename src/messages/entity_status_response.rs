@@ -1,4 +1,5 @@
 use super::decode_util::{read_u8, read_u32_be};
+use super::encode_util::{write_u8, write_u32_be};
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -74,18 +75,10 @@ impl Encode for EntityStatusResponse {
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
-        writer
-            .write_all(&[self.node_type.into()])
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&[self.max_concurrent_tcp_sockets])
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&[self.open_tcp_sockets])
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&u32::to_be_bytes(self.max_data_size))
-            .map_err(MessageError::io)?;
+        write_u8(writer, self.node_type.into())?;
+        write_u8(writer, self.max_concurrent_tcp_sockets)?;
+        write_u8(writer, self.open_tcp_sockets)?;
+        write_u32_be(writer, self.max_data_size)?;
         Ok(7)
     }
 }

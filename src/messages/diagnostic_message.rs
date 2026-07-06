@@ -1,6 +1,7 @@
 use crate::LogicalAddress;
 
 use super::decode_util::read_u16_be;
+use super::encode_util::write_u16_be;
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -45,12 +46,8 @@ impl<D: AsRef<[u8]>> Encode for DiagnosticMessage<D> {
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
-        writer
-            .write_all(&u16::to_be_bytes(self.source_address.into()))
-            .map_err(MessageError::io)?;
-        writer
-            .write_all(&u16::to_be_bytes(self.target_address.into()))
-            .map_err(MessageError::io)?;
+        write_u16_be(writer, self.source_address.into())?;
+        write_u16_be(writer, self.target_address.into())?;
         let user_data = self.user_data.as_ref();
         writer.write_all(user_data).map_err(MessageError::io)?;
         Ok(4 + user_data.len())
