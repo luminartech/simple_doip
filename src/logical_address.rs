@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Display, LowerHex, UpperHex};
+use core::fmt::{Debug, Display, LowerHex, UpperHex};
 use tracing::info;
 
 #[derive(Clone, Copy, Eq)]
@@ -40,22 +40,22 @@ impl LogicalAddress {
 }
 
 impl Display for LogicalAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:#06X}", self.0)
     }
 }
 impl Debug for LogicalAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:#06X}", self.0)
     }
 }
 impl UpperHex for LogicalAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         UpperHex::fmt(&self.0, f)
     }
 }
 impl LowerHex for LogicalAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         LowerHex::fmt(&self.0, f)
     }
 }
@@ -70,12 +70,12 @@ impl From<LogicalAddress> for u16 {
     }
 }
 impl PartialOrd<u16> for LogicalAddress {
-    fn partial_cmp(&self, other: &u16) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &u16) -> Option<core::cmp::Ordering> {
         self.0.partial_cmp(other)
     }
 }
 impl PartialOrd<LogicalAddress> for LogicalAddress {
-    fn partial_cmp(&self, other: &LogicalAddress) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &LogicalAddress) -> Option<core::cmp::Ordering> {
         self.0.partial_cmp(&other.0)
     }
 }

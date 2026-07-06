@@ -1,7 +1,6 @@
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use std::io::{Read, Write};
-
+use super::decode_util::{read_u8, read_u32_be};
 use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -42,33 +41,51 @@ pub struct EntityStatusResponse {
     pub max_data_size: u32,
 }
 
-impl EntityStatusResponse {
-    /// Deserialize an entity status response from a byte stream
+impl<'a> Decode<'a> for EntityStatusResponse {
+    /// Deserialize an entity status response from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be read
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        let node_type = EntityStatusNodeType::from(reader.read_u8()?);
-        let max_concurrent_tcp_sockets = reader.read_u8()?;
-        let open_tcp_sockets = reader.read_u8()?;
-        let max_data_size = reader.read_u32::<BigEndian>()?;
-        Ok(EntityStatusResponse {
-            node_type,
-            max_concurrent_tcp_sockets,
-            open_tcp_sockets,
-            max_data_size,
-        })
+    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (node_type, rest) = read_u8(buf)?;
+        let node_type = EntityStatusNodeType::from(node_type);
+        let (max_concurrent_tcp_sockets, rest) = read_u8(rest)?;
+        let (open_tcp_sockets, rest) = read_u8(rest)?;
+        let (max_data_size, rest) = read_u32_be(rest)?;
+        Ok((
+            EntityStatusResponse {
+                node_type,
+                max_concurrent_tcp_sockets,
+                open_tcp_sockets,
+                max_data_size,
+            },
+            rest,
+        ))
+    }
+}
+
+impl Encode for EntityStatusResponse {
+    fn encoded_size(&self) -> usize {
+        7
     }
 
-    /// Serialize this entity status response to a byte stream
+    /// Serialize this entity status response into `writer`
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be written
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_u8(self.node_type.into())?;
-        writer.write_u8(self.max_concurrent_tcp_sockets)?;
-        writer.write_u8(self.open_tcp_sockets)?;
-        writer.write_u32::<BigEndian>(self.max_data_size)?;
+    /// Returns [`MessageError::Io`] if the writer fails.
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        writer
+            .write_all(&[self.node_type.into()])
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&[self.max_concurrent_tcp_sockets])
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&[self.open_tcp_sockets])
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&u32::to_be_bytes(self.max_data_size))
+            .map_err(MessageError::io)?;
         Ok(7)
     }
 }

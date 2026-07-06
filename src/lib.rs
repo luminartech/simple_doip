@@ -7,13 +7,26 @@
 //! ## Design
 //!
 
+#![no_std]
+
+#[cfg(feature = "std")]
+extern crate std;
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 pub mod messages;
+pub mod connection_state;
+pub mod logical_address;
+pub use logical_address::LogicalAddress;
+mod framer;
+pub use framer::try_frame;
 
+#[cfg(feature = "codec")]
+pub mod message_codec;
+#[cfg(any(feature = "client", feature = "server"))]
 pub mod socket_manager;
-
 #[cfg(feature = "client")]
 pub mod client;
-/// The client feature enables
 #[cfg(feature = "client")]
 pub mod client_inner;
 #[cfg(feature = "client")]
@@ -22,16 +35,10 @@ pub mod connection;
 mod error;
 #[cfg(any(feature = "client", feature = "server"))]
 pub use error::Error;
-#[cfg(feature = "codec")]
-pub mod message_codec;
-
 #[cfg(feature = "server")]
 pub mod server;
 
-pub mod connection_state;
-pub mod logical_address;
-pub use logical_address::LogicalAddress;
-use tokio::time;
+use core::time::Duration;
 
 /// Default TCP port for `DoIP`
 /// This is the port used for unencrypted connections
@@ -56,21 +63,21 @@ pub const TESTER_LOGICAL_ADDRESS: LogicalAddress = LogicalAddress(0xE400);
 /// Initial inactivity timeout in seconds for TCP connections directly after a `TCP_DATA` socket is established. Timeout is 2 seconds.
 ///
 /// Must complete routing activation within this time otherwise the socket is closed by the `DoIP` entity
-pub const TCP_TIMEOUT_INITIAL_INACTIVITY: time::Duration = time::Duration::from_secs(2);
+pub const TCP_TIMEOUT_INITIAL_INACTIVITY: Duration = Duration::from_secs(2);
 
 /// General inactivity timeout for TCP connections. Timeout is 300 seconds (5 minutes).
 ///
 /// If no data is sent or received for this duration, the connection is closed by the `DoIP` entity
-pub const TCP_TIMEOUT_GENERAL_INACTIVITY: time::Duration = time::Duration::from_secs(300);
+pub const TCP_TIMEOUT_GENERAL_INACTIVITY: Duration = Duration::from_secs(300);
 
 /// Alive check for the maximum amount of time an entity waits for an alive check response after having
 /// made an alive check request. Timeout is 5 seconds.
-pub const TCP_TIMEOUT_ALIVE_CHECK: time::Duration = time::Duration::from_secs(5);
+pub const TCP_TIMEOUT_ALIVE_CHECK: Duration = Duration::from_secs(5);
 
 /// Time between receipt of the last byte of a `DoIP` Diagnostic Message and transmission of the ACK or NACK.
-pub const TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL: time::Duration = time::Duration::from_millis(50);
+pub const TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL: Duration = Duration::from_millis(50);
 
 /// After the timeout has elapsed, the request or response is considered to be lost and the request may be repeated
 ///
 /// Ref: `A_DoIP_Diagnostic_Message`
-pub const TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE: time::Duration = time::Duration::from_secs(2);
+pub const TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE: Duration = Duration::from_secs(2);

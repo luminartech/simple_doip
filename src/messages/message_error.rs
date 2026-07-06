@@ -3,6 +3,7 @@ use crate::messages::{header::PayloadType, nack::NackCode};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum MessageError {
     #[error("Negative acknowledgement: {0:?}")]
     Nack(NackCode),
@@ -14,6 +15,25 @@ pub enum MessageError {
     PayloadLengthTooShort { value: usize, expected: u32 },
     #[error("Unexpected payload type found: {0:?}")]
     UnexpectedPayloadType(PayloadType),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
+    #[error("Insufficient data: needed {needed} bytes, {available} available")]
+    InsufficientData { needed: usize, available: usize },
+    #[error("Trailing bytes after decode: {count}")]
+    TrailingBytes { count: usize },
+    #[error("I/O error: {0:?}")]
+    Io(embedded_io::ErrorKind),
+}
+
+impl MessageError {
+    /// Map any embedded-io error to [`MessageError::Io`].
+    pub(crate) fn io(err: impl embedded_io::Error) -> Self {
+        MessageError::Io(err.kind())
+    }
+}
+
+/// Required by `tokio_util::codec::Decoder` (its `Error` must be `From<std::io::Error>`).
+#[cfg(feature = "std")]
+impl From<std::io::Error> for MessageError {
+    fn from(err: std::io::Error) -> Self {
+        MessageError::Io(embedded_io::Error::kind(&err))
+    }
 }

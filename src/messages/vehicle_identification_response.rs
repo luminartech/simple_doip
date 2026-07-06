@@ -1,10 +1,8 @@
-use std::io::{Read, Write};
-
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-
 use crate::logical_address::LogicalAddress;
 
+use super::decode_util::{read_array, read_u8, read_u16_be};
 use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FurtherActionRequired {
@@ -82,22 +80,19 @@ pub struct VehicleIdentificationResponse {
     pub vin_gid_sync_status: VinGidSyncStatus,
 }
 
-impl VehicleIdentificationResponse {
-    /// Deserialize a vehicle identification response from a byte stream
+impl<'a> Decode<'a> for VehicleIdentificationResponse {
+    /// Deserialize a vehicle identification response from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be read
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        let mut vin = [0x00; 17];
-        reader.read_exact(&mut vin)?;
+    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (vin, rest) = read_array::<17>(buf)?;
 
-        let logical_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
+        let (logical_address, rest) = read_u16_be(rest)?;
 
-        let mut entity_id = [0x00; 6];
-        reader.read_exact(&mut entity_id)?;
+        let (entity_id, rest) = read_array::<6>(rest)?;
 
-        let mut group_id = [0x00; 6];
-        reader.read_exact(&mut group_id)?;
+        let (group_id, rest) = read_array::<6>(rest)?;
 
         // Table 1 - value not set
         let group_id = if group_id == [0x00; 6] || group_id == [0xFF; 6] {
@@ -106,37 +101,54 @@ impl VehicleIdentificationResponse {
             Some(group_id)
         };
 
-        let further_action_byte = reader.read_u8()?;
-        let further_action = FurtherActionRequired::from(further_action_byte);
+        let (further_action, rest) = read_u8(rest)?;
+        let further_action = FurtherActionRequired::from(further_action);
 
-        let vin_gid_sync_status_byte = reader.read_u8()?;
-        let vin_gid_sync_status = VinGidSyncStatus::from(vin_gid_sync_status_byte);
+        let (vin_gid_sync_status, rest) = read_u8(rest)?;
+        let vin_gid_sync_status = VinGidSyncStatus::from(vin_gid_sync_status);
 
-        Ok(Self {
-            vin,
-            logical_address,
-            entity_id,
-            group_id,
-            further_action,
-            vin_gid_sync_status,
-        })
+        Ok((
+            Self {
+                vin,
+                logical_address: LogicalAddress(logical_address),
+                entity_id,
+                group_id,
+                further_action,
+                vin_gid_sync_status,
+            },
+            rest,
+        ))
+    }
+}
+
+impl Encode for VehicleIdentificationResponse {
+    fn encoded_size(&self) -> usize {
+        33
     }
 
-    /// Serialize this vehicle identification response to a byte stream
+    /// Serialize this vehicle identification response into `writer`
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be written
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_all(&self.vin)?;
-        writer.write_u16::<BigEndian>(self.logical_address.into())?;
-        writer.write_all(&self.entity_id)?;
+    /// Returns [`MessageError::Io`] if the writer fails.
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        writer.write_all(&self.vin).map_err(MessageError::io)?;
+        writer
+            .write_all(&u16::to_be_bytes(self.logical_address.into()))
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&self.entity_id)
+            .map_err(MessageError::io)?;
         if let Some(group_id) = self.group_id {
-            writer.write_all(&group_id)?;
+            writer.write_all(&group_id).map_err(MessageError::io)?;
         } else {
-            writer.write_all(&[0x00; 6])?;
+            writer.write_all(&[0x00; 6]).map_err(MessageError::io)?;
         }
-        writer.write_u8(self.further_action.into())?;
-        writer.write_u8(self.vin_gid_sync_status.into())?;
+        writer
+            .write_all(&[self.further_action.into()])
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&[self.vin_gid_sync_status.into()])
+            .map_err(MessageError::io)?;
         Ok(33)
     }
 }

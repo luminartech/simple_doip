@@ -1,14 +1,11 @@
 use core::fmt;
-use std::{
-    fmt::UpperHex,
-    io::{Read, Write},
-};
-
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use core::fmt::UpperHex;
 
 use crate::LogicalAddress;
 
+use super::decode_util::{read_array, read_u8, read_u16_be};
 use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ActivationTypeCode {
@@ -51,8 +48,7 @@ impl From<ActivationTypeCode> for u8 {
 impl UpperHex for ActivationTypeCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let val: u8 = (*self).into();
-        let val = format!("{val:02X}");
-        f.write_str(&val)
+        write!(f, "{val:02X}")
     }
 }
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -85,38 +81,66 @@ impl fmt::Debug for RoutingActivationRequest {
     }
 }
 
-impl RoutingActivationRequest {
-    /// Deserialize a routing activation request from a byte stream
+impl<'a> Decode<'a> for RoutingActivationRequest {
+    /// Deserialize a routing activation request from a byte slice
+    ///
+    /// The optional manufacturer-specific tail is decoded when at least 4 bytes remain
+    /// after the fixed fields.
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be read
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        let source_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
-        let activation_type = ActivationTypeCode::from(reader.read_u8()?);
+    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (source_address, rest) = read_u16_be(buf)?;
+        let (activation_type, rest) = read_u8(rest)?;
+        let activation_type = ActivationTypeCode::from(activation_type);
 
-        let mut reserved = [0x00; 4];
-        reader.read_exact(&mut reserved)?;
+        let (reserved, rest) = read_array::<4>(rest)?;
 
-        let reserved_vehicle_manufacturer = None; // TODO
+        let (reserved_vehicle_manufacturer, rest) = if rest.len() >= 4 {
+            let (value, rest) = read_array::<4>(rest)?;
+            (Some(value), rest)
+        } else {
+            (None, rest)
+        };
 
-        Ok(Self {
-            source_address,
-            activation_type,
-            reserved,
-            reserved_vehicle_manufacturer,
-        })
+        Ok((
+            Self {
+                source_address: LogicalAddress(source_address),
+                activation_type,
+                reserved,
+                reserved_vehicle_manufacturer,
+            },
+            rest,
+        ))
     }
-    /// Serialize this routing activation request to a byte stream
+}
+
+impl Encode for RoutingActivationRequest {
+    fn encoded_size(&self) -> usize {
+        if self.reserved_vehicle_manufacturer.is_some() {
+            11
+        } else {
+            7
+        }
+    }
+
+    /// Serialize this routing activation request into `writer`
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be written
+    /// Returns [`MessageError::Io`] if the writer fails.
     // TODO: Investigate if we should write the optional vehicle manufacturer specific data if none
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_u16::<BigEndian>(self.source_address.into())?;
-        writer.write_u8(self.activation_type.into())?;
-        writer.write_all(&self.reserved)?;
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        writer
+            .write_all(&u16::to_be_bytes(self.source_address.into()))
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&[self.activation_type.into()])
+            .map_err(MessageError::io)?;
+        writer.write_all(&self.reserved).map_err(MessageError::io)?;
         if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {
-            writer.write_all(&reserved_vehicle_manufacturer)?;
+            writer
+                .write_all(&reserved_vehicle_manufacturer)
+                .map_err(MessageError::io)?;
             return Ok(11);
         }
         Ok(7)

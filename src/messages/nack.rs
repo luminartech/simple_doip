@@ -1,8 +1,6 @@
-use std::io::{Read, Write};
-
-use byteorder::{ReadBytesExt, WriteBytesExt};
-
+use super::decode_util::read_u8;
 use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
 
 /// Negative Acknowledgement payload
 /// Only sent by the server except in development
@@ -64,20 +62,30 @@ impl From<NackCode> for u8 {
     }
 }
 
-impl NackCode {
-    /// Deserialize a negative acknowledgement code from a byte stream
+impl<'a> Decode<'a> for NackCode {
+    /// Deserialize a negative acknowledgement code from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be read
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        Ok(reader.read_u8()?.into())
+    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (value, rest) = read_u8(buf)?;
+        Ok((value.into(), rest))
     }
-    /// Serialize this negative acknowledgement code to a byte stream
+}
+
+impl Encode for NackCode {
+    fn encoded_size(&self) -> usize {
+        1
+    }
+
+    /// Serialize this negative acknowledgement code into `writer`
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be written
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_u8((*self).into())?;
+    /// Returns [`MessageError::Io`] if the writer fails.
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        writer
+            .write_all(&[(*self).into()])
+            .map_err(MessageError::io)?;
         Ok(1)
     }
 }

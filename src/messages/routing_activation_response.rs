@@ -1,10 +1,8 @@
-use std::io::{Read, Write};
-
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-
 use crate::logical_address::LogicalAddress;
 
+use super::decode_util::{read_array, read_u8, read_u16_be};
 use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -96,46 +94,69 @@ pub struct RoutingActivationResponse {
     pub oem_specific: Option<[u8; 4]>,
 }
 
-impl RoutingActivationResponse {
-    /// Deserialize a routing activation response from a byte stream
+impl<'a> Decode<'a> for RoutingActivationResponse {
+    /// Deserialize a routing activation response from a byte slice
+    ///
+    /// The optional OEM-specific tail is decoded when at least 4 bytes remain after the
+    /// fixed fields.
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be read
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        let logical_address_tester = LogicalAddress(reader.read_u16::<BigEndian>()?);
-        let logical_address_of_doip_entity = LogicalAddress(reader.read_u16::<BigEndian>()?);
-        let routing_activation_response_code_byte: u8 = reader.read_u8()?;
+    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (logical_address_tester, rest) = read_u16_be(buf)?;
+        let (logical_address_of_doip_entity, rest) = read_u16_be(rest)?;
+        let (routing_activation_response_code, rest) = read_u8(rest)?;
         let routing_activation_response_code =
-            RoutingActivationResponseCode::from(routing_activation_response_code_byte);
+            RoutingActivationResponseCode::from(routing_activation_response_code);
 
-        let mut reserved_oem = [0x00u8; 4];
-        reader.read_exact(&mut reserved_oem)?;
-        let mut oem_specific = [0x00u8; 4];
-        let oem_specific = match reader.read_exact(&mut oem_specific) {
-            Ok(()) => Some(oem_specific),
-            Err(_) => None,
+        let (reserved_oem, rest) = read_array::<4>(rest)?;
+
+        let (oem_specific, rest) = if rest.len() >= 4 {
+            let (value, rest) = read_array::<4>(rest)?;
+            (Some(value), rest)
+        } else {
+            (None, rest)
         };
 
-        Ok(RoutingActivationResponse {
-            logical_address_tester,
-            logical_address_of_doip_entity,
-            routing_activation_response_code,
-            reserved_oem,
-            oem_specific,
-        })
+        Ok((
+            RoutingActivationResponse {
+                logical_address_tester: LogicalAddress(logical_address_tester),
+                logical_address_of_doip_entity: LogicalAddress(logical_address_of_doip_entity),
+                routing_activation_response_code,
+                reserved_oem,
+                oem_specific,
+            },
+            rest,
+        ))
+    }
+}
+
+impl Encode for RoutingActivationResponse {
+    fn encoded_size(&self) -> usize {
+        9 + self.oem_specific.map_or(0, |_| 4)
     }
 
-    /// Serialize this routing activation response to a byte stream
+    /// Serialize this routing activation response into `writer`
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be written
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_u16::<BigEndian>(self.logical_address_tester.into())?;
-        writer.write_u16::<BigEndian>(self.logical_address_of_doip_entity.into())?;
-        writer.write_u8(self.routing_activation_response_code.into())?;
-        writer.write_all(&self.reserved_oem)?;
+    /// Returns [`MessageError::Io`] if the writer fails.
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        writer
+            .write_all(&u16::to_be_bytes(self.logical_address_tester.into()))
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&u16::to_be_bytes(
+                self.logical_address_of_doip_entity.into(),
+            ))
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&[self.routing_activation_response_code.into()])
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&self.reserved_oem)
+            .map_err(MessageError::io)?;
         if let Some(oem_specific) = self.oem_specific {
-            writer.write_all(&oem_specific)?;
+            writer.write_all(&oem_specific).map_err(MessageError::io)?;
         }
         Ok(9 + self.oem_specific.map_or(0, |_| 4))
     }

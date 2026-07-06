@@ -1,5 +1,6 @@
 mod alive_check_response;
 pub use alive_check_response::AliveCheckResponse;
+mod decode_util;
 mod diagnostic_message;
 pub use diagnostic_message::DiagnosticMessage;
 mod diagnostic_message_ack;
@@ -20,12 +21,12 @@ mod routing_activation_request;
 pub use routing_activation_request::{ActivationTypeCode, RoutingActivationRequest};
 mod routing_activation_response;
 pub use routing_activation_response::{RoutingActivationResponse, RoutingActivationResponseCode};
+mod traits;
+pub use traits::{Decode, Encode};
 mod vehicle_identification_response;
 pub use vehicle_identification_response::{
     FurtherActionRequired, VehicleIdentificationResponse, VinGidSyncStatus,
 };
-
-use std::io::{Read, Write};
 
 use crate::LogicalAddress;
 
@@ -33,13 +34,30 @@ use crate::LogicalAddress;
 ///
 /// The payload contains diagnostic data and other `DoIP` protocol information
 /// The header is a fixed size struct that contains the protocol version, payload type, and payload length
-#[derive(Clone, Debug, PartialEq)]
-pub struct Message {
+#[derive(Clone, PartialEq)]
+pub struct Message<D> {
     pub header: header::Header,
-    pub payload: Payload,
+    pub payload: Payload<D>,
 }
 
-impl Message {
+// A manual impl is required (rather than `#[derive(Debug)]`) because `Payload<D>`'s
+// `Debug` impl needs `D: AsRef<[u8]>`, a bound `#[derive(Debug)]` cannot infer
+// automatically.
+impl<D: AsRef<[u8]> + core::fmt::Debug> core::fmt::Debug for Message<D> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Message")
+            .field("header", &self.header)
+            .field("payload", &self.payload)
+            .finish()
+    }
+}
+
+/// Zero-copy message borrowing its data from an RX buffer.
+pub type MessageRef<'a> = Message<&'a [u8]>;
+#[cfg(feature = "alloc")]
+pub type OwnedMessage = Message<alloc::vec::Vec<u8>>;
+
+impl<D> Message<D> {
     /// Check whether the given payload type is a valid response to this message
     #[must_use]
     pub fn is_response(&self, payload_type: PayloadType) -> bool {
@@ -71,7 +89,7 @@ impl Message {
 
     /// Construct an alive check request message
     #[must_use]
-    pub fn alive_check_request(protocol_version: ProtocolVersion) -> Message {
+    pub fn alive_check_request(protocol_version: ProtocolVersion) -> Message<D> {
         Message {
             header: Header::new(protocol_version, PayloadType::AliveCheckRequest, 0),
             payload: Payload::AliveCheckRequest,
@@ -83,7 +101,7 @@ impl Message {
     pub fn alive_check_response(
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
-    ) -> Message {
+    ) -> Message<D> {
         let response = AliveCheckResponse { source_address };
         Message {
             header: Header::new(protocol_version, PayloadType::AliveCheckResponse, 2),
@@ -97,10 +115,13 @@ impl Message {
         protocol_version: ProtocolVersion,
         source_address: LogicalAddress,
         target_address: LogicalAddress,
-        message: Vec<u8>,
-    ) -> Message {
+        message: D,
+    ) -> Message<D>
+    where
+        D: AsRef<[u8]>,
+    {
         #[allow(clippy::cast_possible_truncation)]
-        let payload_size = message.len() as u32 + 4;
+        let payload_size = message.as_ref().len() as u32 + 4;
         let message = DiagnosticMessage {
             source_address,
             target_address,
@@ -123,8 +144,13 @@ impl Message {
         source_address: LogicalAddress,
         target_address: LogicalAddress,
         ack_code: DiagnosticAckCode,
-        previous_message_data: Vec<u8>,
-    ) -> Message {
+        previous_message_data: D,
+    ) -> Message<D>
+    where
+        D: AsRef<[u8]>,
+    {
+        #[allow(clippy::cast_possible_truncation)]
+        let payload_size = 5 + previous_message_data.as_ref().len() as u32;
         let ack = DiagnosticMessageAck {
             source_address,
             target_address,
@@ -135,19 +161,13 @@ impl Message {
             header: Header::new(
                 protocol_version,
                 PayloadType::DiagnosticMessagePositiveAcknowledge,
-                #[allow(clippy::cast_possible_truncation)]
-                {
-                    5 + ack.previous_message_data.len() as u32
-                },
+                payload_size,
             ),
             payload: Payload::DiagnosticMessageAck(ack),
         }
     }
 
     /// Construct a routing activation request message
-    ///
-    /// # Panics
-    /// Panics if the routing activation request cannot be serialized to bytes
     #[allow(clippy::cast_possible_truncation)]
     #[must_use]
     pub fn routing_activation_request(
@@ -155,7 +175,7 @@ impl Message {
         source_address: LogicalAddress,
         activation_type: ActivationTypeCode,
         reserved_vehicle_manufacturer: Option<[u8; 4]>,
-    ) -> Message {
+    ) -> Message<D> {
         let request = RoutingActivationRequest {
             source_address,
             activation_type,
@@ -163,13 +183,10 @@ impl Message {
             reserved_vehicle_manufacturer,
         };
 
-        let mut payload = Vec::with_capacity(11);
-        request.write(&mut payload).unwrap();
-
         let header = Header::new(
             protocol_version,
             PayloadType::RoutingActivationRequest,
-            payload.len() as u32,
+            request.encoded_size() as u32,
         );
         Message {
             header,
@@ -186,7 +203,7 @@ impl Message {
         routing_activation_response_code: RoutingActivationResponseCode,
         reserved_oem: [u8; 4],
         oem_specific: Option<[u8; 4]>,
-    ) -> Message {
+    ) -> Message<D> {
         let response = RoutingActivationResponse {
             logical_address_tester,
             logical_address_of_doip_entity,
@@ -202,31 +219,80 @@ impl Message {
     }
 }
 
-impl Message {
-    /// Deserialize a complete `DoIP` message (header + payload) from a byte stream
+impl<'a> Decode<'a> for Message<&'a [u8]> {
+    /// Deserialize a complete `DoIP` message (header + payload) from a byte slice
     ///
     /// # Errors
     /// Returns a [`MessageError`] if the header or payload cannot be deserialized
-    // TODO: This needs careful review and should do a lot more error checking than it does now
-    pub fn read<T: Read>(mut message_bytes: &mut T) -> Result<Message, MessageError> {
-        let header = Header::read(&mut message_bytes)?;
-        header.version_inverse_correct()?;
-        let payload = Payload::read(&mut message_bytes, header.payload_type)?;
-        Ok(Message { header, payload })
-    }
-
-    /// Serialize this message (header + payload) to a byte stream
-    ///
-    /// # Errors
-    /// Returns a [`MessageError`] if the header or payload cannot be serialized
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        let mut written = self.header.write(writer)?;
-        written += &self.payload.write(writer)?;
-        Ok(written)
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (header, rest) = Header::decode(buf)?;
+        let (payload_bytes, rest) = decode_util::take(rest, header.payload_length as usize)?;
+        let payload = Payload::decode(payload_bytes, header.payload_type)?;
+        Ok((Message { header, payload }, rest))
     }
 }
 
-impl Default for Message {
+impl<D: AsRef<[u8]>> Encode for Message<D> {
+    fn encoded_size(&self) -> usize {
+        Header::SIZE + self.payload.encoded_size()
+    }
+
+    /// Serialize this message (header + payload) into `writer`
+    ///
+    /// # Errors
+    /// Returns a [`MessageError`] if the header or payload cannot be serialized
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        let written = self.header.encode(writer)?;
+        Ok(written + self.payload.encode(writer)?)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl Message<&[u8]> {
+    /// Copy borrowed payload data into an owned message.
+    #[must_use]
+    pub fn to_owned_message(&self) -> OwnedMessage {
+        let payload = match &self.payload {
+            Payload::DoIPNack(nack) => Payload::DoIPNack(*nack),
+            Payload::AliveCheckRequest => Payload::AliveCheckRequest,
+            Payload::AliveCheckResponse(response) => Payload::AliveCheckResponse(*response),
+            Payload::DiagnosticMessage(message) => Payload::DiagnosticMessage(DiagnosticMessage {
+                source_address: message.source_address,
+                target_address: message.target_address,
+                user_data: message.user_data.to_vec(),
+            }),
+            Payload::DiagnosticMessageAck(ack) => {
+                Payload::DiagnosticMessageAck(DiagnosticMessageAck {
+                    source_address: ack.source_address,
+                    target_address: ack.target_address,
+                    ack_code: ack.ack_code,
+                    previous_message_data: ack.previous_message_data.to_vec(),
+                })
+            }
+            Payload::DiagnosticMessageNack => Payload::DiagnosticMessageNack,
+            Payload::EntityStatusRequest => Payload::EntityStatusRequest,
+            Payload::EntityStatusResponse(response) => Payload::EntityStatusResponse(*response),
+            Payload::PowerModeInfoResponse(code) => Payload::PowerModeInfoResponse(*code),
+            Payload::RoutingActivationRequest(request) => {
+                Payload::RoutingActivationRequest(*request)
+            }
+            Payload::RoutingActivationResponse(response) => {
+                Payload::RoutingActivationResponse(*response)
+            }
+            Payload::VehicleAnnouncement => Payload::VehicleAnnouncement,
+            Payload::VehicleIdentificationRequest => Payload::VehicleIdentificationRequest,
+            Payload::VehicleIdentificationResponse(response) => {
+                Payload::VehicleIdentificationResponse(*response)
+            }
+        };
+        Message {
+            header: self.header.clone(),
+            payload,
+        }
+    }
+}
+
+impl<D: Default> Default for Message<D> {
     /// Create a default diagnostic message (used as a placeholder when waiting for any response)
     fn default() -> Self {
         Message {
@@ -234,7 +300,7 @@ impl Default for Message {
             payload: Payload::DiagnosticMessage(DiagnosticMessage {
                 source_address: LogicalAddress(0),
                 target_address: LogicalAddress(0),
-                user_data: Vec::new(),
+                user_data: D::default(),
             }),
         }
     }
@@ -249,7 +315,7 @@ mod tests {
     #[test]
     fn test_valid_messages() {
         let buf: [u8; 9] = [0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03];
-        let deserialized_message: Message = Message::read(&mut buf.as_ref()).unwrap();
+        let deserialized_message: MessageRef = MessageRef::decode(&buf).unwrap().0;
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2012);
         assert!(deserialized_message.header.payload_type == PayloadType::NegativeAcknowledge);
         assert!(deserialized_message.header.payload_length == 1);
@@ -257,7 +323,7 @@ mod tests {
             0x01, 0xFE, 0x00, 0x01, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00,
         ];
-        let deserialized_message: Message = Message::read(&mut buf.as_ref()).unwrap();
+        let deserialized_message: MessageRef = MessageRef::decode(&buf).unwrap().0;
         assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2010);
         assert!(
             deserialized_message.header.payload_type == PayloadType::VehicleIdentificationRequest
@@ -269,12 +335,33 @@ mod tests {
     #[test]
     fn test_invalid_inverse() {
         let buf: [u8; 8] = [0x01, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-        // This parsing should panic for the bad inverse
-        // TODO: Instead of panicking need to add error handling and return a result
+        // This parsing should error for the bad inverse
 
         assert!(matches!(
-            Message::read(&mut buf.as_ref()),
+            MessageRef::decode(&buf),
             Err(MessageError::VersionInverseIncorrect { .. })
         ));
+    }
+
+    /// Encode a message into a stack buffer and frame it back out again, without any
+    /// `Vec`/`alloc` involved. Exercises the no_std / no_alloc API surface.
+    #[test]
+    fn test_no_std_stack_buffer_roundtrip() {
+        let message: MessageRef = Message::diagnostic_message(
+            ProtocolVersion::V2012,
+            LogicalAddress(0x0E00),
+            LogicalAddress(0x1000),
+            &[0x10u8, 0x02][..],
+        );
+
+        let mut buf = [0u8; 64];
+        let written = {
+            let mut writer: &mut [u8] = &mut buf;
+            message.encode(&mut writer).unwrap()
+        };
+
+        let (decoded, consumed) = crate::try_frame(&buf[..written]).unwrap().unwrap();
+        assert_eq!(consumed, written);
+        assert_eq!(decoded, message);
     }
 }
