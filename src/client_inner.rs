@@ -1,5 +1,5 @@
-//! User → Client → control_sender → Inner → SocketManager.sender → TCP Socket → Server
-//! User ← Client ← update_receiver ← Inner ← SocketManager.receiver ← TCP Socket ← Server
+//! User → Client → `control_sender` → Inner → SocketManager.sender → TCP Socket → Server
+//! User ← Client ← `update_receiver` ← Inner ← SocketManager.receiver ← TCP Socket ← Server
 use crate::{
     Error,
     client::ClientOptions,
@@ -35,7 +35,7 @@ pub(super) enum ControlMessage {
         oneshot::Sender<Result<OwnedMessage, Error>>,
     ),
 
-    /// Send diagnostic message and wait for DoIP ACK only (not full response)
+    /// Send diagnostic message and wait for `DoIP` ACK only (not full response)
     SendDiagnosticMessage(OwnedMessage, oneshot::Sender<Result<(), Error>>),
 
     /// Wait for next diagnostic response (no send)
@@ -44,7 +44,7 @@ pub(super) enum ControlMessage {
         oneshot::Sender<Result<OwnedMessage, Error>>,
     ),
 
-    /// Internal: waiting for ACK only (after SendDiagnosticMessage)
+    /// Internal: waiting for ACK only (after `SendDiagnosticMessage`)
     AwaitAck(oneshot::Sender<Result<(), Error>>),
 }
 
@@ -240,6 +240,7 @@ where
     /// ### Diagnostic Acks:
     /// * will not be sent to the user
     /// * will be handled internally
+    #[allow(clippy::too_many_lines)]
     async fn handle_control_message(&mut self) {
         // No active request? Nothing to do
         let Some(control_message) = self.active_request.take() else {

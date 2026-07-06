@@ -25,6 +25,7 @@ pub enum MessageError {
 
 impl MessageError {
     /// Map any embedded-io error to [`MessageError::Io`].
+    #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn io(err: impl embedded_io::Error) -> Self {
         MessageError::Io(err.kind())
     }

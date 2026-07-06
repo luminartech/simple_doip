@@ -70,7 +70,7 @@ impl From<ProtocolVersion> for u8 {
 impl Debug for ProtocolVersion {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let val: u8 = (*self).into();
-        write!(f, "{} ({:#04X})", self, val)
+        write!(f, "{self} ({val:#04X})")
     }
 }
 
@@ -170,7 +170,7 @@ impl From<PayloadType> for u16 {
 impl Debug for PayloadType {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let val: u16 = (*self).into();
-        write!(f, "{} ({:#04X})", self, val)
+        write!(f, "{self} ({val:#04X})")
     }
 }
 
