@@ -2,14 +2,11 @@
 //!
 //! Will check the protocol version and inverse protocol version to ensure
 //! the message is valid.
-use std::{
-    fmt::Debug,
-    io::{Read, Write},
-};
+use core::fmt::Debug;
 
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-
+use super::decode_util::{read_u8, read_u16_be, read_u32_be};
 use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
 
 /// `DoIP` Protocol Version
 #[derive(Clone, Copy, strum::Display, Eq, PartialEq)]
@@ -71,10 +68,9 @@ impl From<ProtocolVersion> for u8 {
 }
 
 impl Debug for ProtocolVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let val: u8 = (*self).into();
-        let val = format!("{} ({:#04X})", *self, val);
-        f.write_str(&val)
+        write!(f, "{} ({:#04X})", self, val)
     }
 }
 
@@ -172,10 +168,9 @@ impl From<PayloadType> for u16 {
 }
 
 impl Debug for PayloadType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let val: u16 = (*self).into();
-        let val = format!("{} ({:#04X})", *self, val);
-        f.write_str(&val)
+        write!(f, "{} ({:#04X})", self, val)
     }
 }
 
@@ -199,6 +194,9 @@ pub struct Header {
 }
 
 impl Header {
+    /// Size in bytes of an encoded header.
+    pub const SIZE: usize = 8;
+
     /// Create a new `DoIP` message header
     #[must_use]
     pub fn new(
@@ -227,12 +225,21 @@ impl Header {
             })
         }
     }
-    /// Deserialize a `DoIP` header from a byte stream
-    pub(crate) fn read<T: Read>(reader: &mut T) -> Result<Header, MessageError> {
-        let protocol_version = reader.read_u8()?.into();
-        let inverse_protocol_version = reader.read_u8()?;
-        let payload_type = reader.read_u16::<BigEndian>()?.into();
-        let payload_length = reader.read_u32::<BigEndian>()?;
+}
+
+impl<'a> Decode<'a> for Header {
+    /// Deserialize a `DoIP` header from a byte slice
+    ///
+    /// # Errors
+    /// Returns [`MessageError::VersionInverseIncorrect`] if the inverse protocol version
+    /// does not match, or [`MessageError::InsufficientData`] if `buf` is too short.
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (protocol_version, rest) = read_u8(buf)?;
+        let protocol_version = protocol_version.into();
+        let (inverse_protocol_version, rest) = read_u8(rest)?;
+        let (payload_type, rest) = read_u16_be(rest)?;
+        let payload_type = payload_type.into();
+        let (payload_length, rest) = read_u32_be(rest)?;
         let header = Header {
             protocol_version,
             inverse_protocol_version,
@@ -240,21 +247,39 @@ impl Header {
             payload_length,
         };
         header.version_inverse_correct()?;
-        Ok(header)
+        Ok((header, rest))
     }
-    /// Serialize this header to a byte stream
-    pub(crate) fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_u8(self.protocol_version.into())?;
-        writer.write_u8(self.inverse_protocol_version)?;
+}
+
+impl Encode for Header {
+    fn encoded_size(&self) -> usize {
+        Header::SIZE
+    }
+
+    /// Serialize this header into `writer`
+    ///
+    /// # Errors
+    /// Returns [`MessageError::Io`] if the writer fails.
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        writer
+            .write_all(&[self.protocol_version.into()])
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&[self.inverse_protocol_version])
+            .map_err(MessageError::io)?;
         let payload_type: u16 = self.payload_type.into();
-        writer.write_u16::<BigEndian>(payload_type)?;
-        writer.write_u32::<BigEndian>(self.payload_length)?;
-        Ok(8)
+        writer
+            .write_all(&u16::to_be_bytes(payload_type))
+            .map_err(MessageError::io)?;
+        writer
+            .write_all(&u32::to_be_bytes(self.payload_length))
+            .map_err(MessageError::io)?;
+        Ok(Header::SIZE)
     }
 }
 
 impl Debug for Header {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Header")
             .field("Version", &self.protocol_version)
             .field(

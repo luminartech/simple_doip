@@ -1,10 +1,8 @@
-use std::io::{Read, Write};
-
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-
 use crate::logical_address::LogicalAddress;
 
+use super::decode_util::read_u16_be;
 use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
 
 /// Alive Check Response can be sent even if there was no Alive Check Request received.
 /// It can also be sent by any `DoIP` entity to indicate that it is alive, server or client.
@@ -16,22 +14,35 @@ pub struct AliveCheckResponse {
     pub source_address: LogicalAddress,
 }
 
-impl AliveCheckResponse {
-    /// Deserialize an alive check response from a byte stream
+impl<'a> Decode<'a> for AliveCheckResponse {
+    /// Deserialize an alive check response from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be read
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        let source_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
-        Ok(AliveCheckResponse { source_address })
+    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (source_address, rest) = read_u16_be(buf)?;
+        Ok((
+            AliveCheckResponse {
+                source_address: LogicalAddress(source_address),
+            },
+            rest,
+        ))
+    }
+}
+
+impl Encode for AliveCheckResponse {
+    fn encoded_size(&self) -> usize {
+        2
     }
 
-    /// Serialize this alive check response to a byte stream
+    /// Serialize this alive check response into `writer`
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be written
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_u16::<BigEndian>(self.source_address.into())?;
+    /// Returns [`MessageError::Io`] if the writer fails.
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        writer
+            .write_all(&u16::to_be_bytes(self.source_address.into()))
+            .map_err(MessageError::io)?;
         Ok(2)
     }
 }

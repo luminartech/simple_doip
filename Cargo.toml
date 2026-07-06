@@ -1,33 +1,46 @@
 [package]
 name = "simple_doip"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [dependencies]
-async-trait = "0.1"
-byteorder = "1"
-bytes = "1"
-futures = "0.3"
-strum = { version = "0.27", features = ["derive"] }
-thiserror = "2"
+embedded-io = { version = "0.7", default-features = false }
+strum = { version = "0.27", default-features = false, features = ["derive"] }
+thiserror = { version = "2", default-features = false }
+tracing = { version = "0.1", default-features = false }
+# std-only, all optional
+async-trait = { version = "0.1", optional = true }
+bytes = { version = "1", optional = true }
+futures = { version = "0.3", optional = true }
 tokio = { version = "1", optional = true, features = [
     "macros",
     "rt",
     "rt-multi-thread",
     "time",
 ] }
-tokio-util = { version = "0.7", optional = true, features = [
-    "net",
-    "codec",
-] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt"] }
+tokio-util = { version = "0.7", optional = true, features = ["net", "codec"] }
 
 [dev-dependencies]
 anyhow = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
 
 [features]
-default = ["client", "server"]
-codec = ["dep:tokio", "dep:tokio-util"]
-client = ["codec"]
-server = ["codec"]
+default = []
+alloc = ["embedded-io/alloc"]
+std = ["alloc", "embedded-io/std", "thiserror/std", "tracing/std"]
+codec = ["std", "dep:tokio", "dep:tokio-util", "dep:bytes"]
+client = ["codec", "dep:async-trait", "dep:futures"]
+server = ["codec", "dep:async-trait", "dep:futures"]
+
+[[test]]
+name = "integration_test"
+required-features = ["client", "server"]
+
+[[example]]
+name = "simple_client"
+required-features = ["client"]
+
+[[example]]
+name = "echo_server"
+required-features = ["server"]

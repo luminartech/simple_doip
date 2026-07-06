@@ -1,8 +1,6 @@
-use std::io::{Read, Write};
-
-use byteorder::{ReadBytesExt, WriteBytesExt};
-
+use super::decode_util::read_u8;
 use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
 
 ///Identifies whether or not the vehicle is in diagnostic power mode and ready to perform reliable diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,21 +33,30 @@ impl From<DiagnosticPowerModeCode> for u8 {
     }
 }
 
-impl DiagnosticPowerModeCode {
-    /// Deserialize a diagnostic power mode code from a byte stream
+impl<'a> Decode<'a> for DiagnosticPowerModeCode {
+    /// Deserialize a diagnostic power mode code from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be read
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        Ok(reader.read_u8()?.into())
+    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (value, rest) = read_u8(buf)?;
+        Ok((value.into(), rest))
+    }
+}
+
+impl Encode for DiagnosticPowerModeCode {
+    fn encoded_size(&self) -> usize {
+        1
     }
 
-    /// Serialize this diagnostic power mode code to a byte stream
+    /// Serialize this diagnostic power mode code into `writer`
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be written
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_u8((*self).into())?;
+    /// Returns [`MessageError::Io`] if the writer fails.
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        writer
+            .write_all(&[(*self).into()])
+            .map_err(MessageError::io)?;
         Ok(1)
     }
 }
