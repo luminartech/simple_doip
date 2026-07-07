@@ -28,6 +28,26 @@ pub struct ClientConnectionInfo {
     /// Client logical address
     pub logical_address: LogicalAddress,
 }
+
+/// RAII guard that increments `active_connections` on creation and decrements it
+/// exactly once when dropped, regardless of which path the connection handler
+/// exits through (early return via `?`, an explicit `return`, or a panic).
+struct ActiveConnectionGuard<'a> {
+    active_connections: &'a AtomicUsize,
+}
+
+impl<'a> ActiveConnectionGuard<'a> {
+    fn new(active_connections: &'a AtomicUsize) -> Self {
+        active_connections.fetch_add(1, Ordering::Relaxed);
+        Self { active_connections }
+    }
+}
+
+impl Drop for ActiveConnectionGuard<'_> {
+    fn drop(&mut self) {
+        self.active_connections.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 /// Trait for handling `DoIP` connections as a server.
 /// Implement this trait to create a custom `DoIP` server.
 /// Most protocol functions have a simple, default implementation
@@ -217,7 +237,7 @@ where
         client_socket_addr: SocketAddr,
         tcp_stream: TcpStream,
     ) -> Result<(), Error> {
-        let _currently_open_sockets = self.active_connections.fetch_add(1, Ordering::Relaxed);
+        let _active_connection_guard = ActiveConnectionGuard::new(&self.active_connections);
         let (rx, tx) = tcp_stream.into_split();
         let mut read_stream = FramedRead::new(rx, MessageCodec::new());
         let mut write_sink = FramedWrite::new(tx, MessageCodec::new());
@@ -238,12 +258,10 @@ where
                     error!(
                         "Client decoding error, closing connection. source: {client_socket_addr}, {codec_error}"
                     );
-                    self.active_connections.fetch_sub(1, Ordering::Relaxed);
                     return Ok(());
                 }
                 None => {
                     warn!("Client stream closed, client addr: {client_socket_addr}");
-                    self.active_connections.fetch_sub(1, Ordering::Relaxed);
                     return Ok(());
                 }
             }
@@ -310,5 +328,53 @@ where
                 request_message.header.payload_type,
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ActiveConnectionGuard;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn guard_increments_on_creation_and_decrements_on_drop() {
+        let active_connections = AtomicUsize::new(0);
+
+        {
+            let _guard = ActiveConnectionGuard::new(&active_connections);
+            assert_eq!(active_connections.load(Ordering::Relaxed), 1);
+        }
+
+        assert_eq!(active_connections.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn guard_decrements_even_on_early_return_via_question_mark() {
+        let active_connections = AtomicUsize::new(0);
+
+        fn inner(active_connections: &AtomicUsize) -> Result<(), ()> {
+            let _guard = ActiveConnectionGuard::new(active_connections);
+            // Simulate an early return caused by `?` on some fallible operation,
+            // e.g. `handle_client_message` returning `Err`.
+            Err(())?;
+            Ok(())
+        }
+
+        let result = inner(&active_connections);
+        assert!(result.is_err());
+        assert_eq!(active_connections.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn guard_decrements_on_panic_unwind() {
+        let active_connections = AtomicUsize::new(0);
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = ActiveConnectionGuard::new(&active_connections);
+            panic!("simulated failure while holding the guard");
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(active_connections.load(Ordering::Relaxed), 0);
     }
 }
