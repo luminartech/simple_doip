@@ -225,11 +225,12 @@ where
         loop {
             match read_stream.next().await {
                 Some(Ok(message)) => {
-                    let response = self
+                    if let Some(response) = self
                         .handle_client_message(client_socket_addr, message)
-                        .await?;
-
-                    write_sink.send(&response).await?;
+                        .await?
+                    {
+                        write_sink.send(&response).await?;
+                    }
                 }
                 Some(Err(codec_error)) => {
                     // A malformed header or codec error from a peer must not kill the task;
@@ -253,7 +254,7 @@ where
         &self,
         client_socket_addr: SocketAddr,
         request_message: OwnedMessage,
-    ) -> Result<OwnedMessage, Error> {
+    ) -> Result<Option<OwnedMessage>, Error> {
         // TODO: Need to handle active sockets by adding clients to a map
         // client count should come from that map, as well as the logical address missing below
         let connection_info = ClientConnectionInfo {
@@ -262,20 +263,27 @@ where
         };
 
         match request_message.payload {
-            Payload::AliveCheckRequest => {
-                self.connection_handler.alive_check(&connection_info).await
-            }
-            Payload::DiagnosticMessage(diagnostic_message) => {
-                self.connection_handler
-                    .diagnostic_message(&diagnostic_message)
-                    .await
-            }
+            Payload::AliveCheckRequest => self
+                .connection_handler
+                .alive_check(&connection_info)
+                .await
+                .map(Some),
+            Payload::DiagnosticMessage(diagnostic_message) => self
+                .connection_handler
+                .diagnostic_message(&diagnostic_message)
+                .await
+                .map(Some),
             Payload::EntityStatusRequest => {
-                todo!("Entity Status Request is not yet supported!")
+                warn!(
+                    "Entity Status Request is not yet supported, ignoring. source: {client_socket_addr}"
+                );
+                Ok(None)
             }
-            Payload::RoutingActivationRequest(request) => {
-                self.connection_handler.routing_activation(&request).await
-            }
+            Payload::RoutingActivationRequest(request) => self
+                .connection_handler
+                .routing_activation(&request)
+                .await
+                .map(Some),
             Payload::RoutingActivationResponse(_routing_activation_response) => {
                 warn!(
                     "Client sent a server-role RoutingActivationResponse message, source: {client_socket_addr}"
@@ -285,7 +293,10 @@ where
                 ))
             }
             Payload::VehicleIdentificationRequest => {
-                todo!("Vehicle Identification Request is not yet supported")
+                warn!(
+                    "Vehicle Identification Request is not yet supported, ignoring. source: {client_socket_addr}"
+                );
+                Ok(None)
             }
             Payload::VehicleIdentificationResponse(_vehicle_identification_response) => {
                 warn!(
