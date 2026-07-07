@@ -121,13 +121,13 @@ impl<D> Message<D> {
     where
         D: AsRef<[u8]>,
     {
-        #[allow(clippy::cast_possible_truncation)]
-        let payload_size = message.as_ref().len() as u32 + 4;
         let message = DiagnosticMessage {
             source_address,
             target_address,
             user_data: message,
         };
+        #[allow(clippy::cast_possible_truncation)]
+        let payload_size = message.encoded_size() as u32;
         Message {
             header: Header::new(
                 protocol_version,
@@ -150,14 +150,14 @@ impl<D> Message<D> {
     where
         D: AsRef<[u8]>,
     {
-        #[allow(clippy::cast_possible_truncation)]
-        let payload_size = 5 + previous_message_data.as_ref().len() as u32;
         let ack = DiagnosticMessageAck {
             source_address,
             target_address,
             ack_code,
             previous_message_data,
         };
+        #[allow(clippy::cast_possible_truncation)]
+        let payload_size = ack.encoded_size() as u32;
         Message {
             header: Header::new(
                 protocol_version,
@@ -196,6 +196,7 @@ impl<D> Message<D> {
     }
 
     /// Construct a routing activation response message
+    #[allow(clippy::cast_possible_truncation)]
     #[must_use]
     pub fn routing_activation_response(
         protocol_version: ProtocolVersion,
@@ -212,9 +213,13 @@ impl<D> Message<D> {
             reserved_oem,
             oem_specific,
         };
+        let header = Header::new(
+            protocol_version,
+            PayloadType::RoutingActivationResponse,
+            response.encoded_size() as u32,
+        );
         Message {
-            // TODO: Check the payload length
-            header: Header::new(protocol_version, PayloadType::RoutingActivationResponse, 9),
+            header,
             payload: Payload::RoutingActivationResponse(response),
         }
     }
@@ -354,6 +359,33 @@ mod tests {
             LogicalAddress(0x1000),
             &[0x10u8, 0x02][..],
         );
+
+        let mut buf = [0u8; 64];
+        let written = {
+            let mut writer: &mut [u8] = &mut buf;
+            message.encode(&mut writer).unwrap()
+        };
+
+        let (decoded, consumed) = crate::try_frame(&buf[..written]).unwrap().unwrap();
+        assert_eq!(consumed, written);
+        assert_eq!(decoded, message);
+    }
+
+    /// A routing activation response carrying `oem_specific` must set the header payload
+    /// length to match the 13 bytes `encode` writes, so the framed bytes round-trip.
+    /// (Regression test: the constructor previously hardcoded a length of 9.)
+    #[test]
+    fn test_routing_activation_response_oem_specific_round_trip() {
+        let message: MessageRef = Message::routing_activation_response(
+            ProtocolVersion::V2012,
+            LogicalAddress(0x0E00),
+            LogicalAddress(0x1000),
+            RoutingActivationResponseCode::RoutingSuccessfullyActivated,
+            [0x00, 0x00, 0x00, 0x00],
+            Some([0xDE, 0xAD, 0xBE, 0xEF]),
+        );
+        // 9 fixed bytes + 4 oem-specific bytes.
+        assert_eq!(message.header.payload_length, 13);
 
         let mut buf = [0u8; 64];
         let written = {
