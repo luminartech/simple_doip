@@ -125,11 +125,34 @@ struct TestServer {
     accept_loop: JoinHandle<()>,
 }
 
+impl TestServer {
+    /// Assert the accept loop survived the test, then shut it down.
+    ///
+    /// Because the accept loop awaits connections inline (like `run_server`), a panic
+    /// escaping `handle_client_connection` kills the whole loop task; this final check
+    /// turns that into an explicit test failure even if the test's other assertions
+    /// happened to pass first.
+    async fn shutdown(self) {
+        assert!(
+            !self.accept_loop.is_finished(),
+            "server accept loop died during the test (a connection handler panicked?)"
+        );
+        self.accept_loop.abort();
+        // Await the aborted task so the test doesn't leave it dangling; cancellation
+        // reports a JoinError, which is the expected outcome here.
+        let _ = self.accept_loop.await;
+    }
+}
+
 /// Start a [`Server`] listening on an OS-assigned localhost port.
 ///
 /// This mirrors [`Server::run_server`]'s accept loop, but binds to `127.0.0.1:0` so
-/// tests never race over a fixed port, and spawns each connection onto its own task so
-/// that (like `run_server`) one client's misbehavior can't block other clients.
+/// tests never race over a fixed port. Like `run_server` (see `src/server.rs`), each
+/// accepted connection is awaited INLINE in the accept loop - no per-connection task -
+/// so a panic escaping `handle_client_connection` kills the accept loop here exactly as
+/// it would kill `run_server` in production. That parity is what lets tests 3 and 4
+/// catch a regression that reintroduces a panic on malformed/unsupported input: the
+/// follow-up "fresh client can still connect" step would fail.
 async fn start_server() -> TestServer {
     let last_diagnostic_payload = Arc::new(Mutex::new(None));
     let routing_activation_requests = Arc::new(AtomicUsize::new(0));
@@ -137,7 +160,7 @@ async fn start_server() -> TestServer {
         last_diagnostic_payload: Arc::clone(&last_diagnostic_payload),
         routing_activation_requests: Arc::clone(&routing_activation_requests),
     };
-    let server = Arc::new(Server::new(handler).expect("server should construct"));
+    let server = Server::new(handler).expect("server should construct");
 
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await
@@ -151,13 +174,10 @@ async fn start_server() -> TestServer {
             let Ok((stream, peer_addr)) = listener.accept().await else {
                 break;
             };
-            let server = Arc::clone(&server);
-            // Each connection gets its own task, exactly like `run_server`'s
-            // per-connection handling, so a connection that errors out doesn't stop
-            // the accept loop or other in-flight connections.
-            tokio::spawn(async move {
-                let _ = server.handle_client_connection(peer_addr, stream).await;
-            });
+            // Await the connection inline, sequentially, matching `run_server`'s
+            // control flow. `run_server` logs a handler error and keeps accepting;
+            // mirror that by discarding the error here.
+            let _ = server.handle_client_connection(peer_addr, stream).await;
         }
     });
 
@@ -242,7 +262,7 @@ async fn routing_activation_succeeds() {
     let client = connect_and_activate(server.addr, &server).await;
 
     with_timeout("client shutdown", client.shut_down()).await;
-    server.accept_loop.abort();
+    server.shutdown().await;
 }
 
 /// Test 2: an activated client can send a diagnostic message and receive the
@@ -278,7 +298,7 @@ async fn diagnostic_message_round_trip() {
     );
 
     with_timeout("client shutdown", client.shut_down()).await;
-    server.accept_loop.abort();
+    server.shutdown().await;
 }
 
 /// Read from `stream` until EOF or an error, with a bound on how long to wait. Returns
@@ -324,7 +344,7 @@ async fn unsupported_payload_type_does_not_kill_server() {
     // The server must still be alive: a brand new client can connect and activate.
     let fresh_client = connect_and_activate(server.addr, &server).await;
     with_timeout("client shutdown", fresh_client.shut_down()).await;
-    server.accept_loop.abort();
+    server.shutdown().await;
 }
 
 /// Test 4: a corrupt header (inverse protocol version doesn't match the protocol
@@ -354,5 +374,5 @@ async fn malformed_header_does_not_kill_server() {
     // The server must still be alive: a brand new client can connect and activate.
     let fresh_client = connect_and_activate(server.addr, &server).await;
     with_timeout("client shutdown", fresh_client.shut_down()).await;
-    server.accept_loop.abort();
+    server.shutdown().await;
 }
