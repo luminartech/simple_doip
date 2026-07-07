@@ -23,6 +23,12 @@ pub enum MessageError {
     TrailingBytes { count: usize },
     #[error("I/O error: {0:?}")]
     Io(embedded_io::ErrorKind),
+    /// Full `std::io::Error` from the tokio/codec layer, preserving the OS error detail
+    /// (code and message) that the flattened [`MessageError::Io`] kind would lose. The
+    /// `no_std` core never produces this variant.
+    #[cfg(feature = "std")]
+    #[error("I/O error: {0}")]
+    Std(std::io::Error),
 }
 
 impl MessageError {
@@ -34,9 +40,12 @@ impl MessageError {
 }
 
 /// Required by `tokio_util::codec::Decoder` (its `Error` must be `From<std::io::Error>`).
+///
+/// Preserves the full [`std::io::Error`] (OS code and message) rather than flattening to
+/// an [`embedded_io::ErrorKind`], so the tokio layer keeps actionable error detail.
 #[cfg(feature = "std")]
 impl From<std::io::Error> for MessageError {
     fn from(err: std::io::Error) -> Self {
-        MessageError::Io(embedded_io::Error::kind(&err))
+        MessageError::Std(err)
     }
 }
