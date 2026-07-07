@@ -276,11 +276,25 @@ where
             Payload::RoutingActivationRequest(request) => {
                 self.connection_handler.routing_activation(&request).await
             }
-            Payload::RoutingActivationResponse(_routing_activation_response) => todo!(),
+            Payload::RoutingActivationResponse(_routing_activation_response) => {
+                warn!(
+                    "Client sent a server-role RoutingActivationResponse message, source: {client_socket_addr}"
+                );
+                Err(Error::UnexpectedMessageType(
+                    request_message.header.payload_type,
+                ))
+            }
             Payload::VehicleIdentificationRequest => {
                 todo!("Vehicle Identification Request is not yet supported")
             }
-            Payload::VehicleIdentificationResponse(_vehicle_identification_response) => todo!(),
+            Payload::VehicleIdentificationResponse(_vehicle_identification_response) => {
+                warn!(
+                    "Client sent a server-role VehicleIdentificationResponse message, source: {client_socket_addr}"
+                );
+                Err(Error::UnexpectedMessageType(
+                    request_message.header.payload_type,
+                ))
+            }
             _ => Err(Error::UnexpectedMessageType(
                 request_message.header.payload_type,
             )),
