@@ -212,9 +212,6 @@ where
     ///
     /// # Errors
     /// Returns an [`Error`] if message handling or response encoding fails
-    ///
-    /// # Panics
-    /// Panics if a codec decoding error occurs on the client stream
     pub async fn handle_client_connection(
         &self,
         client_socket_addr: SocketAddr,
@@ -235,7 +232,13 @@ where
                     write_sink.send(&response).await?;
                 }
                 Some(Err(codec_error)) => {
-                    panic!("Client, decoding error source: {client_socket_addr}, {codec_error}")
+                    // A malformed header or codec error from a peer must not kill the task;
+                    // log it and close this connection gracefully.
+                    error!(
+                        "Client decoding error, closing connection. source: {client_socket_addr}, {codec_error}"
+                    );
+                    self.active_connections.fetch_sub(1, Ordering::Relaxed);
+                    return Ok(());
                 }
                 None => {
                     warn!("Client stream closed, client addr: {client_socket_addr}");

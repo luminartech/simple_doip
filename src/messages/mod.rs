@@ -285,7 +285,7 @@ impl Message<&[u8]> {
             Payload::RoutingActivationResponse(response) => {
                 Payload::RoutingActivationResponse(*response)
             }
-            Payload::VehicleAnnouncement => Payload::VehicleAnnouncement,
+            Payload::VehicleAnnouncement(response) => Payload::VehicleAnnouncement(*response),
             Payload::VehicleIdentificationRequest => Payload::VehicleIdentificationRequest,
             Payload::VehicleIdentificationResponse(response) => {
                 Payload::VehicleIdentificationResponse(*response)
