@@ -22,7 +22,7 @@ tokio-util = { version = "0.7", optional = true, features = ["net", "codec"] }
 
 [dev-dependencies]
 anyhow = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time"] }
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 
 [features]
