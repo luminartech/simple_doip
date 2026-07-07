@@ -15,6 +15,8 @@ pub enum MessageError {
     PayloadLengthTooShort { value: usize, expected: u32 },
     #[error("Unexpected payload type found: {0:?}")]
     UnexpectedPayloadType(PayloadType),
+    #[error("Unsupported payload type, cannot decode: {0:?}")]
+    UnsupportedPayloadType(PayloadType),
     #[error("Insufficient data: needed {needed} bytes, {available} available")]
     InsufficientData { needed: usize, available: usize },
     #[error("Trailing bytes after decode: {count}")]
