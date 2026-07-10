@@ -217,8 +217,7 @@ where
     pub async fn reconnect(&mut self) -> Result<Option<Message>, Error> {
         let _ = Self::bind_socket(&self.control_sender, &self.client_options).await?;
         trace!("Reconnected, checking for in-flight messages over 5 seconds");
-        let res =
-            tokio::time::timeout(Duration::from_millis(5000), self.update_receiver.recv()).await;
+        let res = tokio::time::timeout(Duration::from_secs(5), self.update_receiver.recv()).await;
         // Elapsed error handling, no response in flight
         let Ok(res) = res else {
             return Ok(None);

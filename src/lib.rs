@@ -61,7 +61,7 @@ pub const TCP_TIMEOUT_INITIAL_INACTIVITY: time::Duration = time::Duration::from_
 /// General inactivity timeout for TCP connections. Timeout is 300 seconds (5 minutes).
 ///
 /// If no data is sent or received for this duration, the connection is closed by the `DoIP` entity
-pub const TCP_TIMEOUT_GENERAL_INACTIVITY: time::Duration = time::Duration::from_secs(300);
+pub const TCP_TIMEOUT_GENERAL_INACTIVITY: time::Duration = time::Duration::from_mins(5);
 
 /// Alive check for the maximum amount of time an entity waits for an alive check response after having
 /// made an alive check request. Timeout is 5 seconds.
