@@ -12,6 +12,11 @@ permissions:
 jobs:
   semver-checks:
     name: Semver Checks
+    # GATED alongside publish: cargo-semver-checks needs a published baseline on
+    # the registry to diff against, which doesn't exist until the first publish.
+    # Enable by setting SIMPLE_DOIP_PUBLISH_ENABLED=true once #925's proxy is
+    # live and a baseline version has been published.
+    if: vars.SIMPLE_DOIP_PUBLISH_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
