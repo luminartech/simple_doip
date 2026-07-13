@@ -122,7 +122,7 @@ impl Connector for ConnectorSocket {
 /// Establishes a connection via a TCP listener socket.
 ///
 /// Instead of connecting to a remote server, this connector binds to the given
-/// address and waits for an incoming connection. This is used for DoIPInt (VCC)
+/// address and waits for an incoming connection. This is used for `DoIPInt` (VCC)
 /// where the sensor initiates the TCP connection to the tester.
 #[derive(Clone, Debug)]
 pub struct ListenerSocket;
@@ -158,7 +158,7 @@ impl Connector for ListenerSocket {
         let tcp_listener = tcp_socket.listen(1)?;
         let local_addr = tcp_listener.local_addr()?;
         debug!("DoIPInt entity listening on {local_addr}");
-        let result = tokio::time::timeout(Duration::from_secs(120), tcp_listener.accept()).await;
+        let result = tokio::time::timeout(Duration::from_mins(2), tcp_listener.accept()).await;
 
         // Drop the listener once connected so other processes can bind to the same port
         drop(tcp_listener);

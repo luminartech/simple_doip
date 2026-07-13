@@ -35,13 +35,13 @@ pub(super) enum ControlMessage {
         oneshot::Sender<Result<Message, Error>>,
     ),
 
-    /// Send diagnostic message and wait for DoIP ACK only (not full response)
+    /// Send diagnostic message and wait for `DoIP` ACK only (not full response)
     SendDiagnosticMessage(Message, oneshot::Sender<Result<(), Error>>),
 
     /// Wait for next diagnostic response (no send)
     ReceiveDiagnosticResponse(std::time::Duration, oneshot::Sender<Result<Message, Error>>),
 
-    /// Internal: waiting for ACK only (after SendDiagnosticMessage)
+    /// Internal: waiting for ACK only (after `SendDiagnosticMessage`)
     AwaitAck(oneshot::Sender<Result<(), Error>>),
 }
 
