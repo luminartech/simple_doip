@@ -1,7 +1,7 @@
 use crate::logical_address::LogicalAddress;
 
-use super::decode_util::read_u16_be;
-use super::encode_util::write_u16_be;
+use automotive_wire_codec::{read_u16_be, write_u16_be};
+
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -16,10 +16,12 @@ pub struct AliveCheckResponse {
 }
 
 impl<'a> Decode<'a> for AliveCheckResponse {
+    type Error = MessageError;
+
     /// Deserialize an alive check response from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (source_address, rest) = read_u16_be(buf)?;
         Ok((
@@ -32,8 +34,10 @@ impl<'a> Decode<'a> for AliveCheckResponse {
 }
 
 impl Encode for AliveCheckResponse {
-    fn encoded_size(&self) -> usize {
-        2
+    type Error = MessageError;
+
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(2)
     }
 
     /// Serialize this alive check response into `writer`

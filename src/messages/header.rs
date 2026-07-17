@@ -4,8 +4,10 @@
 //! the message is valid.
 use core::fmt::Debug;
 
-use super::decode_util::{read_u8, read_u16_be, read_u32_be};
-use super::encode_util::{write_u8, write_u16_be, write_u32_be};
+use automotive_wire_codec::{
+    read_u8, read_u16_be, read_u32_be, write_u8, write_u16_be, write_u32_be,
+};
+
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -229,11 +231,13 @@ impl Header {
 }
 
 impl<'a> Decode<'a> for Header {
+    type Error = MessageError;
+
     /// Deserialize a `DoIP` header from a byte slice
     ///
     /// # Errors
     /// Returns [`MessageError::VersionInverseIncorrect`] if the inverse protocol version
-    /// does not match, or [`MessageError::InsufficientData`] if `buf` is too short.
+    /// does not match, or [`MessageError::Incomplete`] if `buf` is too short.
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (protocol_version, rest) = read_u8(buf)?;
         let protocol_version = protocol_version.into();
@@ -253,8 +257,10 @@ impl<'a> Decode<'a> for Header {
 }
 
 impl Encode for Header {
-    fn encoded_size(&self) -> usize {
-        Header::SIZE
+    type Error = MessageError;
+
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(Header::SIZE)
     }
 
     /// Serialize this header into `writer`

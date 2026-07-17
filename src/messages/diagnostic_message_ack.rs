@@ -2,8 +2,8 @@ use core::fmt;
 
 use crate::logical_address::LogicalAddress;
 
-use super::decode_util::{read_u8, read_u16_be};
-use super::encode_util::{write_u8, write_u16_be};
+use automotive_wire_codec::{read_u8, read_u16_be, write_all, write_u8, write_u16_be};
+
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -92,12 +92,14 @@ pub struct DiagnosticMessageAck<D> {
 }
 
 impl<'a> Decode<'a> for DiagnosticMessageAck<&'a [u8]> {
+    type Error = MessageError;
+
     /// Deserialize a diagnostic message acknowledgement from a byte slice. Consumes the
     /// entire buffer; all bytes after the fixed fields are treated as the previous
     /// message data.
     ///
     /// # Errors
-    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (source_address, rest) = read_u16_be(buf)?;
         let (target_address, rest) = read_u16_be(rest)?;
@@ -119,9 +121,7 @@ impl<'a> Decode<'a> for DiagnosticMessageAck<&'a [u8]> {
 }
 
 impl<D: AsRef<[u8]>> Encode for DiagnosticMessageAck<D> {
-    fn encoded_size(&self) -> usize {
-        5 + self.previous_message_data.as_ref().len()
-    }
+    type Error = MessageError;
 
     /// Serialize this diagnostic message acknowledgement into `writer`
     ///
@@ -132,9 +132,7 @@ impl<D: AsRef<[u8]>> Encode for DiagnosticMessageAck<D> {
         write_u16_be(writer, self.target_address.into())?;
         write_u8(writer, self.ack_code.into())?;
         let previous_message_data = self.previous_message_data.as_ref();
-        writer
-            .write_all(previous_message_data)
-            .map_err(MessageError::io)?;
+        write_all(writer, previous_message_data)?;
         Ok(5 + previous_message_data.len())
     }
 }

@@ -1,8 +1,6 @@
 mod alive_check_response;
 pub use alive_check_response::AliveCheckResponse;
-mod decode_util;
 mod diagnostic_message;
-mod encode_util;
 pub use diagnostic_message::DiagnosticMessage;
 mod diagnostic_message_ack;
 pub use diagnostic_message_ack::{DiagnosticAckCode, DiagnosticMessageAck};
@@ -126,8 +124,12 @@ impl<D> Message<D> {
             target_address,
             user_data: message,
         };
-        #[allow(clippy::cast_possible_truncation)]
-        let payload_size = message.encoded_size() as u32;
+        let payload_size = u32::try_from(
+            message
+                .encoded_size()
+                .expect("DoIP message is always sizable"),
+        )
+        .expect("DoIP payload length exceeds u32::MAX");
         Message {
             header: Header::new(
                 protocol_version,
@@ -156,8 +158,9 @@ impl<D> Message<D> {
             ack_code,
             previous_message_data,
         };
-        #[allow(clippy::cast_possible_truncation)]
-        let payload_size = ack.encoded_size() as u32;
+        let payload_size =
+            u32::try_from(ack.encoded_size().expect("DoIP message is always sizable"))
+                .expect("DoIP payload length exceeds u32::MAX");
         Message {
             header: Header::new(
                 protocol_version,
@@ -169,7 +172,6 @@ impl<D> Message<D> {
     }
 
     /// Construct a routing activation request message
-    #[allow(clippy::cast_possible_truncation)]
     #[must_use]
     pub fn routing_activation_request(
         protocol_version: ProtocolVersion,
@@ -187,7 +189,12 @@ impl<D> Message<D> {
         let header = Header::new(
             protocol_version,
             PayloadType::RoutingActivationRequest,
-            request.encoded_size() as u32,
+            u32::try_from(
+                request
+                    .encoded_size()
+                    .expect("DoIP message is always sizable"),
+            )
+            .expect("DoIP payload length exceeds u32::MAX"),
         );
         Message {
             header,
@@ -196,7 +203,6 @@ impl<D> Message<D> {
     }
 
     /// Construct a routing activation response message
-    #[allow(clippy::cast_possible_truncation)]
     #[must_use]
     pub fn routing_activation_response(
         protocol_version: ProtocolVersion,
@@ -216,7 +222,12 @@ impl<D> Message<D> {
         let header = Header::new(
             protocol_version,
             PayloadType::RoutingActivationResponse,
-            response.encoded_size() as u32,
+            u32::try_from(
+                response
+                    .encoded_size()
+                    .expect("DoIP message is always sizable"),
+            )
+            .expect("DoIP payload length exceeds u32::MAX"),
         );
         Message {
             header,
@@ -226,21 +237,26 @@ impl<D> Message<D> {
 }
 
 impl<'a> Decode<'a> for Message<&'a [u8]> {
+    type Error = MessageError;
+
     /// Deserialize a complete `DoIP` message (header + payload) from a byte slice
     ///
     /// # Errors
     /// Returns a [`MessageError`] if the header or payload cannot be deserialized
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (header, rest) = Header::decode(buf)?;
-        let (payload_bytes, rest) = decode_util::take(rest, header.payload_length as usize)?;
+        let (payload_bytes, rest) =
+            automotive_wire_codec::take(rest, header.payload_length as usize)?;
         let payload = Payload::decode(payload_bytes, header.payload_type)?;
         Ok((Message { header, payload }, rest))
     }
 }
 
 impl<D: AsRef<[u8]>> Encode for Message<D> {
-    fn encoded_size(&self) -> usize {
-        Header::SIZE + self.payload.encoded_size()
+    type Error = MessageError;
+
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(Header::SIZE + self.payload.encoded_size()?)
     }
 
     /// Serialize this message (header + payload) into `writer`

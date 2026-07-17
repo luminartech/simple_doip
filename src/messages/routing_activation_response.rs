@@ -1,7 +1,9 @@
 use crate::logical_address::LogicalAddress;
 
-use super::decode_util::{read_array, read_optional_array, read_u8, read_u16_be};
-use super::encode_util::{write_u8, write_u16_be};
+use automotive_wire_codec::{
+    read_array, read_optional_array, read_u8, read_u16_be, write_all, write_u8, write_u16_be,
+};
+
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -96,13 +98,15 @@ pub struct RoutingActivationResponse {
 }
 
 impl<'a> Decode<'a> for RoutingActivationResponse {
+    type Error = MessageError;
+
     /// Deserialize a routing activation response from a byte slice
     ///
     /// The optional OEM-specific tail is decoded when at least 4 bytes remain after the
     /// fixed fields.
     ///
     /// # Errors
-    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (logical_address_tester, rest) = read_u16_be(buf)?;
         let (logical_address_of_doip_entity, rest) = read_u16_be(rest)?;
@@ -112,7 +116,7 @@ impl<'a> Decode<'a> for RoutingActivationResponse {
 
         let (reserved_oem, rest) = read_array::<4>(rest)?;
 
-        let (oem_specific, rest) = read_optional_array::<4>(rest)?;
+        let (oem_specific, rest) = read_optional_array::<4>(rest);
 
         Ok((
             RoutingActivationResponse {
@@ -128,9 +132,7 @@ impl<'a> Decode<'a> for RoutingActivationResponse {
 }
 
 impl Encode for RoutingActivationResponse {
-    fn encoded_size(&self) -> usize {
-        9 + self.oem_specific.map_or(0, |_| 4)
-    }
+    type Error = MessageError;
 
     /// Serialize this routing activation response into `writer`
     ///
@@ -140,11 +142,9 @@ impl Encode for RoutingActivationResponse {
         write_u16_be(writer, self.logical_address_tester.into())?;
         write_u16_be(writer, self.logical_address_of_doip_entity.into())?;
         write_u8(writer, self.routing_activation_response_code.into())?;
-        writer
-            .write_all(&self.reserved_oem)
-            .map_err(MessageError::io)?;
+        write_all(writer, &self.reserved_oem)?;
         if let Some(oem_specific) = self.oem_specific {
-            writer.write_all(&oem_specific).map_err(MessageError::io)?;
+            write_all(writer, &oem_specific)?;
         }
         Ok(9 + self.oem_specific.map_or(0, |_| 4))
     }

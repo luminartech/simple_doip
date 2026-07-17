@@ -1,7 +1,7 @@
 use crate::LogicalAddress;
 
-use super::decode_util::read_u16_be;
-use super::encode_util::write_u16_be;
+use automotive_wire_codec::{read_u16_be, write_all, write_u16_be};
+
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -13,11 +13,13 @@ pub struct DiagnosticMessage<D> {
 }
 
 impl<'a> Decode<'a> for DiagnosticMessage<&'a [u8]> {
+    type Error = MessageError;
+
     /// Deserialize a diagnostic message from a byte slice. Consumes the entire buffer;
     /// all bytes after the source/target addresses are treated as opaque user data.
     ///
     /// # Errors
-    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (source_address, rest) = read_u16_be(buf)?;
         let (target_address, rest) = read_u16_be(rest)?;
@@ -37,9 +39,7 @@ impl<'a> Decode<'a> for DiagnosticMessage<&'a [u8]> {
 }
 
 impl<D: AsRef<[u8]>> Encode for DiagnosticMessage<D> {
-    fn encoded_size(&self) -> usize {
-        4 + self.user_data.as_ref().len()
-    }
+    type Error = MessageError;
 
     /// Serialize this diagnostic message into `writer`
     ///
@@ -49,7 +49,7 @@ impl<D: AsRef<[u8]>> Encode for DiagnosticMessage<D> {
         write_u16_be(writer, self.source_address.into())?;
         write_u16_be(writer, self.target_address.into())?;
         let user_data = self.user_data.as_ref();
-        writer.write_all(user_data).map_err(MessageError::io)?;
+        write_all(writer, user_data)?;
         Ok(4 + user_data.len())
     }
 }

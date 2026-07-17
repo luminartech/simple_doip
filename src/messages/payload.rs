@@ -130,38 +130,40 @@ impl<'a> Payload<&'a [u8]> {
 }
 
 impl<D: AsRef<[u8]>> Encode for Payload<D> {
-    fn encoded_size(&self) -> usize {
-        match self {
-            Payload::DoIPNack(nack) => nack.encoded_size(),
+    type Error = MessageError;
+
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(match self {
+            Payload::DoIPNack(nack) => nack.encoded_size()?,
             Payload::AliveCheckRequest
             | Payload::DiagnosticMessageNack
             | Payload::EntityStatusRequest
             | Payload::VehicleIdentificationRequest => 0,
             Payload::AliveCheckResponse(alive_check_response) => {
-                alive_check_response.encoded_size()
+                alive_check_response.encoded_size()?
             }
-            Payload::DiagnosticMessage(diagnostic_message) => diagnostic_message.encoded_size(),
+            Payload::DiagnosticMessage(diagnostic_message) => diagnostic_message.encoded_size()?,
             Payload::DiagnosticMessageAck(diagnostic_message_ack) => {
-                diagnostic_message_ack.encoded_size()
+                diagnostic_message_ack.encoded_size()?
             }
             Payload::EntityStatusResponse(entity_status_response) => {
-                entity_status_response.encoded_size()
+                entity_status_response.encoded_size()?
             }
             Payload::PowerModeInfoResponse(diagnostic_power_mode_code) => {
-                diagnostic_power_mode_code.encoded_size()
+                diagnostic_power_mode_code.encoded_size()?
             }
             Payload::RoutingActivationRequest(routing_activation_request) => {
-                routing_activation_request.encoded_size()
+                routing_activation_request.encoded_size()?
             }
             Payload::RoutingActivationResponse(routing_activation_response) => {
-                routing_activation_response.encoded_size()
+                routing_activation_response.encoded_size()?
             }
             // `VehicleAnnouncement` shares the `VehicleIdentificationResponse` wire format.
             Payload::VehicleIdentificationResponse(vehicle_identification_response)
             | Payload::VehicleAnnouncement(vehicle_identification_response) => {
-                vehicle_identification_response.encoded_size()
+                vehicle_identification_response.encoded_size()?
             }
-        }
+        })
     }
 
     /// Serialize this payload into `writer`
@@ -257,7 +259,7 @@ mod tests {
             let mut writer: &mut [u8] = &mut buf;
             payload.encode(&mut writer).unwrap()
         };
-        assert_eq!(written, payload.encoded_size());
+        assert_eq!(written, payload.encoded_size().unwrap());
 
         let decoded = Payload::decode(&buf[..written], PayloadType::VehicleAnnouncement).unwrap();
         assert_eq!(decoded, payload);

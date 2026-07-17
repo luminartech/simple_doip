@@ -1,5 +1,5 @@
-use super::decode_util::read_u8;
-use super::encode_util::write_u8;
+use automotive_wire_codec::{read_u8, write_u8};
+
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -64,10 +64,12 @@ impl From<NackCode> for u8 {
 }
 
 impl<'a> Decode<'a> for NackCode {
+    type Error = MessageError;
+
     /// Deserialize a negative acknowledgement code from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (value, rest) = read_u8(buf)?;
         Ok((value.into(), rest))
@@ -75,8 +77,10 @@ impl<'a> Decode<'a> for NackCode {
 }
 
 impl Encode for NackCode {
-    fn encoded_size(&self) -> usize {
-        1
+    type Error = MessageError;
+
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(1)
     }
 
     /// Serialize this negative acknowledgement code into `writer`

@@ -1,5 +1,5 @@
-use super::decode_util::{read_u8, read_u32_be};
-use super::encode_util::{write_u8, write_u32_be};
+use automotive_wire_codec::{read_u8, read_u32_be, write_u8, write_u32_be};
+
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -43,10 +43,12 @@ pub struct EntityStatusResponse {
 }
 
 impl<'a> Decode<'a> for EntityStatusResponse {
+    type Error = MessageError;
+
     /// Deserialize an entity status response from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (node_type, rest) = read_u8(buf)?;
         let node_type = EntityStatusNodeType::from(node_type);
@@ -66,8 +68,10 @@ impl<'a> Decode<'a> for EntityStatusResponse {
 }
 
 impl Encode for EntityStatusResponse {
-    fn encoded_size(&self) -> usize {
-        7
+    type Error = MessageError;
+
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(7)
     }
 
     /// Serialize this entity status response into `writer`

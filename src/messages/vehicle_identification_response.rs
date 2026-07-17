@@ -1,7 +1,7 @@
 use crate::logical_address::LogicalAddress;
 
-use super::decode_util::{read_array, read_u8, read_u16_be};
-use super::encode_util::{write_u8, write_u16_be};
+use automotive_wire_codec::{read_array, read_u8, read_u16_be, write_all, write_u8, write_u16_be};
+
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -82,10 +82,12 @@ pub struct VehicleIdentificationResponse {
 }
 
 impl<'a> Decode<'a> for VehicleIdentificationResponse {
+    type Error = MessageError;
+
     /// Deserialize a vehicle identification response from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (vin, rest) = read_array::<17>(buf)?;
 
@@ -123,8 +125,10 @@ impl<'a> Decode<'a> for VehicleIdentificationResponse {
 }
 
 impl Encode for VehicleIdentificationResponse {
-    fn encoded_size(&self) -> usize {
-        33
+    type Error = MessageError;
+
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(33)
     }
 
     /// Serialize this vehicle identification response into `writer`
@@ -132,15 +136,13 @@ impl Encode for VehicleIdentificationResponse {
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
-        writer.write_all(&self.vin).map_err(MessageError::io)?;
+        write_all(writer, &self.vin)?;
         write_u16_be(writer, self.logical_address.into())?;
-        writer
-            .write_all(&self.entity_id)
-            .map_err(MessageError::io)?;
+        write_all(writer, &self.entity_id)?;
         if let Some(group_id) = self.group_id {
-            writer.write_all(&group_id).map_err(MessageError::io)?;
+            write_all(writer, &group_id)?;
         } else {
-            writer.write_all(&[0x00; 6]).map_err(MessageError::io)?;
+            write_all(writer, &[0x00; 6])?;
         }
         write_u8(writer, self.further_action.into())?;
         write_u8(writer, self.vin_gid_sync_status.into())?;

@@ -3,8 +3,10 @@ use core::fmt::UpperHex;
 
 use crate::LogicalAddress;
 
-use super::decode_util::{read_array, read_optional_array, read_u8, read_u16_be};
-use super::encode_util::{write_u8, write_u16_be};
+use automotive_wire_codec::{
+    read_array, read_optional_array, read_u8, read_u16_be, write_all, write_u8, write_u16_be,
+};
+
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
@@ -83,13 +85,15 @@ impl fmt::Debug for RoutingActivationRequest {
 }
 
 impl<'a> Decode<'a> for RoutingActivationRequest {
+    type Error = MessageError;
+
     /// Deserialize a routing activation request from a byte slice
     ///
     /// The optional manufacturer-specific tail is decoded when at least 4 bytes remain
     /// after the fixed fields.
     ///
     /// # Errors
-    /// Returns [`MessageError::InsufficientData`] if `buf` is too short
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (source_address, rest) = read_u16_be(buf)?;
         let (activation_type, rest) = read_u8(rest)?;
@@ -97,7 +101,7 @@ impl<'a> Decode<'a> for RoutingActivationRequest {
 
         let (reserved, rest) = read_array::<4>(rest)?;
 
-        let (reserved_vehicle_manufacturer, rest) = read_optional_array::<4>(rest)?;
+        let (reserved_vehicle_manufacturer, rest) = read_optional_array::<4>(rest);
 
         Ok((
             Self {
@@ -112,13 +116,7 @@ impl<'a> Decode<'a> for RoutingActivationRequest {
 }
 
 impl Encode for RoutingActivationRequest {
-    fn encoded_size(&self) -> usize {
-        if self.reserved_vehicle_manufacturer.is_some() {
-            11
-        } else {
-            7
-        }
-    }
+    type Error = MessageError;
 
     /// Serialize this routing activation request into `writer`
     ///
@@ -128,11 +126,9 @@ impl Encode for RoutingActivationRequest {
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
         write_u16_be(writer, self.source_address.into())?;
         write_u8(writer, self.activation_type.into())?;
-        writer.write_all(&self.reserved).map_err(MessageError::io)?;
+        write_all(writer, &self.reserved)?;
         if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {
-            writer
-                .write_all(&reserved_vehicle_manufacturer)
-                .map_err(MessageError::io)?;
+            write_all(writer, &reserved_vehicle_manufacturer)?;
             return Ok(11);
         }
         Ok(7)
