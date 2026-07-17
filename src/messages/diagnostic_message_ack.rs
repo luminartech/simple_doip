@@ -83,7 +83,7 @@ impl fmt::Debug for DiagnosticAckCode {
     }
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub struct DiagnosticMessageAck<'a> {
     pub source_address: LogicalAddress,
     pub target_address: LogicalAddress,

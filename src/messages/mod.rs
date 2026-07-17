@@ -523,3 +523,153 @@ mod tests {
         assert_eq!(decoded, message);
     }
 }
+
+/// Gate A follow-up: lock the borrowed<->owned conversions (correct today only by
+/// inspection) and the owned/borrowed constructor header agreement as permanent
+/// regressions. Alloc-gated because `to_owned_payload`/`to_owned_message` and the
+/// `Owned*` constructors only exist under `feature = "alloc"`.
+#[cfg(all(test, feature = "alloc"))]
+mod alloc_conversion_tests {
+    use super::*;
+    use crate::messages::{
+        AliveCheckResponse, DiagnosticAckCode, DiagnosticMessage, DiagnosticMessageAck,
+        DiagnosticPowerModeCode, EntityStatusNodeType, EntityStatusResponse,
+        FurtherActionRequired, NackCode, RoutingActivationResponseCode, VehicleIdentificationResponse,
+        VinGidSyncStatus,
+    };
+    use alloc::vec::Vec;
+
+    /// Construct one representative value of every `Payload<'_>` variant and assert that
+    /// round-tripping through `to_owned_payload` / `OwnedPayload::as_ref` reproduces the
+    /// original exactly. A future variant that is dropped from, or mis-mapped in, either
+    /// conversion match will fail this test.
+    #[test]
+    fn payload_conversion_roundtrip_all_variants() {
+        let diag_data = [0x10u8, 0x02];
+        let ack_data = [0x3Eu8, 0x00, 0xAA];
+
+        let values: Vec<Payload<'_>> = alloc::vec![
+            Payload::DoIPNack(NackCode::IncorrectPatternFormat),
+            Payload::AliveCheckRequest,
+            Payload::AliveCheckResponse(AliveCheckResponse {
+                source_address: LogicalAddress(0x0E00),
+            }),
+            Payload::DiagnosticMessage(DiagnosticMessage {
+                source_address: LogicalAddress(0x0E00),
+                target_address: LogicalAddress(0x1000),
+                user_data: &diag_data[..],
+            }),
+            Payload::DiagnosticMessageAck(DiagnosticMessageAck {
+                source_address: LogicalAddress(0xFFFF),
+                target_address: LogicalAddress(0x0001),
+                ack_code: DiagnosticAckCode::TransportProtocolError,
+                previous_message_data: &ack_data[..],
+            }),
+            Payload::DiagnosticMessageNack,
+            Payload::EntityStatusRequest,
+            Payload::EntityStatusResponse(EntityStatusResponse {
+                node_type: EntityStatusNodeType::DoIPGateway,
+                max_concurrent_tcp_sockets: 4,
+                open_tcp_sockets: 0,
+                max_data_size: 0x0000_FFFF,
+            }),
+            Payload::PowerModeInfoResponse(DiagnosticPowerModeCode::Ready),
+            Payload::RoutingActivationRequest(RoutingActivationRequest {
+                source_address: LogicalAddress(0x0E00),
+                activation_type: ActivationTypeCode::Default,
+                reserved: [0, 0, 0, 0],
+                reserved_vehicle_manufacturer: Some([0xDE, 0xAD, 0xBE, 0xEF]),
+            }),
+            Payload::RoutingActivationResponse(RoutingActivationResponse {
+                logical_address_tester: LogicalAddress(0x0E00),
+                logical_address_of_doip_entity: LogicalAddress(0x1000),
+                routing_activation_response_code:
+                    RoutingActivationResponseCode::RoutingSuccessfullyActivated,
+                reserved_oem: [0, 0, 0, 0],
+                oem_specific: Some([0xDE, 0xAD, 0xBE, 0xEF]),
+            }),
+            Payload::VehicleAnnouncement(VehicleIdentificationResponse {
+                vin: [0x41; 17],
+                logical_address: LogicalAddress(0x0E00),
+                entity_id: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06],
+                group_id: Some([0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F]),
+                further_action: FurtherActionRequired::NoFurtherActionRequired,
+                vin_gid_sync_status: VinGidSyncStatus::Synchronized,
+            }),
+            Payload::VehicleIdentificationRequest,
+            Payload::VehicleIdentificationResponse(VehicleIdentificationResponse {
+                vin: *b"1HGCM82633A004352",
+                logical_address: LogicalAddress(0x1000),
+                entity_id: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
+                group_id: None,
+                further_action: FurtherActionRequired::NoFurtherActionRequired,
+                vin_gid_sync_status: VinGidSyncStatus::Synchronized,
+            }),
+        ];
+
+        assert_eq!(values.len(), 14, "expected one value per Payload variant");
+
+        for p in &values {
+            let owned = p.to_owned_payload();
+            assert_eq!(&owned.as_ref(), p, "conversion mismatch for {p:?}");
+        }
+    }
+
+    /// Owned constructors must produce a header identical to their borrowed
+    /// counterpart's header for the same arguments, including the `payload_length`
+    /// arithmetic (locks the routing-activation length-arithmetic regression class).
+    #[test]
+    fn owned_message_matches_borrowed_headers() {
+        // routing_activation_response WITH oem_specific = Some(_) (13-byte case).
+        let borrowed = Message::routing_activation_response(
+            ProtocolVersion::V2012,
+            LogicalAddress(0x0E00),
+            LogicalAddress(0x1000),
+            RoutingActivationResponseCode::RoutingSuccessfullyActivated,
+            [0x00, 0x00, 0x00, 0x00],
+            Some([0xDE, 0xAD, 0xBE, 0xEF]),
+        );
+        let owned = OwnedMessage::routing_activation_response(
+            ProtocolVersion::V2012,
+            LogicalAddress(0x0E00),
+            LogicalAddress(0x1000),
+            RoutingActivationResponseCode::RoutingSuccessfullyActivated,
+            [0x00, 0x00, 0x00, 0x00],
+            Some([0xDE, 0xAD, 0xBE, 0xEF]),
+        );
+        assert_eq!(borrowed.header, owned.header);
+        assert_eq!(borrowed.header.payload_length, 13);
+
+        // diagnostic_message with non-empty data.
+        let data = [0x22u8, 0xF1, 0x90, 0x00];
+        let borrowed = Message::diagnostic_message(
+            ProtocolVersion::V2012,
+            LogicalAddress(0xE400),
+            LogicalAddress(0x00FF),
+            &data[..],
+        );
+        let owned = OwnedMessage::diagnostic_message(
+            ProtocolVersion::V2012,
+            LogicalAddress(0xE400),
+            LogicalAddress(0x00FF),
+            data.to_vec(),
+        );
+        assert_eq!(borrowed.header, owned.header);
+        assert_eq!(borrowed.to_owned_message().as_ref().header, borrowed.header);
+
+        // routing_activation_request with a Some tail.
+        let borrowed = Message::routing_activation_request(
+            ProtocolVersion::V2012,
+            LogicalAddress(0x0E00),
+            ActivationTypeCode::Default,
+            Some([0xDE, 0xAD, 0xBE, 0xEF]),
+        );
+        let owned = OwnedMessage::routing_activation_request(
+            ProtocolVersion::V2012,
+            LogicalAddress(0x0E00),
+            ActivationTypeCode::Default,
+            Some([0xDE, 0xAD, 0xBE, 0xEF]),
+        );
+        assert_eq!(borrowed.header, owned.header);
+    }
+}
