@@ -161,7 +161,7 @@ where
                 debug!("Routing Activation Response received: {:?}", res);
                 match res {
                     Ok(OwnedMessage { payload, header: _ }) => {
-                        let crate::messages::Payload::RoutingActivationResponse(
+                        let crate::messages::OwnedPayload::RoutingActivationResponse(
                             RoutingActivationResponse {
                                 logical_address_tester,
                                 logical_address_of_doip_entity,

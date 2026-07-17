@@ -51,14 +51,14 @@ impl ServerConnectionHandler for ServerHandler {
 
     async fn diagnostic_message(
         &self,
-        message: &DiagnosticMessage<Vec<u8>>,
+        message: &DiagnosticMessage<'_>,
     ) -> Result<OwnedMessage, Error> {
         debug!(
             "Received diagnostic message from {:?} to {:?}",
             message.source_address, message.target_address
         );
         // Simply echo back the received data as raw bytes
-        let response_data = message.user_data.clone();
+        let response_data = message.user_data.to_vec();
 
         // Note: Using diagnostic_message() instead of diagnostic_message_ack()
         // - diagnostic_message() sends actual diagnostic data (the echoed payload)

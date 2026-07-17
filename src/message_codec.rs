@@ -1,4 +1,4 @@
-use crate::messages::{Encode, MessageError, OwnedMessage};
+use crate::messages::{Encode, Message, MessageError, OwnedMessage, Payload};
 use bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder};
 
@@ -23,7 +23,12 @@ impl Decoder for MessageCodec {
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         match crate::try_frame(src.as_ref()) {
-            Ok(Some((message, consumed))) => {
+            Ok(Some((frame, consumed))) => {
+                let payload = Payload::decode(frame.payload, frame.header.payload_type)?;
+                let message = Message {
+                    header: frame.header,
+                    payload,
+                };
                 let owned = message.to_owned_message();
                 let _ = src.split_to(consumed);
                 Ok(Some(owned))
@@ -37,8 +42,8 @@ impl Decoder for MessageCodec {
 impl Encoder<&OwnedMessage> for MessageCodec {
     type Error = MessageError;
     fn encode(&mut self, message: &OwnedMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.reserve(message.encoded_size());
-        let mut out = alloc::vec::Vec::with_capacity(message.encoded_size());
+        dst.reserve(message.encoded_size()?);
+        let mut out = std::vec::Vec::with_capacity(message.encoded_size()?);
         message.encode(&mut out)?;
         dst.extend_from_slice(&out);
         Ok(())

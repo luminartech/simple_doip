@@ -104,15 +104,15 @@ impl ServerConnectionHandler for TestHandler {
 
     async fn diagnostic_message(
         &self,
-        message: &DiagnosticMessage<Vec<u8>>,
+        message: &DiagnosticMessage<'_>,
     ) -> Result<OwnedMessage, Error> {
-        *self.last_diagnostic_payload.lock().unwrap() = Some(message.user_data.clone());
+        *self.last_diagnostic_payload.lock().unwrap() = Some(message.user_data.to_vec());
         Ok(OwnedMessage::diagnostic_message_ack(
             self.protocol_version(),
             message.source_address,
             message.target_address,
             DiagnosticAckCode::RoutingConfirmationAck,
-            message.user_data.clone(),
+            message.user_data.to_vec(),
         ))
     }
 }

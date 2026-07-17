@@ -4,7 +4,7 @@ use crate::{
     Error,
     client::ClientOptions,
     connection_state::ConnectionState,
-    messages::{MessageError, OwnedMessage, Payload},
+    messages::{MessageError, OwnedMessage, OwnedPayload},
     socket_manager::SocketManager,
 };
 use std::{format, future, net::SocketAddr};
@@ -363,7 +363,7 @@ where
         match message {
             Ok(received_message) => {
                 match received_message.payload {
-                    Payload::AliveCheckRequest => {
+                    OwnedPayload::AliveCheckRequest => {
                         trace!("Received Alive Check Request");
                         let _ = self
                             .tcp_data_socket
@@ -375,7 +375,7 @@ where
                             ))
                             .await;
                     }
-                    Payload::DiagnosticMessageAck(ref ack) => {
+                    OwnedPayload::DiagnosticMessageAck(ref ack) => {
                         // Handle AwaitAck - complete immediately on ACK
                         if let Some(ControlMessage::AwaitAck(response)) = self.active_request.take()
                         {
@@ -419,7 +419,7 @@ where
                     }
                 } else {
                     // No active request - check if this is a DiagnosticMessage we should buffer
-                    if matches!(received_message.payload, Payload::DiagnosticMessage(_)) {
+                    if matches!(received_message.payload, OwnedPayload::DiagnosticMessage(_)) {
                         debug!(
                             "Buffering diagnostic response (no active request): {:?}",
                             received_message

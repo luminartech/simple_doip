@@ -3,8 +3,9 @@ use crate::{
     logical_address::LogicalAddress,
     message_codec::MessageCodec,
     messages::{
-        DiagnosticMessage, DiagnosticPowerModeCode, FurtherActionRequired, OwnedMessage, Payload,
-        ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse, VinGidSyncStatus,
+        DiagnosticMessage, DiagnosticPowerModeCode, FurtherActionRequired, OwnedMessage,
+        OwnedPayload, ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse,
+        VinGidSyncStatus,
     },
 };
 use async_trait::async_trait;
@@ -16,7 +17,6 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    vec::Vec,
 };
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
@@ -77,7 +77,7 @@ pub trait ServerConnectionHandler {
 
     async fn diagnostic_message(
         &self,
-        message: &DiagnosticMessage<Vec<u8>>,
+        message: &DiagnosticMessage<'_>,
     ) -> Result<OwnedMessage, Error>;
 
     // Optional Functions
@@ -281,28 +281,28 @@ where
         };
 
         match request_message.payload {
-            Payload::AliveCheckRequest => self
+            OwnedPayload::AliveCheckRequest => self
                 .connection_handler
                 .alive_check(&connection_info)
                 .await
                 .map(Some),
-            Payload::DiagnosticMessage(diagnostic_message) => self
+            OwnedPayload::DiagnosticMessage(diagnostic_message) => self
                 .connection_handler
-                .diagnostic_message(&diagnostic_message)
+                .diagnostic_message(&diagnostic_message.as_ref())
                 .await
                 .map(Some),
-            Payload::EntityStatusRequest => {
+            OwnedPayload::EntityStatusRequest => {
                 warn!(
                     "Entity Status Request is not yet supported, ignoring. source: {client_socket_addr}"
                 );
                 Ok(None)
             }
-            Payload::RoutingActivationRequest(request) => self
+            OwnedPayload::RoutingActivationRequest(request) => self
                 .connection_handler
                 .routing_activation(&request)
                 .await
                 .map(Some),
-            Payload::RoutingActivationResponse(_routing_activation_response) => {
+            OwnedPayload::RoutingActivationResponse(_routing_activation_response) => {
                 warn!(
                     "Client sent a server-role RoutingActivationResponse message, source: {client_socket_addr}"
                 );
@@ -310,13 +310,13 @@ where
                     request_message.header.payload_type,
                 ))
             }
-            Payload::VehicleIdentificationRequest => {
+            OwnedPayload::VehicleIdentificationRequest => {
                 warn!(
                     "Vehicle Identification Request is not yet supported, ignoring. source: {client_socket_addr}"
                 );
                 Ok(None)
             }
-            Payload::VehicleIdentificationResponse(_vehicle_identification_response) => {
+            OwnedPayload::VehicleIdentificationResponse(_vehicle_identification_response) => {
                 warn!(
                     "Client sent a server-role VehicleIdentificationResponse message, source: {client_socket_addr}"
                 );
