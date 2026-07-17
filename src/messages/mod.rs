@@ -5,9 +5,9 @@ pub use diagnostic_message::DiagnosticMessage;
 #[cfg(feature = "alloc")]
 pub use diagnostic_message::OwnedDiagnosticMessage;
 mod diagnostic_message_ack;
-pub use diagnostic_message_ack::{DiagnosticAckCode, DiagnosticMessageAck};
 #[cfg(feature = "alloc")]
 pub use diagnostic_message_ack::OwnedDiagnosticMessageAck;
+pub use diagnostic_message_ack::{DiagnosticAckCode, DiagnosticMessageAck};
 mod entity_status_response;
 pub use entity_status_response::{EntityStatusNodeType, EntityStatusResponse};
 mod header;
@@ -17,9 +17,9 @@ pub use message_error::MessageError;
 mod nack;
 pub use nack::NackCode;
 mod payload;
-pub use payload::Payload;
 #[cfg(feature = "alloc")]
 pub use payload::OwnedPayload;
+pub use payload::Payload;
 mod power_mode_info_response;
 pub use power_mode_info_response::DiagnosticPowerModeCode;
 mod routing_activation_request;
@@ -121,9 +121,12 @@ impl<'a> Message<'a> {
             target_address,
             user_data,
         };
-        let payload_size =
-            u32::try_from(message.encoded_size().expect("DoIP message is always sizable"))
-                .expect("DoIP payload length exceeds u32::MAX");
+        let payload_size = u32::try_from(
+            message
+                .encoded_size()
+                .expect("DoIP message is always sizable"),
+        )
+        .expect("DoIP payload length exceeds u32::MAX");
         Message {
             header: Header::new(
                 protocol_version,
@@ -543,9 +546,8 @@ mod alloc_conversion_tests {
     use super::*;
     use crate::messages::{
         AliveCheckResponse, DiagnosticAckCode, DiagnosticMessage, DiagnosticMessageAck,
-        DiagnosticPowerModeCode, EntityStatusNodeType, EntityStatusResponse,
-        FurtherActionRequired, NackCode, RoutingActivationResponseCode, VehicleIdentificationResponse,
-        VinGidSyncStatus,
+        DiagnosticPowerModeCode, EntityStatusNodeType, EntityStatusResponse, FurtherActionRequired,
+        NackCode, RoutingActivationResponseCode, VehicleIdentificationResponse, VinGidSyncStatus,
     };
     use alloc::vec::Vec;
 
