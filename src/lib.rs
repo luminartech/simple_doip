@@ -19,7 +19,7 @@ pub mod logical_address;
 pub mod messages;
 pub use logical_address::LogicalAddress;
 mod framer;
-pub use framer::try_frame;
+pub use framer::{RawFrame, try_frame};
 
 #[cfg(feature = "client")]
 pub mod client;

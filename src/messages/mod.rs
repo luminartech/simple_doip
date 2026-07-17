@@ -491,8 +491,13 @@ mod tests {
             message.encode(&mut writer).unwrap()
         };
 
-        let (decoded, consumed) = crate::try_frame(&buf[..written]).unwrap().unwrap();
+        let (frame, consumed) = crate::try_frame(&buf[..written]).unwrap().unwrap();
         assert_eq!(consumed, written);
+        let payload = Payload::decode(frame.payload, frame.header.payload_type).unwrap();
+        let decoded = Message {
+            header: frame.header,
+            payload,
+        };
         assert_eq!(decoded, message);
     }
 
@@ -518,8 +523,13 @@ mod tests {
             message.encode(&mut writer).unwrap()
         };
 
-        let (decoded, consumed) = crate::try_frame(&buf[..written]).unwrap().unwrap();
+        let (frame, consumed) = crate::try_frame(&buf[..written]).unwrap().unwrap();
         assert_eq!(consumed, written);
+        let payload = Payload::decode(frame.payload, frame.header.payload_type).unwrap();
+        let decoded = Message {
+            header: frame.header,
+            payload,
+        };
         assert_eq!(decoded, message);
     }
 }

@@ -1,4 +1,18 @@
-use crate::messages::{header::PayloadType, nack::NackCode};
+//! Error taxonomy for the `no_std` decode/encode core.
+//!
+//! [`MessageError`] variants fall along **two orthogonal axes**, not one flat tier
+//! list:
+//!
+//! | Variant | Framing tier (per [`MessageError::is_framing_fatal`]) | Layer |
+//! |---|---|---|
+//! | `VersionInverseIncorrect` | framing-fatal | wire decode |
+//! | `Incomplete` | framing-fatal (when surfaced by `try_frame`/`Decode`) | wire decode |
+//! | `TrailingBytes` | recoverable | wire decode |
+//! | `PayloadLengthTooShort`, `UnexpectedPayloadType`, `UnsupportedPayloadType` | recoverable (body) | wire decode |
+//! | `Io` | recoverable (TX-side short write, e.g. `Io(WriteZero)` on an undersized stack buffer — S3) | encode / embedded-io |
+//! | `Std` | not a frame property at all | tokio/codec boundary |
+
+use crate::messages::header::PayloadType;
 
 use automotive_wire_codec::{Incomplete, TrailingBytes};
 use thiserror::Error;
@@ -6,8 +20,6 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum MessageError {
-    #[error("Negative acknowledgement: {0:?}")]
-    Nack(NackCode),
     #[error("Version Inverse Incorrect, Expected: {expected:X}, got: {value:X}")]
     VersionInverseIncorrect { expected: u8, value: u8 },
     #[error(
@@ -30,6 +42,19 @@ pub enum MessageError {
     #[cfg(feature = "std")]
     #[error("I/O error: {0}")]
     Std(std::io::Error),
+}
+
+impl MessageError {
+    /// Framing-fatal errors mean stream sync is lost (header cannot be trusted);
+    /// the client's only safe move is to close the connection. Everything else is
+    /// frame-recoverable (NACK / ignore / skip).
+    #[must_use]
+    pub fn is_framing_fatal(&self) -> bool {
+        matches!(
+            self,
+            MessageError::VersionInverseIncorrect { .. } | MessageError::Incomplete(_)
+        )
+    }
 }
 
 impl From<embedded_io::ErrorKind> for MessageError {
