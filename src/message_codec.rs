@@ -42,8 +42,9 @@ impl Decoder for MessageCodec {
 impl Encoder<&OwnedMessage> for MessageCodec {
     type Error = MessageError;
     fn encode(&mut self, message: &OwnedMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.reserve(message.encoded_size()?);
-        let mut out = std::vec::Vec::with_capacity(message.encoded_size()?);
+        let size = message.encoded_size()?;
+        dst.reserve(size);
+        let mut out = std::vec::Vec::with_capacity(size);
         message.encode(&mut out)?;
         dst.extend_from_slice(&out);
         Ok(())
