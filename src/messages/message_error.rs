@@ -1,5 +1,6 @@
 use crate::messages::{header::PayloadType, nack::NackCode};
 
+use automotive_wire_codec::{Incomplete, TrailingBytes};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -17,10 +18,10 @@ pub enum MessageError {
     UnexpectedPayloadType(PayloadType),
     #[error("Unsupported payload type, cannot decode: {0:?}")]
     UnsupportedPayloadType(PayloadType),
-    #[error("Insufficient data: needed {needed} bytes, {available} available")]
-    InsufficientData { needed: usize, available: usize },
-    #[error("Trailing bytes after decode: {count}")]
-    TrailingBytes { count: usize },
+    #[error(transparent)]
+    Incomplete(#[from] Incomplete),
+    #[error(transparent)]
+    TrailingBytes(#[from] TrailingBytes),
     #[error("I/O error: {0:?}")]
     Io(embedded_io::ErrorKind),
     /// Full `std::io::Error` from the tokio/codec layer, preserving the OS error detail
@@ -31,11 +32,9 @@ pub enum MessageError {
     Std(std::io::Error),
 }
 
-impl MessageError {
-    /// Map any embedded-io error to [`MessageError::Io`].
-    #[allow(clippy::needless_pass_by_value)]
-    pub(crate) fn io(err: impl embedded_io::Error) -> Self {
-        MessageError::Io(err.kind())
+impl From<embedded_io::ErrorKind> for MessageError {
+    fn from(kind: embedded_io::ErrorKind) -> Self {
+        MessageError::Io(kind)
     }
 }
 
