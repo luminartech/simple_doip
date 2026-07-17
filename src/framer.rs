@@ -1,7 +1,7 @@
 //! Sans-io framer: extract complete `DoIP` messages from a byte buffer without owning
 //! any I/O resource itself.
 
-use crate::messages::{Decode, Header, MessageError, MessageRef};
+use crate::messages::{Decode, Header, Message, MessageError};
 
 /// Try to extract one complete `DoIP` message from the front of `buf`.
 ///
@@ -13,7 +13,7 @@ use crate::messages::{Decode, Header, MessageError, MessageRef};
 /// # Errors
 /// Returns a [`MessageError`] if `buf` contains a malformed header (e.g. an incorrect
 /// inverse protocol version) or payload.
-pub fn try_frame(buf: &[u8]) -> Result<Option<(MessageRef<'_>, usize)>, MessageError> {
+pub fn try_frame(buf: &[u8]) -> Result<Option<(Message<'_>, usize)>, MessageError> {
     if buf.len() < Header::SIZE {
         return Ok(None);
     }
@@ -27,7 +27,7 @@ pub fn try_frame(buf: &[u8]) -> Result<Option<(MessageRef<'_>, usize)>, MessageE
         return Ok(None);
     }
     let total = Header::SIZE + payload_len; // now provably <= buf.len(), no overflow
-    let (message, _) = MessageRef::decode(&buf[..total])?;
+    let (message, _) = Message::decode(&buf[..total])?;
     Ok(Some((message, total)))
 }
 

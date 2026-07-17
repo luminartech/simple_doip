@@ -84,14 +84,52 @@ impl fmt::Debug for DiagnosticAckCode {
 }
 
 #[derive(Clone, Eq, PartialEq)]
-pub struct DiagnosticMessageAck<D> {
+pub struct DiagnosticMessageAck<'a> {
     pub source_address: LogicalAddress,
     pub target_address: LogicalAddress,
     pub ack_code: DiagnosticAckCode,
-    pub previous_message_data: D,
+    pub previous_message_data: &'a [u8],
 }
 
-impl<'a> Decode<'a> for DiagnosticMessageAck<&'a [u8]> {
+/// Owned mirror of [`DiagnosticMessageAck`] for values that must outlive an RX buffer
+/// (tokio channels, `ServerConnectionHandler` responses).
+#[cfg(feature = "alloc")]
+#[derive(Clone, Eq, PartialEq)]
+pub struct OwnedDiagnosticMessageAck {
+    pub source_address: LogicalAddress,
+    pub target_address: LogicalAddress,
+    pub ack_code: DiagnosticAckCode,
+    pub previous_message_data: alloc::vec::Vec<u8>,
+}
+
+#[cfg(feature = "alloc")]
+impl OwnedDiagnosticMessageAck {
+    /// Cheap borrowed view for encode paths and read-only inspection.
+    #[must_use]
+    pub fn as_ref(&self) -> DiagnosticMessageAck<'_> {
+        DiagnosticMessageAck {
+            source_address: self.source_address,
+            target_address: self.target_address,
+            ack_code: self.ack_code,
+            previous_message_data: &self.previous_message_data,
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl DiagnosticMessageAck<'_> {
+    #[must_use]
+    pub fn to_owned_message(&self) -> OwnedDiagnosticMessageAck {
+        OwnedDiagnosticMessageAck {
+            source_address: self.source_address,
+            target_address: self.target_address,
+            ack_code: self.ack_code,
+            previous_message_data: self.previous_message_data.to_vec(),
+        }
+    }
+}
+
+impl<'a> Decode<'a> for DiagnosticMessageAck<'a> {
     type Error = MessageError;
 
     /// Deserialize a diagnostic message acknowledgement from a byte slice. Consumes the
@@ -120,7 +158,7 @@ impl<'a> Decode<'a> for DiagnosticMessageAck<&'a [u8]> {
     }
 }
 
-impl<D: AsRef<[u8]>> Encode for DiagnosticMessageAck<D> {
+impl Encode for DiagnosticMessageAck<'_> {
     type Error = MessageError;
 
     /// Serialize this diagnostic message acknowledgement into `writer`
@@ -131,15 +169,15 @@ impl<D: AsRef<[u8]>> Encode for DiagnosticMessageAck<D> {
         write_u16_be(writer, self.source_address.into())?;
         write_u16_be(writer, self.target_address.into())?;
         write_u8(writer, self.ack_code.into())?;
-        let previous_message_data = self.previous_message_data.as_ref();
+        let previous_message_data = self.previous_message_data;
         write_all(writer, previous_message_data)?;
         Ok(5 + previous_message_data.len())
     }
 }
 
-impl<D: AsRef<[u8]>> fmt::Debug for DiagnosticMessageAck<D> {
+impl fmt::Debug for DiagnosticMessageAck<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let previous_message_data = self.previous_message_data.as_ref();
+        let previous_message_data = self.previous_message_data;
         f.debug_struct("DiagnosticMessageAck")
             .field("source_address", &self.source_address)
             .field("target_address", &self.target_address)
@@ -153,6 +191,13 @@ impl<D: AsRef<[u8]>> fmt::Debug for DiagnosticMessageAck<D> {
                 ),
             )
             .finish()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl fmt::Debug for OwnedDiagnosticMessageAck {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_ref().fmt(f)
     }
 }
 

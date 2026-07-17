@@ -9,14 +9,14 @@ use super::{NackCode, RoutingActivationRequest};
 
 /// Maps [`PayloadType`] to the corresponding `Payload` type when reading and writing
 /// messages. This is the main payload type for `DoIP` messages.
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
-pub enum Payload<D> {
+pub enum Payload<'a> {
     DoIPNack(NackCode),
     AliveCheckRequest,
     AliveCheckResponse(AliveCheckResponse),
-    DiagnosticMessage(DiagnosticMessage<D>),
-    DiagnosticMessageAck(DiagnosticMessageAck<D>),
+    DiagnosticMessage(DiagnosticMessage<'a>),
+    DiagnosticMessageAck(DiagnosticMessageAck<'a>),
     DiagnosticMessageNack,
     EntityStatusRequest,
     EntityStatusResponse(EntityStatusResponse),
@@ -30,54 +30,102 @@ pub enum Payload<D> {
     VehicleIdentificationResponse(VehicleIdentificationResponse),
 }
 
-// A manual impl is required (rather than `#[derive(Debug)]`) because
-// `DiagnosticMessageAck<D>`'s `Debug` impl needs `D: AsRef<[u8]>` (to hex-format the
-// trailing data), a bound `#[derive(Debug)]` cannot infer automatically.
-impl<D: AsRef<[u8]> + core::fmt::Debug> core::fmt::Debug for Payload<D> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+/// Owned mirror of [`Payload`] for values that must outlive an RX buffer (tokio
+/// channels, `ServerConnectionHandler` responses). Only the two data-carrying leaf
+/// variants need owned storage; every other variant is already fully owned.
+#[cfg(feature = "alloc")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum OwnedPayload {
+    DoIPNack(NackCode),
+    AliveCheckRequest,
+    AliveCheckResponse(AliveCheckResponse),
+    DiagnosticMessage(super::OwnedDiagnosticMessage),
+    DiagnosticMessageAck(super::OwnedDiagnosticMessageAck),
+    DiagnosticMessageNack,
+    EntityStatusRequest,
+    EntityStatusResponse(EntityStatusResponse),
+    PowerModeInfoResponse(DiagnosticPowerModeCode),
+    RoutingActivationRequest(RoutingActivationRequest),
+    RoutingActivationResponse(RoutingActivationResponse),
+    /// Vehicle announcement / vehicle identification response (`PayloadType::VehicleAnnouncement`,
+    /// 0x0004). Shares the [`VehicleIdentificationResponse`] wire format.
+    VehicleAnnouncement(VehicleIdentificationResponse),
+    VehicleIdentificationRequest,
+    VehicleIdentificationResponse(VehicleIdentificationResponse),
+}
+
+#[cfg(feature = "alloc")]
+impl Payload<'_> {
+    /// Copy any borrowed payload data into an owned payload.
+    #[must_use]
+    pub fn to_owned_payload(&self) -> OwnedPayload {
         match self {
-            Payload::DoIPNack(nack) => f.debug_tuple("DoIPNack").field(nack).finish(),
-            Payload::AliveCheckRequest => f.write_str("AliveCheckRequest"),
-            Payload::AliveCheckResponse(response) => {
-                f.debug_tuple("AliveCheckResponse").field(response).finish()
-            }
+            Payload::DoIPNack(nack) => OwnedPayload::DoIPNack(*nack),
+            Payload::AliveCheckRequest => OwnedPayload::AliveCheckRequest,
+            Payload::AliveCheckResponse(response) => OwnedPayload::AliveCheckResponse(*response),
             Payload::DiagnosticMessage(message) => {
-                f.debug_tuple("DiagnosticMessage").field(message).finish()
+                OwnedPayload::DiagnosticMessage(message.to_owned_message())
             }
             Payload::DiagnosticMessageAck(ack) => {
-                f.debug_tuple("DiagnosticMessageAck").field(ack).finish()
+                OwnedPayload::DiagnosticMessageAck(ack.to_owned_message())
             }
-            Payload::DiagnosticMessageNack => f.write_str("DiagnosticMessageNack"),
-            Payload::EntityStatusRequest => f.write_str("EntityStatusRequest"),
-            Payload::EntityStatusResponse(response) => f
-                .debug_tuple("EntityStatusResponse")
-                .field(response)
-                .finish(),
-            Payload::PowerModeInfoResponse(code) => {
-                f.debug_tuple("PowerModeInfoResponse").field(code).finish()
+            Payload::DiagnosticMessageNack => OwnedPayload::DiagnosticMessageNack,
+            Payload::EntityStatusRequest => OwnedPayload::EntityStatusRequest,
+            Payload::EntityStatusResponse(response) => {
+                OwnedPayload::EntityStatusResponse(*response)
             }
-            Payload::RoutingActivationRequest(request) => f
-                .debug_tuple("RoutingActivationRequest")
-                .field(request)
-                .finish(),
-            Payload::RoutingActivationResponse(response) => f
-                .debug_tuple("RoutingActivationResponse")
-                .field(response)
-                .finish(),
-            Payload::VehicleAnnouncement(response) => f
-                .debug_tuple("VehicleAnnouncement")
-                .field(response)
-                .finish(),
-            Payload::VehicleIdentificationRequest => f.write_str("VehicleIdentificationRequest"),
-            Payload::VehicleIdentificationResponse(response) => f
-                .debug_tuple("VehicleIdentificationResponse")
-                .field(response)
-                .finish(),
+            Payload::PowerModeInfoResponse(code) => OwnedPayload::PowerModeInfoResponse(*code),
+            Payload::RoutingActivationRequest(request) => {
+                OwnedPayload::RoutingActivationRequest(*request)
+            }
+            Payload::RoutingActivationResponse(response) => {
+                OwnedPayload::RoutingActivationResponse(*response)
+            }
+            Payload::VehicleAnnouncement(response) => OwnedPayload::VehicleAnnouncement(*response),
+            Payload::VehicleIdentificationRequest => OwnedPayload::VehicleIdentificationRequest,
+            Payload::VehicleIdentificationResponse(response) => {
+                OwnedPayload::VehicleIdentificationResponse(*response)
+            }
         }
     }
 }
 
-impl<'a> Payload<&'a [u8]> {
+#[cfg(feature = "alloc")]
+impl OwnedPayload {
+    /// Cheap borrowed view for encode paths and read-only inspection.
+    #[must_use]
+    pub fn as_ref(&self) -> Payload<'_> {
+        match self {
+            OwnedPayload::DoIPNack(nack) => Payload::DoIPNack(*nack),
+            OwnedPayload::AliveCheckRequest => Payload::AliveCheckRequest,
+            OwnedPayload::AliveCheckResponse(response) => Payload::AliveCheckResponse(*response),
+            OwnedPayload::DiagnosticMessage(message) => {
+                Payload::DiagnosticMessage(message.as_ref())
+            }
+            OwnedPayload::DiagnosticMessageAck(ack) => Payload::DiagnosticMessageAck(ack.as_ref()),
+            OwnedPayload::DiagnosticMessageNack => Payload::DiagnosticMessageNack,
+            OwnedPayload::EntityStatusRequest => Payload::EntityStatusRequest,
+            OwnedPayload::EntityStatusResponse(response) => {
+                Payload::EntityStatusResponse(*response)
+            }
+            OwnedPayload::PowerModeInfoResponse(code) => Payload::PowerModeInfoResponse(*code),
+            OwnedPayload::RoutingActivationRequest(request) => {
+                Payload::RoutingActivationRequest(*request)
+            }
+            OwnedPayload::RoutingActivationResponse(response) => {
+                Payload::RoutingActivationResponse(*response)
+            }
+            OwnedPayload::VehicleAnnouncement(response) => Payload::VehicleAnnouncement(*response),
+            OwnedPayload::VehicleIdentificationRequest => Payload::VehicleIdentificationRequest,
+            OwnedPayload::VehicleIdentificationResponse(response) => {
+                Payload::VehicleIdentificationResponse(*response)
+            }
+        }
+    }
+}
+
+impl<'a> Payload<'a> {
     /// Decode a payload of the given type from exactly the payload bytes of one message.
     ///
     /// # Errors
@@ -129,7 +177,7 @@ impl<'a> Payload<&'a [u8]> {
     }
 }
 
-impl<D: AsRef<[u8]>> Encode for Payload<D> {
+impl Encode for Payload<'_> {
     type Error = MessageError;
 
     fn encoded_size(&self) -> Result<usize, MessageError> {

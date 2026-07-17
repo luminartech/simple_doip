@@ -6,12 +6,12 @@
 //! touches the `core`-only API surface of `simple_doip`. It compiles cleanly
 //! with `cargo build --example bare_metal_codec --no-default-features`.
 
-use simple_doip::messages::{ActivationTypeCode, Encode, Message, MessageRef, ProtocolVersion};
+use simple_doip::messages::{ActivationTypeCode, Encode, Message, ProtocolVersion};
 use simple_doip::{LogicalAddress, try_frame};
 
 fn main() {
     // --- Routing activation request ---------------------------------------
-    let routing_request: MessageRef = Message::routing_activation_request(
+    let routing_request: Message<'_> = Message::routing_activation_request(
         ProtocolVersion::V2012,
         LogicalAddress(0x0E00),
         ActivationTypeCode::Default,
@@ -39,7 +39,7 @@ fn main() {
 
     // --- Diagnostic message, built from a stack array -----------------------
     let user_data: [u8; 2] = [0x10, 0x02];
-    let diagnostic_message: MessageRef = Message::diagnostic_message(
+    let diagnostic_message: Message<'_> = Message::diagnostic_message(
         ProtocolVersion::V2012,
         LogicalAddress(0x0E00),
         LogicalAddress(0x1000),
