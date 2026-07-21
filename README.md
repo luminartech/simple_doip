@@ -3,6 +3,11 @@
 An ISO 13400-2 (DoIP) implementation with a `no_std`, zero-copy protocol core
 and optional async client and server.
 
+[`ARCHITECTURE.md`](ARCHITECTURE.md) describes how the crate is put together —
+the feature-gated layering, the sans-io framing/decode seam, the error taxonomy,
+the relationship to `automotive-wire-codec`, and the known issues and deferred
+refactors a new maintainer should read before changing anything.
+
 ## Status
 
 The protocol core (framing, message encode/decode, golden-vector-tested
