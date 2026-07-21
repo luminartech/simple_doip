@@ -142,7 +142,10 @@ mod tests {
         assert!(matches!(err, MessageError::VersionInverseIncorrect { .. }));
     }
 
-    /// Header declares a 2-byte NACK body but only 1 body byte is present. This pins the
+    /// A `RoutingActivationRequest` (payload type `0x0005`) whose header declares a 1-byte
+    /// body — and one body byte is indeed present, so framing is satisfied. The body is
+    /// nonetheless truncated for its type: `RoutingActivationRequest::decode` needs 7
+    /// bytes. This pins the
     /// `Err(e) if e.is_framing_fatal() => return Err(e)` arm in `decode` specifically -
     /// distinct from `corrupt_header_is_fatal`, which exercises the `?` on
     /// `crate::try_frame` and never reaches `Payload::decode` at all. Here framing
