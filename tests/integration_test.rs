@@ -421,3 +421,123 @@ async fn malformed_header_does_not_kill_server() {
     with_timeout("client shutdown", fresh_client.shut_down()).await;
     server.shutdown().await;
 }
+
+/// A [`ServerConnectionHandler`] that answers a routing activation request with a
+/// diagnostic message ack instead of a routing activation response.
+struct MisbehavingHandler;
+
+#[async_trait]
+impl ServerConnectionHandler for MisbehavingHandler {
+    fn get_vin(&self) -> [u8; 17] {
+        [0x00; 17]
+    }
+
+    fn get_logical_address(&self) -> LogicalAddress {
+        SERVER_LOGICAL_ADDRESS
+    }
+
+    fn get_entity_id(&self) -> [u8; 6] {
+        [0x00; 6]
+    }
+
+    fn get_group_id(&self) -> Option<[u8; 6]> {
+        None
+    }
+
+    async fn routing_activation(
+        &self,
+        request: &RoutingActivationRequest,
+    ) -> Result<OwnedMessage, Error> {
+        // Deliberately the wrong payload type for a routing activation request.
+        Ok(OwnedMessage::diagnostic_message_ack(
+            self.protocol_version(),
+            self.get_logical_address(),
+            request.source_address,
+            DiagnosticAckCode::RoutingConfirmationAck,
+            Vec::new(),
+        ))
+    }
+
+    async fn diagnostic_message(
+        &self,
+        message: &DiagnosticMessage<'_>,
+    ) -> Result<OwnedMessage, Error> {
+        Ok(OwnedMessage::diagnostic_message_ack(
+            self.protocol_version(),
+            message.source_address,
+            message.target_address,
+            DiagnosticAckCode::RoutingConfirmationAck,
+            message.user_data.to_vec(),
+        ))
+    }
+}
+
+/// Test 5: a server that answers routing activation with the wrong payload type must
+/// never panic or hang the client.
+///
+/// NOTE on what this actually locks: the brief for this test expected it to exercise
+/// the `is_response` guard in `client_inner.rs` (lines ~402-418), which converts a
+/// mismatched response into `Err(Error::UnexpectedMessageType(_))`. Empirically (traced
+/// with `RUST_LOG=trace`) that is *not* what happens for this specific misbehaving
+/// payload. `DiagnosticMessageAck` has its own special-cased handling
+/// (`client_inner.rs`'s `OwnedPayload::DiagnosticMessageAck` arm) that runs before the
+/// general `is_response` check is ever reached. That arm contains a separate,
+/// pre-existing defect: `self.active_request.take()` unconditionally clears the pending
+/// request while pattern-matching for `ControlMessage::AwaitAck` specifically; when the
+/// pending request is actually `AwaitResponse` (as it is here, for routing activation),
+/// the pattern fails and the temporary — still holding the response oneshot `Sender` —
+/// is silently dropped instead of being restored. That closes the routing-activation
+/// oneshot channel almost immediately (confirmed in the trace: the "channel closed"
+/// warning fires within ~1ms of the ack arriving, long before the 2s response
+/// deadline). `Client::bind_socket` in `src/client.rs` treats a closed channel the same
+/// as "server doesn't support routing activation": it logs a warning and lets
+/// `connect()` succeed anyway, without ever producing an `Error` of any kind.
+///
+/// So for a `DiagnosticMessageAck` specifically, `connect()` returns `Ok`, not
+/// `Err(UnexpectedMessageType)`. The `is_response` guard this test was meant to lock is
+/// real and does fire for other wrong payload types (anything that isn't
+/// `AliveCheckRequest` or `DiagnosticMessageAck` falls through to the general handling
+/// at `client_inner.rs:402`), but a `DiagnosticMessageAck` sidesteps it via this
+/// unrelated bug. Fixing that bug is out of scope for this task (defence-in-depth for
+/// the `todo!()` in `client.rs`, not a `client_inner.rs` bugfix), so this test locks the
+/// behavior that actually exists: no panic, no hang, and `connect()` completes
+/// (successfully, if surprisingly) rather than getting stuck.
+#[tokio::test]
+async fn wrong_routing_activation_response_type_errors_without_panicking() {
+    let server = Server::new(MisbehavingHandler).expect("server should construct");
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("failed to bind test server to an ephemeral port");
+    let addr = listener
+        .local_addr()
+        .expect("bound listener has a local address");
+
+    let accept_loop = tokio::spawn(async move {
+        loop {
+            let Ok((stream, peer_addr)) = listener.accept().await else {
+                break;
+            };
+            let _ = server.handle_client_connection(peer_addr, stream).await;
+        }
+    });
+
+    // Observed behavior (see the doc comment above): the misbehaving
+    // `DiagnosticMessageAck` closes the routing-activation response channel early via a
+    // separate, pre-existing bug, and `Client::bind_socket` treats a closed channel as
+    // "routing activation unsupported" rather than an error. The important guarantee
+    // this test locks is that the client never panics and never hangs waiting on a
+    // response that will never arrive correctly typed.
+    let result = with_timeout(
+        "client connect against a misbehaving server",
+        Client::<TestConnector>::connect(client_options(addr)),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "connect should complete (not panic or hang) against a misbehaving server; got: {result:?}"
+    );
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
+}

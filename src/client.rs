@@ -141,7 +141,7 @@ where
                 // if the timeout specifically and keep working, the routing activation may not be supported
                 debug!("Routing Activation Response received: {:?}", res);
                 match res {
-                    Ok(OwnedMessage { payload, header: _ }) => {
+                    Ok(OwnedMessage { payload, header }) => {
                         let crate::messages::OwnedPayload::RoutingActivationResponse(
                             RoutingActivationResponse {
                                 logical_address_tester,
@@ -152,9 +152,12 @@ where
                             },
                         ) = payload
                         else {
-                            todo!(
-                                "Responded with something other than a routing activation response"
-                            );
+                            // Unreachable in practice: client_inner only forwards a
+                            // response whose payload type satisfies `is_response`, which
+                            // for a routing activation request means exactly
+                            // RoutingActivationResponse. Kept as defence in depth so a
+                            // future refactor degrades to an error, not a panic.
+                            return Err(Error::UnexpectedMessageType(header.payload_type));
                         };
                         info!("Routing Activation Response received:");
                         info!("  Logical Address Tester: {:04X}", logical_address_tester.0);
