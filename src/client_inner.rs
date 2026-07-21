@@ -358,6 +358,39 @@ where
         }
     }
 
+    /// Take the pending request only if it is an [`ControlMessage::AwaitAck`].
+    ///
+    /// Any other pending request is put back untouched: taking it unconditionally would
+    /// drop its oneshot `Sender`, closing the channel and silently destroying an
+    /// in-flight request.
+    fn take_await_ack(&mut self) -> Option<oneshot::Sender<Result<(), Error>>> {
+        match self.active_request.take() {
+            Some(ControlMessage::AwaitAck(response)) => Some(response),
+            other => {
+                self.active_request = other;
+                None
+            }
+        }
+    }
+
+    /// Take the pending request only if it is an [`ControlMessage::AwaitResponse`].
+    ///
+    /// As with [`Inner::take_await_ack`], any other pending request is put back untouched
+    /// rather than dropped.
+    fn take_await_response(
+        &mut self,
+    ) -> Option<(OwnedMessage, oneshot::Sender<Result<OwnedMessage, Error>>)> {
+        match self.active_request.take() {
+            Some(ControlMessage::AwaitResponse(request_message, response)) => {
+                Some((request_message, response))
+            }
+            other => {
+                self.active_request = other;
+                None
+            }
+        }
+    }
+
     /// Process a message received from the socket. Returns `true` if the run loop should exit.
     async fn process_received_message(&mut self, message: Result<OwnedMessage, Error>) -> bool {
         match message {
@@ -377,8 +410,7 @@ where
                     }
                     OwnedPayload::DiagnosticMessageAck(ref ack) => {
                         // Handle AwaitAck - complete immediately on ACK
-                        if let Some(ControlMessage::AwaitAck(response)) = self.active_request.take()
-                        {
+                        if let Some(response) = self.take_await_ack() {
                             self.await_response_deadline = None;
                             if ack.ack_code.is_positive_ack() {
                                 trace!("Received positive ACK, completing send");
@@ -399,25 +431,23 @@ where
                     }
                     _ => trace!("Received message: {received_message:?}"),
                 }
-                if let Some(active) = self.active_request.take() {
-                    if let ControlMessage::AwaitResponse(request_message, response) = active {
-                        trace!("Received response for request: {:?}", request_message);
-                        trace!("{received_message:?}");
-                        if request_message.is_response(received_message.header.payload_type) {
-                            debug!("Received expected response, sending to the update channel");
-                            if response.send(Ok(received_message)).is_err() {
-                                return true;
-                            }
-                        } else if response
-                            .send(Err(Error::UnexpectedMessageType(
-                                received_message.header.payload_type,
-                            )))
-                            .is_err()
-                        {
+                if let Some((request_message, response)) = self.take_await_response() {
+                    trace!("Received response for request: {:?}", request_message);
+                    trace!("{received_message:?}");
+                    if request_message.is_response(received_message.header.payload_type) {
+                        debug!("Received expected response, sending to the update channel");
+                        if response.send(Ok(received_message)).is_err() {
                             return true;
                         }
+                    } else if response
+                        .send(Err(Error::UnexpectedMessageType(
+                            received_message.header.payload_type,
+                        )))
+                        .is_err()
+                    {
+                        return true;
                     }
-                } else {
+                } else if self.active_request.is_none() {
                     // No active request - check if this is a DiagnosticMessage we should buffer
                     if matches!(received_message.payload, OwnedPayload::DiagnosticMessage(_)) {
                         debug!(

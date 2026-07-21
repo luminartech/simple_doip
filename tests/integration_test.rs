@@ -541,3 +541,109 @@ async fn wrong_routing_activation_response_type_errors_without_panicking() {
     accept_loop.abort();
     let _ = accept_loop.await;
 }
+
+/// A [`ServerConnectionHandler`] that answers a routing activation request with a
+/// *negative* diagnostic message ack.
+///
+/// A negative ack is deliberate: `client_inner`'s `DiagnosticMessageAck` arm returns
+/// early for a *positive* ack ("waiting for full response"), so only a negative ack
+/// falls through to the `is_response` guard where the mismatch becomes a real error.
+struct NackingRoutingHandler;
+
+#[async_trait]
+impl ServerConnectionHandler for NackingRoutingHandler {
+    fn get_vin(&self) -> [u8; 17] {
+        [0x00; 17]
+    }
+
+    fn get_logical_address(&self) -> LogicalAddress {
+        SERVER_LOGICAL_ADDRESS
+    }
+
+    fn get_entity_id(&self) -> [u8; 6] {
+        [0x00; 6]
+    }
+
+    fn get_group_id(&self) -> Option<[u8; 6]> {
+        None
+    }
+
+    async fn routing_activation(
+        &self,
+        request: &RoutingActivationRequest,
+    ) -> Result<OwnedMessage, Error> {
+        assert!(
+            DiagnosticAckCode::UnknownTargetAddress.is_negative_ack(),
+            "this test is only meaningful with a genuinely negative ack code"
+        );
+        Ok(OwnedMessage::diagnostic_message_ack(
+            self.protocol_version(),
+            self.get_logical_address(),
+            request.source_address,
+            DiagnosticAckCode::UnknownTargetAddress,
+            Vec::new(),
+        ))
+    }
+
+    async fn diagnostic_message(
+        &self,
+        message: &DiagnosticMessage<'_>,
+    ) -> Result<OwnedMessage, Error> {
+        Ok(OwnedMessage::diagnostic_message_ack(
+            self.protocol_version(),
+            message.source_address,
+            message.target_address,
+            DiagnosticAckCode::RoutingConfirmationAck,
+            message.user_data.to_vec(),
+        ))
+    }
+}
+
+/// Regression test: an in-flight `AwaitResponse` (here, a routing activation) must not
+/// be destroyed by the arrival of a `DiagnosticMessageAck`.
+///
+/// `client_inner::process_received_message` used to call `self.active_request.take()`
+/// unconditionally inside `if let Some(ControlMessage::AwaitAck(..)) = ...`. When the
+/// pending request was an `AwaitResponse` the pattern did not match, and the taken
+/// value — including its oneshot `Sender` — was dropped at the end of the statement,
+/// closing the routing-activation channel. `Client::bind_socket` treats a closed
+/// channel as "server does not support routing activation", so `connect()` returned
+/// `Ok` and the protocol violation vanished silently.
+///
+/// With the pending request restored instead of dropped, the negative ack falls through
+/// to the `is_response` guard and the client surfaces
+/// `Err(Error::UnexpectedMessageType(_))`.
+#[tokio::test]
+async fn negative_ack_during_routing_activation_does_not_drop_pending_request() {
+    let server = Server::new(NackingRoutingHandler).expect("server should construct");
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("failed to bind test server to an ephemeral port");
+    let addr = listener
+        .local_addr()
+        .expect("bound listener has a local address");
+
+    let accept_loop = tokio::spawn(async move {
+        loop {
+            let Ok((stream, peer_addr)) = listener.accept().await else {
+                break;
+            };
+            let _ = server.handle_client_connection(peer_addr, stream).await;
+        }
+    });
+
+    let result = with_timeout(
+        "client connect against a nacking server",
+        Client::<TestConnector>::connect(client_options(addr)),
+    )
+    .await;
+
+    assert!(
+        matches!(result, Err(Error::UnexpectedMessageType(_))),
+        "a negative DiagnosticMessageAck answering a routing activation must surface as \
+         UnexpectedMessageType, not be silently swallowed; got: {result:?}"
+    );
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
+}
