@@ -6,7 +6,7 @@
 //! | Variant | Framing tier (per [`MessageError::is_framing_fatal`]) | Layer |
 //! |---|---|---|
 //! | `VersionInverseIncorrect` | framing-fatal | wire decode |
-//! | `Incomplete` | framing-fatal (when surfaced by `try_frame`/`Decode`) | wire decode |
+//! | `Incomplete` | framing-fatal | wire decode |
 //! | `TrailingBytes` | recoverable | wire decode |
 //! | `PayloadLengthTooShort`, `UnexpectedPayloadType`, `UnsupportedPayloadType` | recoverable (body) | wire decode |
 //! | `Io` | recoverable (TX-side short write, e.g. `Io(WriteZero)` on an undersized stack buffer — S3) | encode / embedded-io |
@@ -25,7 +25,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum MessageError {
-    /// The header's inverse protocol version byte (ISO 13400-2 §7.1) did not match
+    /// The header's inverse protocol version byte did not match
     /// the bitwise complement of the protocol version byte. Since these two bytes
     /// are how a `DoIP` receiver validates frame sync, this is framing-fatal: the
     /// connection should be closed rather than the frame skipped.
@@ -40,6 +40,8 @@ pub enum MessageError {
     /// The header's `payload_length` field was smaller than the minimum size
     /// required for its declared `payload_type`, so the payload cannot contain a
     /// complete, well-formed body of that type.
+    ///
+    /// Currently never produced by this crate.
     #[error(
         "Payload length in header does match expected payload type length: {value:?}, expected: {expected:?}"
     )]
@@ -52,6 +54,8 @@ pub enum MessageError {
     /// A structurally valid, supported [`PayloadType`] was received in a context
     /// where it is not a legal response (e.g. a request-only type arriving as a
     /// response). Recoverable: the frame itself decoded fine.
+    ///
+    /// Currently never produced by this crate.
     #[error("Unexpected payload type found: {0:?}")]
     UnexpectedPayloadType(PayloadType),
     /// The header declared a [`PayloadType`] this crate does not implement a
@@ -59,10 +63,14 @@ pub enum MessageError {
     /// available (via [`crate::try_frame`]) so the caller can skip/resync.
     #[error("Unsupported payload type, cannot decode: {0:?}")]
     UnsupportedPayloadType(PayloadType),
-    /// `buf` did not contain enough bytes to decode the requested item. Surfaced
-    /// framing-fatal when it comes from [`crate::try_frame`] or a top-level
-    /// [`Decode`](crate::messages::Decode) call, since an incomplete header means
-    /// stream sync cannot yet be trusted.
+    /// `buf` did not contain enough bytes to decode the requested item.
+    ///
+    /// Always classified framing-fatal by [`MessageError::is_framing_fatal`].
+    /// Note that [`crate::try_frame`] never returns this variant: a buffer too
+    /// short to hold a complete frame yields `Ok(None)` so the caller can wait
+    /// for more bytes. `Incomplete` therefore arises from payload
+    /// [`Decode`](crate::messages::Decode) calls, where the header claimed more
+    /// data than the body actually provided.
     #[error(transparent)]
     Incomplete(#[from] Incomplete),
     /// `buf` contained more bytes than the item being decoded consumed. Recoverable:

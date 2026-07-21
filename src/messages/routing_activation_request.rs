@@ -10,8 +10,8 @@ use automotive_wire_codec::{
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
-/// The reason a tester is requesting routing activation (ISO 13400-2 §7.2,
-/// Table 8), carried in [`RoutingActivationRequest::activation_type`].
+/// The reason a tester is requesting routing activation, carried in
+/// [`RoutingActivationRequest::activation_type`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ActivationTypeCode {
     /// ISO 14229
@@ -56,8 +56,8 @@ impl UpperHex for ActivationTypeCode {
         write!(f, "{val:02X}")
     }
 }
-/// A `DoIP` routing activation request (ISO 13400-2 §7.2,
-/// `PayloadType::RoutingActivationRequest`, 0x0005), sent by a tester to enable
+/// A `DoIP` routing activation request
+/// (`PayloadType::RoutingActivationRequest`, 0x0005), sent by a tester to enable
 /// diagnostic message exchange on a TCP connection.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct RoutingActivationRequest {

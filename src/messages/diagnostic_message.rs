@@ -5,7 +5,7 @@ use automotive_wire_codec::{read_u16_be, write_all, write_u16_be};
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
-/// A `DoIP` diagnostic message (ISO 13400-2 §7.3, `PayloadType::DiagnosticMessage`,
+/// A `DoIP` diagnostic message (`PayloadType::DiagnosticMessage`,
 /// 0x8001), carrying a UDS/diagnostic request or response as opaque data between
 /// tester and ECU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

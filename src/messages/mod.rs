@@ -1,6 +1,6 @@
 //! `DoIP` message types: the generic header, the [`Payload`] enum covering every
 //! `DoIP` payload type this crate supports, and the concrete request/response
-//! structs for each one, per ISO 13400-2 §7.
+//! structs for each one, per ISO 13400-2.
 
 mod alive_check_response;
 pub use alive_check_response::AliveCheckResponse;
@@ -45,7 +45,8 @@ use crate::LogicalAddress;
 /// The payload contains diagnostic data and other `DoIP` protocol information.
 /// The header is a fixed size struct that contains the protocol version, payload type,
 /// and payload length. Payload data borrows from the RX buffer it was decoded from
-/// (zero-copy); use [`Message::to_owned_message`] to detach it.
+/// (zero-copy); use `Message::to_owned_message` (requires the `alloc` feature)
+/// to detach it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Message<'a> {
     /// The 8-byte `DoIP` generic header (protocol version, its inverse, payload
@@ -126,8 +127,10 @@ impl<'a> Message<'a> {
     /// Panics if `message.encoded_size()` errors, or if the resulting size does
     /// not fit in a `u32`. Neither is reachable here: `DiagnosticMessage::encoded_size`
     /// is pure arithmetic over the struct's own fields (no I/O to fail), and its
-    /// result is `Header::SIZE`-plus-`user_data.len()`, far below `u32::MAX` for
-    /// any `user_data` slice that can exist in memory.
+    /// result is `4 + user_data.len()` (the two 2-byte addresses plus the user
+    /// data; the 8-byte header is deliberately excluded, since this value becomes
+    /// the header's payload length), far below `u32::MAX` for any `user_data`
+    /// slice that can exist in memory.
     #[must_use]
     pub fn diagnostic_message(
         protocol_version: ProtocolVersion,
@@ -157,6 +160,13 @@ impl<'a> Message<'a> {
     }
 
     /// Construct a diagnostic message acknowledgement
+    ///
+    /// # Known limitation
+    /// The header is stamped with `PayloadType::DiagnosticMessagePositiveAcknowledge`
+    /// (0x8002) regardless of `ack_code`, so a negative
+    /// [`DiagnosticAckCode`] is currently emitted under the positive payload type
+    /// instead of `DiagnosticMessageNegativeAcknowledge` (0x8003). This is a known
+    /// open issue deferred to a follow-up change.
     ///
     /// # Panics
     /// Panics if `ack.encoded_size()` errors, or if the resulting size does not
@@ -196,8 +206,9 @@ impl<'a> Message<'a> {
     /// # Panics
     /// Panics if `request.encoded_size()` errors, or if the resulting size does
     /// not fit in a `u32`. Neither is reachable here: `RoutingActivationRequest`
-    /// has a fixed encoded size (well under `u32::MAX`) and `encoded_size` is pure
-    /// arithmetic with no I/O to fail.
+    /// encodes to either 7 or 11 bytes depending on whether the optional
+    /// manufacturer-reserved tail is present (both well under `u32::MAX`), and
+    /// `encoded_size` is pure arithmetic with no I/O to fail.
     #[must_use]
     pub fn routing_activation_request(
         protocol_version: ProtocolVersion,
@@ -233,8 +244,9 @@ impl<'a> Message<'a> {
     /// # Panics
     /// Panics if `response.encoded_size()` errors, or if the resulting size does
     /// not fit in a `u32`. Neither is reachable here: `RoutingActivationResponse`
-    /// has a fixed encoded size (well under `u32::MAX`) and `encoded_size` is pure
-    /// arithmetic with no I/O to fail.
+    /// encodes to either 9 or 13 bytes depending on whether the optional
+    /// OEM-specific tail is present (both well under `u32::MAX`), and
+    /// `encoded_size` is pure arithmetic with no I/O to fail.
     #[must_use]
     pub fn routing_activation_response(
         protocol_version: ProtocolVersion,
@@ -388,8 +400,10 @@ impl OwnedMessage {
     /// Panics if `message.as_ref().encoded_size()` errors, or if the resulting
     /// size does not fit in a `u32`. Neither is reachable here: `encoded_size` is
     /// pure arithmetic over the struct's own fields (no I/O to fail), and its
-    /// result is `Header::SIZE`-plus-`user_data.len()`, far below `u32::MAX` for
-    /// any `user_data` vector that can exist in memory.
+    /// result is `4 + user_data.len()` (the two 2-byte addresses plus the user
+    /// data; the 8-byte header is deliberately excluded, since this value becomes
+    /// the header's payload length), far below `u32::MAX` for any `user_data`
+    /// vector that can exist in memory.
     #[must_use]
     pub fn diagnostic_message(
         protocol_version: ProtocolVersion,
@@ -420,6 +434,13 @@ impl OwnedMessage {
     }
 
     /// Construct a diagnostic message acknowledgement carrying owned data
+    ///
+    /// # Known limitation
+    /// The header is stamped with `PayloadType::DiagnosticMessagePositiveAcknowledge`
+    /// (0x8002) regardless of `ack_code`, so a negative
+    /// [`DiagnosticAckCode`] is currently emitted under the positive payload type
+    /// instead of `DiagnosticMessageNegativeAcknowledge` (0x8003). This is a known
+    /// open issue deferred to a follow-up change.
     ///
     /// # Panics
     /// Panics if `ack.as_ref().encoded_size()` errors, or if the resulting size

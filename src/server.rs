@@ -27,16 +27,20 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{error, warn};
 
 /// Identifies the tester on the other end of a `DoIP` TCP connection, passed to
-/// [`ServerConnectionHandler`] methods that need to know who is asking (e.g. to
-/// decide whether a Vehicle Identification Request with EID/VIN is addressed to
-/// this entity).
+/// [`ServerConnectionHandler`] methods so an implementation can tell which peer
+/// is asking.
 #[derive(Debug)]
 pub struct ClientConnectionInfo {
     /// IP address of the tester's end of the TCP connection.
     pub ip_address: IpAddr,
-    /// Logical address the tester identified itself with during routing
-    /// activation (ISO 13400-2 §7.2), or `0x0000` if routing activation has not
-    /// completed yet.
+    /// Intended to carry the logical address the tester identified itself with
+    /// during routing activation.
+    ///
+    /// **Currently always `0x0000`.** The server does not yet track per-connection
+    /// state, so the tester's routing activation source address is never
+    /// propagated here and this field is hard-coded. As a consequence the default
+    /// [`ServerConnectionHandler::alive_check`] implementation answers with source
+    /// address `0x0000`. Do not treat this field as carrying real data.
     pub logical_address: LogicalAddress,
 }
 
@@ -81,8 +85,8 @@ pub trait ServerConnectionHandler {
     /// Optional field, return `None` if not set.
     fn get_group_id(&self) -> Option<[u8; 6]>;
 
-    /// Decide whether to grant routing activation (ISO 13400-2 §7.2) for the
-    /// requesting tester, and build the response message to send back.
+    /// Decide whether to grant routing activation for the requesting tester, and
+    /// build the response message to send back.
     ///
     /// # Errors
     /// Returns an [`Error`] if the routing activation response cannot be
@@ -92,7 +96,7 @@ pub trait ServerConnectionHandler {
         request: &RoutingActivationRequest,
     ) -> Result<OwnedMessage, Error>;
 
-    /// Handle a diagnostic message (ISO 13400-2 §7.3) addressed to this entity
+    /// Handle a diagnostic message addressed to this entity
     /// and build the acknowledgement/response message to send back.
     ///
     /// # Errors

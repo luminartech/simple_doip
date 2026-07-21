@@ -90,7 +90,7 @@ mod tests {
 
     /// Exercises the intended client loop end-to-end: `try_frame` delimits the frame,
     /// then the client separately calls `Payload::decode`. Covers both halves of the
-    /// recoverability property (exploration-findings §5.4):
+    /// recoverability property:
     /// (a) a valid frame decodes normally;
     /// (b) a frame with a valid header but an unmodeled payload type still frames
     ///     successfully — the payload-decode error does not swallow `frame.payload`

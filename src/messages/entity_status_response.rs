@@ -3,7 +3,7 @@ use automotive_wire_codec::{read_u8, read_u32_be, write_u8, write_u32_be};
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
-/// Classifies the kind of `DoIP` node reporting its status, per ISO 13400-2 §7.4.
+/// Classifies the kind of `DoIP` node reporting its status, per ISO 13400-2.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum EntityStatusNodeType {

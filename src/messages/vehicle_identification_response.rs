@@ -6,8 +6,7 @@ use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
 /// Whether the tester must take further action before diagnostics can proceed
-/// with this vehicle (ISO 13400-2 §7.1, `VIR`/vehicle announcement further-action
-/// byte).
+/// with this vehicle (the `VIR`/vehicle announcement further-action byte).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FurtherActionRequired {
     /// No further action needed; the tester may proceed directly to routing
@@ -45,7 +44,7 @@ impl From<FurtherActionRequired> for u8 {
 }
 
 /// Whether the VIN and group ID (GID) are synchronized across all `DoIP` entities
-/// in the vehicle (ISO 13400-2 §7.1). Relevant when a vehicle has multiple `DoIP`
+/// in the vehicle. Relevant when a vehicle has multiple `DoIP`
 /// gateways that must agree on identification data.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VinGidSyncStatus {
@@ -113,7 +112,7 @@ impl<'a> Decode<'a> for VehicleIdentificationResponse {
 
         let (group_id, rest) = read_array::<6>(rest)?;
 
-        // Table 1 - value not set
+        // Sentinel values meaning "group ID not set"
         let group_id = if group_id == [0x00; 6] || group_id == [0xFF; 6] {
             None
         } else {

@@ -26,9 +26,18 @@ pub enum Payload<'a> {
     /// UDS/diagnostic payload between tester and ECU, addressed by source and
     /// target logical address.
     DiagnosticMessage(DiagnosticMessage<'a>),
-    /// Positive acknowledgement of a diagnostic message
-    /// (`PayloadType::DiagnosticMessagePositiveAcknowledge`, 0x8002): the `DoIP`
-    /// entity accepted the message and forwarded it toward its target.
+    /// Acknowledgement of a diagnostic message. Carries either a positive or a
+    /// negative acknowledgement, determined by its
+    /// [`ack_code`](DiagnosticMessageAck::ack_code) (see
+    /// [`DiagnosticAckCode::is_negative_ack`](crate::messages::DiagnosticAckCode::is_negative_ack)).
+    ///
+    /// # Known limitation
+    /// [`Message::diagnostic_message_ack`](crate::messages::Message::diagnostic_message_ack)
+    /// and its owned counterpart currently stamp the *positive* payload type
+    /// (`PayloadType::DiagnosticMessagePositiveAcknowledge`, 0x8002) into the
+    /// header regardless of the ack code, so a negative code is emitted under a
+    /// positive payload type. This is a known open issue deferred to a follow-up
+    /// change; do not rely on the header's payload type matching the ack code.
     DiagnosticMessageAck(DiagnosticMessageAck<'a>),
     /// Negative acknowledgement of a diagnostic message
     /// (`PayloadType::DiagnosticMessageNegativeAcknowledge`, 0x8003): the message
@@ -40,11 +49,12 @@ pub enum Payload<'a> {
     EntityStatusRequest,
     /// Response to an entity status request
     /// (`PayloadType::DoIPEntityStatusResponse`, 0x4002): node type, open/max
-    /// socket counts, and optional max data size.
+    /// socket counts, and max data size. This implementation always requires and
+    /// emits the max data size field, giving a fixed 7-byte payload.
     EntityStatusResponse(EntityStatusResponse),
     /// Response to a diagnostic power mode information request
     /// (`PayloadType::DiagnosticPowerModeInfoResponse`, 0x4004): the vehicle's
-    /// current power mode (e.g. key-off, key-on).
+    /// current power mode.
     PowerModeInfoResponse(DiagnosticPowerModeCode),
     /// Request to activate routing on a TCP connection
     /// (`PayloadType::RoutingActivationRequest`, 0x0005), sent by the tester before
@@ -90,7 +100,7 @@ pub enum OwnedPayload {
     /// diagnostic data instead of borrowing from an RX buffer.
     DiagnosticMessage(super::OwnedDiagnosticMessage),
     /// Owned mirror of [`Payload::DiagnosticMessageAck`]; owns its trailing
-    /// previous-diagnostic-data-byte instead of borrowing from an RX buffer.
+    /// previous-diagnostic-data bytes instead of borrowing from an RX buffer.
     DiagnosticMessageAck(super::OwnedDiagnosticMessageAck),
     /// Owned mirror of [`Payload::DiagnosticMessageNack`].
     DiagnosticMessageNack,

@@ -1,4 +1,4 @@
-//! The `DoIP` TCP connection state machine (ISO 13400-2 §7.8, Table 32), tracking
+//! The `DoIP` TCP connection state machine, per ISO 13400-2, tracking
 //! a connection from initial socket establishment through routing activation to
 //! teardown, and gating which payload types are permitted in each state.
 

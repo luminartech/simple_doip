@@ -50,15 +50,17 @@ pub struct ClientOptions {
     pub routing_activation_options: Option<RoutingActivationOptions>,
 }
 
-/// Selects which of the ECU's two `DoIP` addresses (ISO 13400-2 §7.1) a
-/// diagnostic message should target.
+/// Selects which of the two target addresses configured on [`ClientOptions`] a
+/// diagnostic message should be addressed to.
+///
+/// This is purely a choice between two configured [`LogicalAddress`] values; the
+/// crate does not implement any broadcast or multicast delivery semantics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AddressType {
-    /// The ECU's assigned logical address ([`ClientOptions::server_logical_address`]),
-    /// used for normal, addressed diagnostic requests.
+    /// Address the message to [`ClientOptions::server_logical_address`].
     Logical,
-    /// The ECU's physical/functional address ([`ClientOptions::server_physical_address`]),
-    /// used for broadcast-style requests that multiple ECUs may act on.
+    /// Address the message to [`ClientOptions::server_physical_address`], the
+    /// point-to-point address of a single ECU (range `0x0001`-`0x0DFF`).
     Physical,
 }
 

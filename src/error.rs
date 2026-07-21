@@ -30,15 +30,17 @@ pub enum Error {
     #[error(transparent)]
     MessageError(#[from] MessageError),
     /// The client attempted to use a [`LogicalAddress`] outside the tester range
-    /// `0x0E00`-`0x0FFF` defined by ISO 13400-2 Table 5
+    /// `0x0E00`-`0x0FFF`
     /// (see [`LogicalAddress::is_valid_client_address`]).
     #[error("Invalid logical address for client: {0:#06x}")]
     InvalidClientLogicalAddress(LogicalAddress),
     /// A request did not receive a response before its deadline elapsed (e.g. the
-    /// `A_DoIP_Diagnostic_Message` response timeout in ISO 13400-2 §7.5.3).
+    /// `A_DoIP_Diagnostic_Message` response timeout).
     #[error(transparent)]
     ConnectionTimeout(#[from] tokio::time::error::Elapsed),
     /// An ACK/NACK payload type was received where the caller was not expecting one.
+    ///
+    /// Currently never produced by this crate.
     #[error("Unexpected Ack message: {0:?}")]
     UnexpectedAckMessage(PayloadType),
     /// A received `DoIP` payload's type did not match the type expected for the
@@ -48,10 +50,14 @@ pub enum Error {
     UnexpectedMessageType(PayloadType),
     /// A numeric conversion between wire and native integer widths overflowed
     /// (e.g. a payload length or count that does not fit the target type).
+    ///
+    /// Currently never produced by this crate.
     #[error(transparent)]
     ValueOutOfRange(#[from] std::num::TryFromIntError),
     /// The `DoIP` entity responded to a request with a `DoIP` NACK; the contained
     /// [`NackCode`] identifies the reported reason.
+    ///
+    /// Currently never produced by this crate.
     #[error("Received Nack with code: {0:?}")]
     NackReceived(NackCode),
     /// A gateway address was supplied with a TCP port other than the standard
@@ -69,6 +75,8 @@ pub enum Error {
     SocketClosedUnexpectedly,
     /// The requested client configuration does not match a supported `DoIP`
     /// client type.
+    ///
+    /// Currently never produced by this crate.
     #[error("Invalid client type")]
     InvalidClientType,
     /// Binding the UDP/TCP socket to the requested local address failed; the
@@ -80,7 +88,7 @@ pub enum Error {
     /// so diagnostic messages cannot yet be exchanged on this connection.
     #[error("Failed route activation")]
     RoutingActivationFailed,
-    /// No response arrived within `A_DoIP_Diagnostic_Message` (ISO 13400-2 §7.5.3).
+    /// No response arrived within `A_DoIP_Diagnostic_Message`.
     /// The request may simply have been suppressed by the target ECU per the
     /// diagnostic addressing rules, so this is treated as non-fatal rather than a
     /// hard protocol violation.
