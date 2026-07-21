@@ -26,6 +26,24 @@ pub struct RawFrame<'a> {
 /// # Errors
 /// Returns a [`MessageError`] if `buf` contains a malformed header (e.g. an incorrect
 /// inverse protocol version).
+///
+/// # Examples
+///
+/// Frame and decode one message from a byte buffer, with no allocator:
+///
+/// ```
+/// use simple_doip::{try_frame, messages::Payload};
+///
+/// // A complete DoIP NACK frame: 8-byte header + 1-byte body.
+/// let buf = [0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03];
+///
+/// let (frame, consumed) = try_frame(&buf)?.expect("buffer holds a complete frame");
+/// assert_eq!(consumed, 9);
+///
+/// let payload = Payload::decode(frame.payload, frame.header.payload_type)?;
+/// assert!(matches!(payload, Payload::DoIPNack(_)));
+/// # Ok::<(), simple_doip::messages::MessageError>(())
+/// ```
 pub fn try_frame(buf: &[u8]) -> Result<Option<(RawFrame<'_>, usize)>, MessageError> {
     if buf.len() < Header::SIZE {
         return Ok(None);
