@@ -142,8 +142,8 @@ where
                 select! {
                     () = tokio::time::sleep_until(last_activity + TCP_TIMEOUT_GENERAL_INACTIVITY) => {
                         info!("General inactivity timeout reached, closing socket");
-                        // TODO: Do we need to send an update message to update the connection state?
-                        // or should the connection state be located in the socket manager?
+                        // Breaking out of this loop drops the socket, which closes the
+                        // connection; callers observe that through the stream ending.
                         break;
                     }
                     // Once there is information in the Response/Read stream we'll do work on it

@@ -49,7 +49,6 @@ impl ControlMessage {
     }
 
     /// Create a control message to send a routing activation request
-    #[allow(unused)]
     pub fn create_routing_activation_message(
         message: &OwnedMessage,
     ) -> (oneshot::Receiver<Result<OwnedMessage, Error>>, Self) {

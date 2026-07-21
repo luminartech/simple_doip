@@ -534,6 +534,67 @@ mod tests {
         ));
     }
 
+    /// Encode a message into a stack buffer and frame it back out again, without any
+    /// `Vec`/`alloc` involved. Exercises the `no_std` / `no_alloc` API surface, and
+    /// pins `Message::diagnostic_message`'s `payload_len` arithmetic: a wrong header
+    /// `payload_length` makes `try_frame` return `Ok(None)` (not enough bytes) or
+    /// leave trailing bytes unconsumed, either of which this test catches.
+    #[test]
+    fn test_no_std_stack_buffer_roundtrip() {
+        let message: Message<'_> = Message::diagnostic_message(
+            ProtocolVersion::V2012,
+            LogicalAddress(0x0E00),
+            LogicalAddress(0x1000),
+            &[0x10u8, 0x02][..],
+        );
+
+        let mut buf = [0u8; 64];
+        let written = {
+            let mut writer: &mut [u8] = &mut buf;
+            message.encode(&mut writer).unwrap()
+        };
+
+        let (frame, consumed) = crate::try_frame(&buf[..written]).unwrap().unwrap();
+        assert_eq!(consumed, written);
+        let payload = Payload::decode(frame.payload, frame.header.payload_type).unwrap();
+        let decoded = Message {
+            header: frame.header,
+            payload,
+        };
+        assert_eq!(decoded, message);
+    }
+
+    /// `Message::diagnostic_message_ack` (the borrowed constructor) had no test at all:
+    /// pin its header `payload_length` and round-trip it through `encode`/`try_frame`
+    /// the same way as the stack-buffer test above, without any `Vec`/`alloc`.
+    #[test]
+    fn test_diagnostic_message_ack_round_trip() {
+        let message: Message<'_> = Message::diagnostic_message_ack(
+            ProtocolVersion::V2012,
+            LogicalAddress(0x0E00),
+            LogicalAddress(0x1000),
+            DiagnosticAckCode::RoutingConfirmationAck,
+            &[0x10u8, 0x02][..],
+        );
+        // 5 fixed bytes (two 2-byte addresses + 1 ack-code byte) + 2 previous-message bytes.
+        assert_eq!(message.header.payload_length, 7);
+
+        let mut buf = [0u8; 64];
+        let written = {
+            let mut writer: &mut [u8] = &mut buf;
+            message.encode(&mut writer).unwrap()
+        };
+
+        let (frame, consumed) = crate::try_frame(&buf[..written]).unwrap().unwrap();
+        assert_eq!(consumed, written);
+        let payload = Payload::decode(frame.payload, frame.header.payload_type).unwrap();
+        let decoded = Message {
+            header: frame.header,
+            payload,
+        };
+        assert_eq!(decoded, message);
+    }
+
     /// A routing activation response carrying `oem_specific` must set the header payload
     /// length to match the 13 bytes `encode` writes, so the framed bytes round-trip.
     /// (Regression test: the constructor previously hardcoded a length of 9.)
