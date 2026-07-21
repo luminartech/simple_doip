@@ -380,7 +380,10 @@ async fn unsupported_payload_type_does_not_kill_server() {
     )
     .await
     .expect("read should succeed");
-    assert!(read > 0, "server should have sent a routing activation response");
+    assert!(
+        read > 0,
+        "server should have sent a routing activation response"
+    );
     assert_eq!(
         server.routing_activation_requests.load(Ordering::SeqCst),
         1,

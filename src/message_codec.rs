@@ -40,13 +40,14 @@ impl Decoder for MessageCodec {
             let Some((frame, consumed)) = crate::try_frame(src.as_ref())? else {
                 return Ok(None);
             };
-            let decoded = Payload::decode(frame.payload, frame.header.payload_type).map(|payload| {
-                Message {
-                    header: frame.header,
-                    payload,
-                }
-                .to_owned_message()
-            });
+            let decoded =
+                Payload::decode(frame.payload, frame.header.payload_type).map(|payload| {
+                    Message {
+                        header: frame.header,
+                        payload,
+                    }
+                    .to_owned_message()
+                });
             match decoded {
                 Ok(owned) => {
                     let _ = src.split_to(consumed);
@@ -107,9 +108,15 @@ mod tests {
         src.extend_from_slice(&NACK_FRAME);
         src.extend_from_slice(&NACK_FRAME);
 
-        let first = codec.decode(&mut src).unwrap().expect("first frame decodes");
+        let first = codec
+            .decode(&mut src)
+            .unwrap()
+            .expect("first frame decodes");
         assert!(matches!(first.payload, OwnedPayload::DoIPNack(_)));
-        let second = codec.decode(&mut src).unwrap().expect("second frame decodes");
+        let second = codec
+            .decode(&mut src)
+            .unwrap()
+            .expect("second frame decodes");
         assert!(matches!(second.payload, OwnedPayload::DoIPNack(_)));
         assert!(src.is_empty(), "both frames should be consumed");
     }
@@ -128,7 +135,10 @@ mod tests {
             .expect("a recoverable body error must not surface as a Decoder error")
             .expect("the following valid frame should decode");
         assert!(matches!(decoded.payload, OwnedPayload::DoIPNack(_)));
-        assert!(src.is_empty(), "both the skipped and the valid frame are consumed");
+        assert!(
+            src.is_empty(),
+            "both the skipped and the valid frame are consumed"
+        );
     }
 
     /// A framing-fatal error still propagates: stream sync is lost and the connection
