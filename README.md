@@ -20,6 +20,15 @@ gaps a new integrator should know about before relying on them:
   accept loop awaits each client's connection handling to completion before
   calling `accept()` again, so a second client cannot connect while the first
   is still being served.
+- **Entity status requests and vehicle identification requests over TCP are
+  silently dropped.** `Server::handle_client_message` logs a warning and sends
+  no reply for either, so a tester that asks gets silence rather than an error
+  or a negative response.
+- **A connection handler can only answer a diagnostic message with a single
+  message.** `ServerConnectionHandler::diagnostic_message` returns one
+  `OwnedMessage`, so a handler can send the required acknowledgement *or* a
+  functional response, not the acknowledgement followed by a separate
+  response as DoIP prescribes.
 - **`ClientConnectionInfo::logical_address` is always `0x0000`.** The server
   does not yet track per-connection logical addresses, so this field is a
   placeholder rather than the client's real address.
@@ -32,23 +41,26 @@ concurrent clients, discovery, or TLS today.
 ## Quickstart
 
 The protocol core needs no allocator and no I/O: frame a byte buffer with
-`try_frame`, then decode the payload with `Payload::decode`. This block is a
-copy of the doctest on `try_frame` in [`src/framer.rs`](src/framer.rs) — that
-doctest is the canonical, CI-tested version; if the two ever drift, trust the
-doctest.
+`try_frame`, then decode the payload with `Payload::decode`. This block is the
+doctest on `try_frame` in [`src/framer.rs`](src/framer.rs), wrapped in a
+`fn main` returning `Result` so it compiles as pasted (the doctest gets the
+same `Ok(())` from a hidden line instead). That doctest is the canonical,
+CI-tested version; if the two ever drift, trust the doctest.
 
 ```rust
-use simple_doip::{try_frame, messages::Payload};
+use simple_doip::{try_frame, messages::{MessageError, Payload}};
 
-// A complete DoIP NACK frame: 8-byte header + 1-byte body.
-let buf = [0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03];
+fn main() -> Result<(), MessageError> {
+    // A complete DoIP NACK frame: 8-byte header + 1-byte body.
+    let buf = [0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03];
 
-let (frame, consumed) = try_frame(&buf)?.expect("buffer holds a complete frame");
-assert_eq!(consumed, 9);
+    let (frame, consumed) = try_frame(&buf)?.expect("buffer holds a complete frame");
+    assert_eq!(consumed, 9);
 
-let payload = Payload::decode(frame.payload, frame.header.payload_type)?;
-assert!(matches!(payload, Payload::DoIPNack(_)));
-# Ok::<(), simple_doip::messages::MessageError>(())
+    let payload = Payload::decode(frame.payload, frame.header.payload_type)?;
+    assert!(matches!(payload, Payload::DoIPNack(_)));
+    Ok(())
+}
 ```
 
 ## Feature flags
@@ -96,6 +108,14 @@ cargo test --features client,server
   cargo run --example echo_server --features server    # terminal 1
   cargo run --example simple_client --features client   # terminal 2
   ```
+
+  The client's `ConnectorSocket` refuses any `server_address` whose port is not
+  `TCP_PORT` (`13400`), returning `Error::InvalidPort` — pointing a client at a
+  non-standard port requires your own `Connector` implementation.
+
+  `echo_server` answers a diagnostic message with a positive acknowledgement
+  that carries the received bytes back in its previous-message-data field; see
+  the single-response handler limitation under [Status](#status).
 
 ## Relationship to `automotive-wire-codec`
 
