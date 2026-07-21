@@ -24,7 +24,7 @@ pub use framer::{RawFrame, try_frame};
 #[cfg(feature = "client")]
 pub mod client;
 #[cfg(feature = "client")]
-pub mod client_inner;
+mod client_inner;
 #[cfg(feature = "client")]
 pub mod connection;
 #[cfg(any(feature = "client", feature = "server"))]
@@ -32,7 +32,7 @@ mod error;
 #[cfg(feature = "codec")]
 pub mod message_codec;
 #[cfg(feature = "client")]
-pub mod socket_manager;
+mod socket_manager;
 #[cfg(any(feature = "client", feature = "server"))]
 pub use error::Error;
 #[cfg(feature = "server")]

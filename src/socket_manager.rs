@@ -11,7 +11,7 @@ use crate::{
     messages::{MessageError, OwnedMessage},
 };
 use futures::{SinkExt, StreamExt};
-use std::{net::SocketAddr, string::ToString, time::Duration};
+use std::{net::SocketAddr, string::ToString};
 use tokio::{
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
     select,
@@ -23,7 +23,7 @@ use tracing::{debug, error, info, trace};
 /// 1-to-1 mapping of the socket manager to the client (currently)
 /// There is only one socket manager per client.
 #[derive(Debug)]
-pub struct SocketManager<Conn> {
+pub(crate) struct SocketManager<Conn> {
     /// Receiver used to receive messages from the socket
     /// This is the channel that the socket manager uses to send messages back up to the client
     receiver: mpsc::Receiver<Result<OwnedMessage, MessageError>>,
@@ -101,25 +101,6 @@ where
     /// Receive a message from the receiver/Request channel
     pub async fn receive(&mut self) -> Option<Result<OwnedMessage, MessageError>> {
         self.receiver.recv().await
-    }
-
-    /// Receive a message from the socket, returning `None` if the timeout elapses
-    ///
-    /// # Panics
-    /// Panics if the internal receiver channel is closed
-    pub async fn receive_timeout(
-        &mut self,
-        timeout: Duration,
-    ) -> Option<Result<OwnedMessage, MessageError>> {
-        tokio::time::timeout(timeout, self.receiver.recv())
-            .await
-            .unwrap()
-    }
-
-    /// Return the current session ID
-    #[must_use]
-    pub fn session_id(&self) -> u16 {
-        self.session_id
     }
 
     /// Return the local TCP port this socket is bound to
