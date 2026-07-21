@@ -43,7 +43,7 @@ impl LogicalAddress {
             // and is not in the use case of the crate at this time
             if *self >= Self::OBD_ADDRESS_RANGE.0 && *self <= Self::OBD_ADDRESS_RANGE.1 {
                 info!(
-                    "Logical addresses in the 0xF000-0xF7F range are intended for internal \
+                    "Logical addresses in the 0x0F00-0x0F7F range are intended for internal \
                 data collection/on-board diagnotics only. Ensure that this is the intended use case."
                 );
             }
