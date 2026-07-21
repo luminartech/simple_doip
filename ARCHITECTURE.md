@@ -68,8 +68,8 @@ only, so a `server`-only build gets none of them — only `server.rs`.
 `src/error.rs` (the `Error` type) is gated on `client` **or** `server`, so it is
 present in either build.
 
-Verified against `Cargo.toml` `[features]` and the `#[cfg(feature = ...)]` module
-gating in `src/lib.rs`.
+The authorities for this are `Cargo.toml`'s `[features]` table and the
+`#[cfg(feature = ...)]` module gating in `src/lib.rs`.
 
 ### 2.1 Why borrowed-first
 
@@ -88,7 +88,8 @@ pure `alloc`-tier decision that the embedded target never pays for.
 The two directions of conversion are `Message::to_owned_message()` and
 `OwnedMessage::as_ref()`. `Encode for OwnedMessage` deliberately delegates
 through `as_ref()` so there is exactly **one** wire implementation
-(`src/messages/mod.rs:482-496`); there is no second serializer that could drift.
+(`impl Encode for OwnedMessage` in `src/messages/mod.rs`); there is no second
+serializer that could drift.
 The borrowed↔owned round trip for every `Payload` variant is locked by
 `payload_conversion_roundtrip_all_variants` in `src/messages/mod.rs`.
 
@@ -107,7 +108,7 @@ let (frame, consumed) = try_frame(buf)?.expect("complete frame present");
 let payload = Payload::decode(frame.payload, frame.header.payload_type)?;
 ```
 
-`try_frame` (`src/framer.rs:47-66`) validates the 8-byte header's protocol
+`try_frame` (in `src/framer.rs`) validates the 8-byte header's protocol
 version inverse, checks the declared `payload_length` only against how many
 bytes are actually available in the buffer (never against what the payload
 type requires — that check does not exist at this layer), delimits one frame,
@@ -140,7 +141,8 @@ type still frames successfully with `frame.payload` and `consumed` intact.
 available bytes rather than computing `Header::SIZE + payload_len`, so it cannot
 overflow on a 32-bit target (`huge_payload_length_does_not_overflow`).
 
-`Message::decode` (`src/messages/mod.rs:283-296`) is the fused convenience path —
+`Message::decode` (the `impl Decode<'a> for Message<'a>` in
+`src/messages/mod.rs`) is the fused convenience path —
 header + payload in one call — and exists for callers that have a complete
 message in hand and do not need the seam. The framing-plus-decode path is the one
 the codec and the bare-metal example use.
@@ -159,7 +161,7 @@ There are **two** error types, and they are not tiers of each other:
   `client`/`server`. It wraps `MessageError` via a `From` impl.
 
 `MessageError`'s variants fall along **two orthogonal axes**, documented in the
-module header at `src/messages/message_error.rs:1-13`:
+module header of `src/messages/message_error.rs`:
 
 | Variant | Framing tier | Layer |
 |---|---|---|
@@ -180,7 +182,8 @@ Both `Io` and `Std` exist because they carry different information. The `no_std`
 core can only produce a flattened `embedded_io::ErrorKind`; the tokio layer has a
 real `std::io::Error` with an OS code and message, and flattening it would throw
 that away. `src/socket_manager.rs` matches on both when deciding whether a read
-error means "connection reset" (`src/socket_manager.rs:159-184`).
+error means "connection reset" (the read-error arm of the socket task's receive
+loop in `src/socket_manager.rs`).
 
 Several variants are documented in-tree as "currently never produced by this
 crate" — part of the public taxonomy but presently unreachable. On the
@@ -190,7 +193,7 @@ crate" — part of the public taxonomy but presently unreachable. On the
 
 ### 4.1 `is_framing_fatal` is consumed by the codec
 
-`MessageCodec::decode` (`src/message_codec.rs:42-69`) is the one place the
+`MessageCodec::decode` (in `src/message_codec.rs`) is the one place the
 classifier drives real behavior. Its loop is:
 
 - `try_frame` returns `Ok(None)` → return `Ok(None)`, leave the buffer untouched.
@@ -264,7 +267,7 @@ traits — and the re-export means a consumer does not have to add its own
 appearing in this crate's public API, `automotive-wire-codec`'s semver is part of
 `simple_doip`'s semver. A codec `0.4` is a breaking change to `simple_doip` even
 if not one line of `simple_doip` changes. This is documented on the module
-(`src/wire.rs:9-13`) and must be respected at release time.
+(in the `src/wire.rs` module documentation) and must be respected at release time.
 
 Separately, `Payload`, `OwnedPayload`, and `MessageError` are all
 `#[non_exhaustive]` (as is `Error`, noted in section 6). New variants can be
@@ -387,22 +390,23 @@ async fn diagnostic_message(
     message: &DiagnosticMessage<'_>,
 ) -> Result<OwnedMessage, Error>;
 ```
-(`src/server.rs:105-108`)
+(`ServerConnectionHandler::diagnostic_message` in `src/server.rs`)
 
 DoIP prescribes that a DoIP entity receiving a diagnostic message first sends a
 `DiagnosticMessageAck`, and then — separately and later — sends any functional
 (e.g. UDS) response as its own `DiagnosticMessage`. Two messages, in order.
 
 The trait returns a **single** `OwnedMessage`, and the dispatch site
-(`src/server.rs:321-325`) maps that one value through `Some(..)` into
-`handle_client_connection`, which writes exactly one message per received message
-(`src/server.rs:280-286`). There is no path by which a handler can emit both.
+(the `OwnedPayload::DiagnosticMessage` arm of `Server::handle_client_message`)
+maps that one value through `Some(..)` into `Server::handle_client_connection`,
+whose read loop writes at most one message per received message. There is no
+path by which a handler can emit both.
 
 So an implementer must choose: send the required acknowledgement, or send the
 functional response. `examples/echo_server.rs` picks the acknowledgement and
 smuggles the request bytes back inside the ack's `previous_message_data` field —
 which is an echo demo, not protocol-correct behavior, and the example says so in
-a comment (`examples/echo_server.rs:61-67`).
+a comment (in its `diagnostic_message` implementation, `examples/echo_server.rs`).
 
 **Recommendation:** revisit the trait signature. Plausible shapes are returning a
 collection, taking a sink/writer the handler can push to, or splitting the ack
@@ -413,14 +417,12 @@ but that is fine — routing activation genuinely is one request, one response.
 
 ### 7.2 `diagnostic_message_ack` hardcodes the positive acknowledgement payload type
 
-Verified against `src/messages/mod.rs`.
-
-`Message::diagnostic_message_ack` (`src/messages/mod.rs:178-202`) takes an
+`Message::diagnostic_message_ack` (in `src/messages/mod.rs`) takes an
 `ack_code: DiagnosticAckCode`, stores it correctly in the `DiagnosticMessageAck`
 body — and then builds the header with a **hardcoded**
 `PayloadType::DiagnosticMessagePositiveAcknowledge` (0x8002), regardless of that
-code. `OwnedMessage::diagnostic_message_ack`
-(`src/messages/mod.rs:452-479`) does exactly the same thing.
+code. `OwnedMessage::diagnostic_message_ack` (same file) does exactly the same
+thing.
 
 The result: passing a negative `DiagnosticAckCode` produces a frame whose header
 announces a *positive* acknowledgement while its body carries a negative code. A
@@ -430,11 +432,11 @@ selected by either constructor.
 
 This is **deliberately deferred** to a follow-up branch, not an oversight — the
 behavior is documented as a "Known limitation" on both constructors and on
-`Payload::DiagnosticMessageAck` (`src/messages/payload.rs:30-41`), so callers are
+`Payload::DiagnosticMessageAck` (`src/messages/payload.rs`), so callers are
 warned not to rely on the header matching the ack code.
 
-**The fix is not a one-line payload-type swap — it is a modeling gap.** Verified
-against `src/messages/payload.rs`: `Payload::decode` maps `0x8003`
+**The fix is not a one-line payload-type swap — it is a modeling gap.** In
+`src/messages/payload.rs`, `Payload::decode` maps `0x8003`
 (`PayloadType::DiagnosticMessageNegativeAcknowledge`) to `Payload::DiagnosticMessageNack`,
 which is a **unit variant carrying no body at all** — its `decode` arm ignores
 the payload bytes entirely rather than parsing an ack code out of them. But
@@ -446,8 +448,8 @@ regardless of whether the code is positive or negative. So simply stamping
 crate's own decoder cannot round-trip: on receipt, `Payload::decode` would
 discard the ack-code bytes and hand back a bodyless `DiagnosticMessageNack`.
 
-That loss is not hypothetical for this crate's own client. Verified against
-`src/client_inner.rs:411-431`: `Inner::process_received_message` matches on
+That loss is not hypothetical for this crate's own client:
+`Inner::process_received_message` (`src/client_inner.rs`) matches on
 `OwnedPayload::DiagnosticMessageAck(ref ack)` to read `ack.ack_code` and, for a
 negative code, complete the pending send with `Err(Error::DiagnosticMessageNack(ack.ack_code))`.
 If negative acks instead arrived decoded as `OwnedPayload::DiagnosticMessageNack`
@@ -461,8 +463,7 @@ a body carrying the ack code, or dropping the separate variant and letting both
 `ack_code` — and only then updating `client_inner.rs` and any other match sites
 to follow. That decision is left to the next owner; it is not attempted here.
 
-**Test coverage: partially present, but blind to the header.** Confirmed by
-inspection. The golden vectors for diagnostic-message acks
+**Test coverage: partially present, but blind to the header.** The golden vectors for diagnostic-message acks
 (`golden_diagnostic_message_ack` in `tests/golden_vectors.rs`) encode
 `DiagnosticMessageAck` *bodies* directly and never go through the constructor,
 so they cannot observe the header at all. `tests/integration_test.rs`'s
@@ -479,8 +480,8 @@ But **no test anywhere asserts an ack frame's `header.payload_type`** — that
 headline claim holds. The negative-ack test drives the frame end-to-end and
 checks the client's resulting `Error`, not the wire header, so the hardcode
 remains invisible to the suite even though a negative code is genuinely
-exercised. Incidentally — verified against `Message::is_response`
-(`src/messages/mod.rs:75-100`) — that test would keep passing unmodified even if
+exercised. Incidentally — given how `Message::is_response`
+(`src/messages/mod.rs`) is written — that test would keep passing unmodified even if
 the hardcode were fixed to stamp `0x8003`: for a pending `RoutingActivationRequest`,
 `is_response` only returns `true` when the received payload type equals
 `RoutingActivationResponse`, so both `0x8002` and `0x8003` fall through to
@@ -497,49 +498,48 @@ as semver-relevant.
 
 ### 7.3 `src/messages/mod.rs` should be split — the seams, concretely
 
-The file is **759 lines** and falls along six clean, non-overlapping seams. A
-split was deliberately deferred: the file had just cleared two adversarial
-migration gates, and moving it immediately afterwards would have thrown away the
-review confidence that had just been established. Nothing about the split is
-hard; it was a sequencing choice.
+The file is the largest in the crate (roughly 780 lines) and falls along six
+clean, non-overlapping seams. A split was deliberately deferred: the file had
+just cleared two adversarial migration gates, and moving it immediately
+afterwards would have thrown away the review confidence that had just been
+established. Nothing about the split is hard; it was a sequencing choice.
 
-Current seams, with line ranges verified against the file:
+The seams, in the order they appear in the file:
 
-| Lines | Content | Natural home |
-|---|---|---|
-| 1-41 | Module facade: `mod` declarations and the `pub use` re-export block for every message submodule | stays in `mod.rs` |
-| 43-70 | The two type definitions: `Message<'a>` (50-57) and `OwnedMessage` (61-70) | stays in `mod.rs` |
-| 72-281 | `impl Message<'a>` — `is_response` plus the six borrowed constructors | `builders.rs` |
-| 283-313 | `impl Decode<'a> for Message<'a>` and `impl Encode for Message<'_>` | could stay, or `codec.rs` |
-| 315-513 | The `alloc` owned mirror: `to_owned_message`, all of `impl OwnedMessage`, `Encode for OwnedMessage`, `Default for OwnedMessage` | `owned.rs` |
-| 515-759 | Tests: core tests (515-610) and `alloc_conversion_tests` (616-759) | move with their subjects |
+| Content | Natural home |
+|---|---|
+| Module facade: the `mod` declarations and the `pub use` re-export block for every message submodule | stays in `mod.rs` |
+| The two type definitions, `Message<'a>` and `OwnedMessage` | stays in `mod.rs` |
+| `impl Message<'a>` — `is_response` plus the six borrowed constructors | `builders.rs` |
+| `impl Decode<'a> for Message<'a>` and `impl Encode for Message<'_>` | could stay, or `codec.rs` |
+| The `alloc` owned mirror: `Message::to_owned_message`, all of `impl OwnedMessage`, `Encode for OwnedMessage`, `Default for OwnedMessage` | `owned.rs` |
+| The two test modules, `tests` and `alloc_conversion_tests` | move with their subjects |
 
 Note the seams are not evenly sized — the borrowed constructors and the owned
-mirror are ~210 and ~200 lines respectively and account for most of the file.
+mirror are each roughly 200 lines and account for most of the file.
 
-*(Historical note: an earlier planning document described this file as ~687 lines
-across five seams with `is_response` at lines 62-87 and
-`diagnostic_message_ack` at 142-166. Those numbers predate later refactors and
-are stale; the ranges in the table above are current.)*
+*(This table names items rather than line ranges on purpose. An earlier version
+cited exact ranges and an exact line count, both of which had gone stale by tens
+of lines within a single round of bug fixes.)*
 
 ### 7.4 `is_response` belongs on `PayloadType`, not `Message`
 
-`Message::is_response` (`src/messages/mod.rs:74-100`) reads **only**
+`Message::is_response` (`src/messages/mod.rs`) reads **only**
 `self.header.payload_type` and never touches `self.payload` — verified by
 inspection of the whole function body. It is a pure `PayloadType → PayloadType`
 relation wearing a `Message` method signature.
 
 Moving it to `PayloadType` would:
 - make the relation testable without constructing a `Message` at all;
-- delete `OwnedMessage::is_response` (`src/messages/mod.rs:338-342`), which today
-  exists purely as an `as_ref().is_response(..)` pass-through;
-- leave the single production call site (`src/client_inner.rs:437`) a one-line
-  change.
+- delete `OwnedMessage::is_response` (same file), which today exists purely as an
+  `as_ref().is_response(..)` pass-through;
+- leave the single production call site (in `Inner::process_received_message`,
+  `src/client_inner.rs`) a one-line change.
 
 ### 7.5 `SocketManager::session_id` is write-only
 
-`src/socket_manager.rs` declares `session_id: u16` (line 33), initialises it to
-`0` (line 83), and increments it on every `send` (line 97). A repo-wide grep
+`SocketManager` (`src/socket_manager.rs`) declares a `session_id: u16` field,
+initialises it to `0` in `bind`, and increments it on every `send`. A repo-wide grep
 finds no other reference — it is never read, never sent on the wire, never
 exposed. It is dead state that silently wraps at 65536 sends. Either wire it to
 something real or delete it.
