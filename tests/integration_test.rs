@@ -319,8 +319,18 @@ async fn wait_for_connection_close(stream: &mut TcpStream) {
 
 /// Test 3: a well-formed `DoIP` header carrying a payload type the server doesn't
 /// support (`DiagnosticPowerModeInfoRequest`, 0x4003) must not take the server down.
-/// The offending connection may be closed, but the server must keep accepting and
-/// serving other clients afterwards.
+///
+/// Unlike a framing-fatal error, an unsupported payload type is now RECOVERABLE at the
+/// codec layer (see `MessageCodec::decode` / `MessageError::is_framing_fatal`): the bad
+/// frame is skipped and consumed, and the connection is left open rather than being
+/// torn down by the server. So, unlike test 4, this test cannot wait for the SERVER to
+/// close the raw connection - it won't, and `wait_for_connection_close` would just
+/// block for the full `TEST_TIMEOUT` and fail.
+///
+/// Instead, the test closes its own end of the raw connection (signaling EOF to the
+/// server) and then asserts what actually matters: the server's accept loop - which
+/// (per `start_server`'s doc comment) awaits each connection inline, sequentially -
+/// moves on and a brand new client can still connect and activate.
 #[tokio::test]
 async fn unsupported_payload_type_does_not_kill_server() {
     let server = start_server().await;
@@ -339,7 +349,9 @@ async fn unsupported_payload_type_does_not_kill_server() {
     .await
     .expect("write should succeed");
 
-    wait_for_connection_close(&mut raw_stream).await;
+    // Close our end so the server observes EOF on this (now idle) connection and its
+    // sequential accept loop can move on to the next one.
+    drop(raw_stream);
 
     // The server must still be alive: a brand new client can connect and activate.
     let fresh_client = connect_and_activate(server.addr, &server).await;
