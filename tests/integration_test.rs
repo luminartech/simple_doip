@@ -631,3 +631,112 @@ async fn negative_ack_during_routing_activation_does_not_drop_pending_request() 
     accept_loop.abort();
     let _ = accept_loop.await;
 }
+
+/// A [`ServerConnectionHandler`] that answers routing activation normally, but never
+/// responds to a diagnostic message at all (the handler future simply never resolves,
+/// as if the server received the message and silently went away).
+struct SilentOnDiagnosticHandler;
+
+#[async_trait]
+impl ServerConnectionHandler for SilentOnDiagnosticHandler {
+    fn get_vin(&self) -> [u8; 17] {
+        [0x00; 17]
+    }
+
+    fn get_logical_address(&self) -> LogicalAddress {
+        SERVER_LOGICAL_ADDRESS
+    }
+
+    fn get_entity_id(&self) -> [u8; 6] {
+        [0x00; 6]
+    }
+
+    fn get_group_id(&self) -> Option<[u8; 6]> {
+        None
+    }
+
+    async fn routing_activation(
+        &self,
+        request: &RoutingActivationRequest,
+    ) -> Result<OwnedMessage, Error> {
+        Ok(OwnedMessage::routing_activation_response(
+            self.protocol_version(),
+            request.source_address,
+            self.get_logical_address(),
+            RoutingActivationResponseCode::RoutingSuccessfullyActivated,
+            [0; 4],
+            None,
+        ))
+    }
+
+    async fn diagnostic_message(
+        &self,
+        _message: &DiagnosticMessage<'_>,
+    ) -> Result<OwnedMessage, Error> {
+        // Never resolves: the server received the message but never acknowledges it,
+        // so the client must hit its own internal deadline rather than any
+        // server-driven signal.
+        std::future::pending().await
+    }
+}
+
+/// Regression test: a timed-out `SendDiagnosticMessage` (`ControlMessage::AwaitAck`)
+/// must surface `Error::ResponseTimeoutExceeded`, not `Error::ConnectionClosed`.
+///
+/// The run loop's deadline branch used to do
+/// `active_request.take()` and match only `ControlMessage::AwaitResponse`; when the
+/// pending request was actually an `AwaitAck` (as it is for
+/// `send_diagnostic_message`), the pattern did not match, so the taken value -
+/// including its oneshot `Sender` - was dropped without being told about the timeout.
+/// `Client::send_diagnostic_message` then observed the closed channel and mapped it to
+/// `Error::ConnectionClosed`, hiding the real cause (a timeout) from the caller.
+///
+/// With the deadline branch handling `AwaitAck` explicitly and sending
+/// `Err(Error::ResponseTimeoutExceeded)`, the caller now sees the correct error.
+#[tokio::test]
+async fn timed_out_diagnostic_message_ack_surfaces_timeout_not_connection_closed() {
+    let server = Server::new(SilentOnDiagnosticHandler).expect("server should construct");
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("failed to bind test server to an ephemeral port");
+    let addr = listener
+        .local_addr()
+        .expect("bound listener has a local address");
+
+    let accept_loop = tokio::spawn(async move {
+        loop {
+            let Ok((stream, peer_addr)) = listener.accept().await else {
+                break;
+            };
+            let _ = server.handle_client_connection(peer_addr, stream).await;
+        }
+    });
+
+    let mut client = with_timeout(
+        "client connect + routing activation",
+        Client::<TestConnector>::connect(client_options(addr)),
+    )
+    .await
+    .expect(
+        "client should connect and activate routing successfully against a server \
+              that behaves normally until the diagnostic message",
+    );
+
+    // simple_doip::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL is 50ms; TEST_TIMEOUT (5s) gives
+    // this test comfortable headroom so it observes the client's own deadline rather
+    // than racing it.
+    let result = with_timeout(
+        "send_diagnostic_message against a server that never acks",
+        client.send_diagnostic_message(AddressType::Physical, vec![0x10, 0x03]),
+    )
+    .await;
+
+    assert!(
+        matches!(result, Err(Error::ResponseTimeoutExceeded)),
+        "a diagnostic message that the server never acks must surface \
+         ResponseTimeoutExceeded, not ConnectionClosed or any other error; got: {result:?}"
+    );
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
+}

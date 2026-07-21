@@ -514,10 +514,18 @@ where
                         }
                     }, if active_request.is_some() && await_response_deadline.is_some() => {
                         debug!("Await response deadline reached, server did not respond, which may mean you will not receive Negative Response or message was suppressed");
-                        if let Some(ControlMessage::AwaitResponse(_, response)) = active_request.take()
-                            && response.send(Err(Error::ResponseTimeoutExceeded)).is_err()
-                        {
-                            debug!("Failed to send suppressed response");
+                        match active_request.take() {
+                            Some(ControlMessage::AwaitResponse(_, response)) => {
+                                if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
+                                    debug!("Failed to send suppressed response");
+                                }
+                            }
+                            Some(ControlMessage::AwaitAck(response)) => {
+                                if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
+                                    debug!("Failed to send suppressed ack timeout");
+                                }
+                            }
+                            other => *active_request = other,
                         }
                         *await_response_deadline = None;
                     }
