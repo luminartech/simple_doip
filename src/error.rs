@@ -94,6 +94,15 @@ pub enum Error {
     /// hard protocol violation.
     #[error("Response timeout exceeded")]
     ResponseTimeoutExceeded,
+    /// A request was still pending when a new request was issued on the same
+    /// client, so the older request was superseded and will never complete.
+    ///
+    /// This is what a caller observes if it stops awaiting a request (for
+    /// example by wrapping it in [`tokio::time::timeout`] or racing it in a
+    /// `tokio::select!`) and then issues another request: the abandoned request
+    /// is displaced by the new one rather than being dropped silently.
+    #[error("Request superseded by a newer request on the same client")]
+    RequestSuperseded,
     /// The `DoIP` entity rejected a diagnostic message with a negative
     /// `DiagnosticMessageAck`; the contained [`DiagnosticAckCode`] identifies the
     /// reported reason.

@@ -631,6 +631,59 @@ async fn negative_ack_during_routing_activation_does_not_drop_pending_request() 
     let _ = accept_loop.await;
 }
 
+/// Regression test: cancelling a `receive_diagnostic_response` future must not brick the
+/// client.
+///
+/// `receive_diagnostic_response` is normally used under a caller-supplied bound -
+/// `tokio::time::timeout(..)` around it, or racing it in a `tokio::select!`. Cancelling
+/// it drops the caller's half of the oneshot, but the inner task still holds the
+/// matching `ControlMessage::AwaitResponse` in `active_request`. The run loop's control
+/// branch used to `assert!(self.active_request.is_none())` at that point, so the *next*
+/// user request panicked the detached inner task. Nothing surfaced the panic: the
+/// control channel simply closed, and every later call returned
+/// `Error::ConnectionClosed` forever - an error that reads as "the peer went away".
+///
+/// The control branch now supersedes any still-pending request (completing it with
+/// `Error::RequestSuperseded` rather than dropping its `Sender`) and accepts the new
+/// one, so the client keeps working. The assertion below is on the observable
+/// consequence from the client's side, since a panic on a detached task cannot
+/// propagate into the test.
+#[tokio::test]
+async fn cancelled_receive_diagnostic_response_does_not_brick_client() {
+    let server = start_server().await;
+    let mut client = connect_and_activate(server.addr, &server).await;
+
+    // Ask for a diagnostic response with a long inner deadline, then abandon the future
+    // well before that deadline. This is the ordinary cancellation shape, and it leaves
+    // an `AwaitResponse` pending inside the inner task.
+    let cancelled = tokio::time::timeout(
+        Duration::from_millis(50),
+        client.receive_diagnostic_response(Duration::from_secs(30)),
+    )
+    .await;
+    assert!(
+        cancelled.is_err(),
+        "the receive future was supposed to be cancelled by the outer timeout, but it \
+         completed: {cancelled:?}"
+    );
+
+    // The next request lands in the control branch with a request still pending. It must
+    // be served normally.
+    let send_result = with_timeout(
+        "send_diagnostic_message after a cancelled receive",
+        client.send_diagnostic_message(AddressType::Physical, vec![0x10, 0x03]),
+    )
+    .await;
+    assert!(
+        send_result.is_ok(),
+        "a request issued after a cancelled receive_diagnostic_response must still be \
+         served; got: {send_result:?} (Err(ConnectionClosed) means the inner task died)"
+    );
+
+    with_timeout("client shutdown", client.shut_down()).await;
+    server.shutdown().await;
+}
+
 /// A [`ServerConnectionHandler`] that answers routing activation normally, but never
 /// responds to a diagnostic message at all (the handler future simply never resolves,
 /// as if the server received the message and silently went away).

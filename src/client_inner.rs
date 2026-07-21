@@ -331,6 +331,48 @@ where
         }
     }
 
+    /// Complete any still-pending request with [`Error::RequestSuperseded`] so that a
+    /// newly arrived control message can take its place.
+    ///
+    /// Nothing here may panic: [`Inner::run`] is a detached task, so a panic would be
+    /// invisible and would brick the client behind a closed control channel.
+    fn supersede_active_request(&mut self) {
+        match self.active_request.take() {
+            None => {}
+            Some(ControlMessage::AwaitAck(response)) => {
+                debug!("Superseding pending AwaitAck");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::AwaitResponse(_, response)) => {
+                debug!("Superseding pending AwaitResponse");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::RoutingActivation(_, response)) => {
+                debug!("Superseding pending RoutingActivation");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::ReceiveDiagnosticResponse(_, response)) => {
+                debug!("Superseding pending ReceiveDiagnosticResponse");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::SendDiagnosticMessage(_, response)) => {
+                debug!("Superseding pending SendDiagnosticMessage");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::BindSocket(_, response)) => {
+                debug!("Superseding pending BindSocket");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::UnbindSocket(response)) => {
+                debug!("Superseding pending UnbindSocket");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+        }
+        // The displaced request's deadline no longer applies; the arms of
+        // `handle_control_message` that leave a request pending each set a fresh one.
+        self.await_response_deadline = None;
+    }
+
     /// Process a message received from the socket. Returns `true` if the run loop should exit.
     async fn process_received_message(&mut self, message: Result<OwnedMessage, Error>) -> bool {
         match message {
@@ -475,8 +517,16 @@ where
                             *run = false;
                             break;
                         }
-                        assert!(self.active_request.is_none());
                         debug!("Received control message: {:?}", ctrl_opt.as_ref().unwrap());
+                        // A request may still be pending here: the caller can stop awaiting
+                        // one (`tokio::time::timeout`, `tokio::select!`, or the deliberately
+                        // recoverable routing-activation timeout in `Client::bind_socket`) and
+                        // then issue another. The new request wins - refusing it would strand
+                        // the client behind a request nobody is waiting for - but the displaced
+                        // request is told rather than dropped, per the take-or-restore
+                        // discipline: dropping its oneshot `Sender` would surface as an
+                        // indistinguishable closed channel.
+                        self.supersede_active_request();
                         self.active_request = ctrl_opt;
                     }
                     // Receive a message from the socket
