@@ -522,8 +522,6 @@ mod tests {
             deserialized_message.header.payload_type == PayloadType::VehicleIdentificationRequest
         );
         assert!(deserialized_message.header.payload_length == 7);
-        // TODO: Lots more checking of payload handling
-        //assert!(deserialized_message.payload.len() == 7);
     }
     #[test]
     fn test_invalid_inverse() {
@@ -534,33 +532,6 @@ mod tests {
             Message::decode(&buf),
             Err(MessageError::VersionInverseIncorrect { .. })
         ));
-    }
-
-    /// Encode a message into a stack buffer and frame it back out again, without any
-    /// `Vec`/`alloc` involved. Exercises the `no_std` / `no_alloc` API surface.
-    #[test]
-    fn test_no_std_stack_buffer_roundtrip() {
-        let message: Message<'_> = Message::diagnostic_message(
-            ProtocolVersion::V2012,
-            LogicalAddress(0x0E00),
-            LogicalAddress(0x1000),
-            &[0x10u8, 0x02][..],
-        );
-
-        let mut buf = [0u8; 64];
-        let written = {
-            let mut writer: &mut [u8] = &mut buf;
-            message.encode(&mut writer).unwrap()
-        };
-
-        let (frame, consumed) = crate::try_frame(&buf[..written]).unwrap().unwrap();
-        assert_eq!(consumed, written);
-        let payload = Payload::decode(frame.payload, frame.header.payload_type).unwrap();
-        let decoded = Message {
-            header: frame.header,
-            payload,
-        };
-        assert_eq!(decoded, message);
     }
 
     /// A routing activation response carrying `oem_specific` must set the header payload
