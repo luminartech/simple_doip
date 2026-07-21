@@ -154,32 +154,30 @@ where
                             // Decoding the message can fail, so we handle that here
                             Some(Err(e)) => {
                                 last_activity = tokio::time::Instant::now();
-                                // Socket-level I/O errors from the tokio layer arrive as
-                                // `MessageError::Std`, preserving the OS error detail.
-                                if let MessageError::Std(ref io_err) = e {
-                                    if io_err.kind() == std::io::ErrorKind::ConnectionReset {
-                                        info!("Connection reset by peer, closing socket: {io_err}");
-                                        // The socket has been closed by the remote end, so we should exit
-                                        break;
+                                // Socket-level errors from the tokio layer arrive as
+                                // `MessageError::Std`, preserving OS error detail.
+                                // `MessageError::Io` is encode-side only (embedded-io
+                                // short writes) and is not expected on this RX path, but
+                                // is classified identically so the match stays honest.
+                                let reset = match &e {
+                                    MessageError::Std(io_err) => {
+                                        Some(io_err.kind() == std::io::ErrorKind::ConnectionReset)
                                     }
-                                    error!(concat!("{}\n",
-                                        "Check that you are not sending too many requests to the server.",
-                                        "The server may be closing the connection due to overload."
-                                    ), io_err);
-                                    // The socket has been closed by the remote end, so we should exit
-                                    break;
-                                }
-                                if let MessageError::Io(ref io_err) = e {
-                                    if *io_err == embedded_io::ErrorKind::ConnectionReset {
-                                        info!(concat!("Connection reset by peer, closing socket\n", "{:?}"), io_err);
-                                        // The socket has been closed by the remote end, so we should exit
-                                        break;
+                                    MessageError::Io(kind) => {
+                                        Some(*kind == embedded_io::ErrorKind::ConnectionReset)
                                     }
-                                    error!(concat!("{:?}\n",
-                                        "Check that you are not sending too many requests to the server.",
-                                        "The server may be closing the connection due to overload."
-                                    ), io_err);
-                                    // The socket has been closed by the remote end, so we should exit
+                                    _ => None,
+                                };
+                                if let Some(was_reset) = reset {
+                                    if was_reset {
+                                        info!("Connection reset by peer, closing socket: {e}");
+                                    } else {
+                                        error!(concat!("{}\n",
+                                            "Check that you are not sending too many requests to the server.",
+                                            "The server may be closing the connection due to overload."
+                                        ), e);
+                                    }
+                                    // Either way the socket is unusable; exit the read loop.
                                     break;
                                 }
                                 error!("Error decoding message: {:?}", e.to_string());
