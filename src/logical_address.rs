@@ -90,21 +90,6 @@ impl PartialEq<LogicalAddress> for LogicalAddress {
     }
 }
 
-/// Creates a logical address from a u16 and checks if it is in the valid range
-/// for a client address (0x0E00 - 0x0FFF)
-#[macro_export]
-macro_rules! client_logical_address {
-    ($addr:expr) => {{
-        const _: () = {
-            assert!(
-                $addr >= 0x0E00 && $addr <= 0x0FFF,
-                "Invalid client address - must be in range 0x0E00 - 0x0FFF"
-            );
-        };
-        LogicalAddress($addr)
-    }};
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

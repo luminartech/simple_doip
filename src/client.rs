@@ -15,15 +15,6 @@ use std::{
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
 
-#[derive(Debug, strum::Display)]
-/// Send updates to the user
-pub enum ClientUpdate {
-    /// Unicase message from the server
-    Unicast(OwnedMessage),
-    /// Inner `DoIP` client error
-    Error(Error),
-}
-
 /// Activation options for the routing activation request
 ///
 /// This is used to determine which type of routing activation request to send
@@ -60,16 +51,6 @@ pub struct ClientOptions {
 pub enum AddressType {
     Logical,
     Physical,
-}
-
-/// The result of sending a message to the server. When a message
-/// is suppressed (ie via UDS), the server might not respond and returns `Suppressed`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SendResult<ReadDefinitions> {
-    /// The message was sent successfully
-    Response(ReadDefinitions),
-    /// The message was sent, but the server did not respond
-    Suppressed,
 }
 
 /// The client is the main entry point for the user to interact with the `DoIP` protocol.
