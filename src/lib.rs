@@ -42,7 +42,6 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-pub mod connection_state;
 pub mod logical_address;
 pub mod messages;
 pub mod wire;

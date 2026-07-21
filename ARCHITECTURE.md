@@ -290,7 +290,6 @@ deliberate hedge against exactly the kind of addition section 7.2 discusses
 | `src/messages/traits.rs` | One line: re-export of `Decode`, `Encode`, `take` from the codec crate |
 | `src/messages/*.rs` (rest) | One file per concrete payload body (alive check, diagnostic message, routing activation, entity status, power mode, vehicle identification, NACK codes) |
 | `src/logical_address.rs` | `LogicalAddress` newtype plus tester-range validation |
-| `src/connection_state.rs` | `ConnectionState` machine and `is_message_allowed` gating — currently `#[allow(unused)]` and `pub(crate)`. The containing module (`pub mod connection_state` in `src/lib.rs`) is public even though its only type is not, so the crate exposes an empty public module — a wart, not a deliberate API surface. |
 | `src/wire.rs` | Re-export surface for the codec crate's types |
 
 `PayloadType` is a closed enum with `Reserved(u16)` and

@@ -3,7 +3,6 @@
 use crate::{
     Error,
     client::ClientOptions,
-    connection_state::ConnectionState,
     messages::{MessageError, OwnedMessage, OwnedPayload},
     socket_manager::SocketManager,
 };
@@ -115,9 +114,6 @@ pub(super) struct Inner<Conn> {
     /// Socket manager for TCP data socket if bound
     tcp_data_socket: Option<SocketManager<Conn>>,
 
-    /// Represents the `DoIP` connection state of the socket
-    connection_state: ConnectionState,
-
     /// Whether to keep the inner client running
     ///
     /// This is used to gracefully shut down the inner client
@@ -150,7 +146,6 @@ where
             active_request: None,
             await_response_deadline: None,
             tcp_data_socket: None,
-            connection_state: ConnectionState::Listen,
             run: true,
             pending_diagnostic_response: None,
         };
@@ -171,7 +166,6 @@ where
         // Bind a new socket
         let socket_manager: SocketManager<Conn> =
             SocketManager::bind(self.client_options, gateway_address).await?;
-        self.connection_state = ConnectionState::Initialized;
         let port = socket_manager.port();
         debug!("Bound socket to port: {}", port);
         self.tcp_data_socket = Some(socket_manager);
@@ -475,7 +469,6 @@ where
                     socket.shut_down().await;
                 }
                 self.await_response_deadline = None;
-                self.connection_state = ConnectionState::Listen;
                 // Notify any active request of the connection error
                 match self.active_request.take() {
                     Some(ControlMessage::AwaitResponse(_, response)) => {
