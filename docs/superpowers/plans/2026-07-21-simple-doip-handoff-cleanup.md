@@ -240,7 +240,7 @@ Append to `src/message_codec.rs`:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::messages::{OwnedPayload, PayloadType};
+    use crate::messages::OwnedPayload;
 
     /// Well-formed NACK frame: 8-byte header (V2012, payload type 0x0000, length 1) plus
     /// a 1-byte body.
@@ -312,7 +312,6 @@ mod tests {
             "skipping the only frame leaves nothing to return"
         );
         assert!(src.is_empty(), "the skipped frame is still consumed");
-        let _ = PayloadType::NegativeAcknowledge; // import is used by other tests
     }
 }
 ```
@@ -811,16 +810,17 @@ grep -n "automotive_wire_codec" src/messages/mod.rs src/messages/traits.rs
 
 - [ ] **Step 4: Verify the re-export works from outside the crate**
 
-Add to `tests/golden_vectors.rs` (a genuine external-consumer compile check):
+Add to `tests/golden_vectors.rs`. This is a **compile-time** check, deliberately not a `#[test]` — it asserts nothing at runtime, and dressing it as a test would misrepresent what it verifies:
 
 ```rust
-/// Compile-time check that a consumer can name the codec's error payload types without
-/// taking their own `automotive-wire-codec` dependency.
-#[test]
-fn wire_types_are_reachable_from_outside_the_crate() {
-    fn _accepts(_: simple_doip::wire::Incomplete, _: simple_doip::wire::TrailingBytes) {}
-}
+/// Compile-time check that an external consumer can name the codec's error payload types
+/// through `simple_doip::wire`, without taking their own `automotive-wire-codec`
+/// dependency. Fails the build, not a test, if the re-export is removed or renamed.
+const _WIRE_TYPES_ARE_REACHABLE: fn(simple_doip::wire::Incomplete, simple_doip::wire::TrailingBytes) =
+    |_, _| {};
 ```
+
+Because this lives in `tests/`, it is compiled as an external crate — which is precisely what makes it a real check of the *public* path rather than an internal one.
 
 - [ ] **Step 5: Build, test, commit**
 
@@ -888,7 +888,7 @@ Work the list to zero. Rules:
 - Document **what the item is in DoIP terms**, not what its Rust type is. `/// The tester's logical address, per ISO 13400-2 §7.1.` — not `/// The logical address.`
 - For error variants, say **when it occurs**, not what it is named.
 - Do not write `/// TODO` or restate the identifier. Those are the two failure modes here.
-- Add `#[non_exhaustive]` to `Error` while you are in `src/error.rs` — it is a public error enum in a pre-1.0 crate about to be published, and `MessageError` already has it. This is a breaking change to exhaustive matches, which is correct and cheap to make now.
+- Add `#[non_exhaustive]` to `Error` while you are in `src/error.rs`. **This is a breaking API change** — downstream exhaustive `match`es on `Error` stop compiling. It is deliberate and deliberately done now: the crate is pre-publication with no external consumers, `MessageError` already carries the attribute, and adding it after publishing would be far more disruptive. Call it out explicitly in the commit message; do not let it hide inside a docs commit.
 
 - [ ] **Step 4: Verify zero warnings**
 
@@ -917,7 +917,12 @@ git commit -m "docs: warn(missing_docs) and document the public API
 
 Turns on missing_docs + missing_debug_implementations and works the
 resulting list to zero, so the docs.rs page is complete before the crate
-is handed off. Also marks Error #[non_exhaustive], matching MessageError."
+is handed off.
+
+BREAKING: Error is now #[non_exhaustive], matching MessageError.
+Downstream exhaustive matches on Error will no longer compile. Done now,
+pre-publication with no external consumers, because doing it after
+publishing would be far more disruptive."
 ```
 
 ---
