@@ -1,1 +1,1 @@
-pub use automotive_wire_codec::{Decode, Encode};
+pub use automotive_wire_codec::{Decode, Encode, take};

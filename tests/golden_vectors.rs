@@ -381,3 +381,11 @@ fn golden_full_frames() {
         },
     );
 }
+
+/// Compile-time check that an external consumer can name the codec's error payload types
+/// through `simple_doip::wire`, without taking their own `automotive-wire-codec`
+/// dependency. Fails the build, not a test, if the re-export is removed or renamed.
+const _WIRE_TYPES_ARE_REACHABLE: fn(
+    simple_doip::wire::Incomplete,
+    simple_doip::wire::TrailingBytes,
+) = |_, _| {};

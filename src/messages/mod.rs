@@ -27,6 +27,7 @@ pub use routing_activation_request::{ActivationTypeCode, RoutingActivationReques
 mod routing_activation_response;
 pub use routing_activation_response::{RoutingActivationResponse, RoutingActivationResponseCode};
 mod traits;
+use traits::take;
 pub use traits::{Decode, Encode};
 mod vehicle_identification_response;
 pub use vehicle_identification_response::{
@@ -239,8 +240,7 @@ impl<'a> Decode<'a> for Message<'a> {
     /// Returns a [`MessageError`] if the header or payload cannot be deserialized
     fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
         let (header, rest) = Header::decode(buf)?;
-        let (payload_bytes, rest) =
-            automotive_wire_codec::take(rest, header.payload_length as usize)?;
+        let (payload_bytes, rest) = take(rest, header.payload_length as usize)?;
         let payload = Payload::decode(payload_bytes, header.payload_type)?;
         Ok((Message { header, payload }, rest))
     }

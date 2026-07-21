@@ -17,6 +17,7 @@ extern crate std;
 pub mod connection_state;
 pub mod logical_address;
 pub mod messages;
+pub mod wire;
 pub use logical_address::LogicalAddress;
 mod framer;
 pub use framer::{RawFrame, try_frame};
