@@ -40,6 +40,21 @@ pub use vehicle_identification_response::{
 
 use crate::LogicalAddress;
 
+/// Payload length for a `DoIP` header, from a payload's encoded size.
+///
+/// # Panics
+/// Panics if the payload cannot be sized, or if its encoded size exceeds `u32::MAX`.
+/// Neither is reachable for a well-formed `DoIP` message: every payload type has a
+/// computable size, and the wire format caps payload length at `u32::MAX` by construction.
+fn payload_len(value: &impl Encode<Error = MessageError>) -> u32 {
+    u32::try_from(
+        value
+            .encoded_size()
+            .expect("DoIP message is always sizable"),
+    )
+    .expect("DoIP payload length exceeds u32::MAX")
+}
+
 /// Message contains the payload and header info of a `DoIP` message
 ///
 /// The payload contains diagnostic data and other `DoIP` protocol information.
@@ -143,12 +158,7 @@ impl<'a> Message<'a> {
             target_address,
             user_data,
         };
-        let payload_size = u32::try_from(
-            message
-                .encoded_size()
-                .expect("DoIP message is always sizable"),
-        )
-        .expect("DoIP payload length exceeds u32::MAX");
+        let payload_size = payload_len(&message);
         Message {
             header: Header::new(
                 protocol_version,
@@ -188,9 +198,7 @@ impl<'a> Message<'a> {
             ack_code,
             previous_message_data,
         };
-        let payload_size =
-            u32::try_from(ack.encoded_size().expect("DoIP message is always sizable"))
-                .expect("DoIP payload length exceeds u32::MAX");
+        let payload_size = payload_len(&ack);
         Message {
             header: Header::new(
                 protocol_version,
@@ -226,12 +234,7 @@ impl<'a> Message<'a> {
         let header = Header::new(
             protocol_version,
             PayloadType::RoutingActivationRequest,
-            u32::try_from(
-                request
-                    .encoded_size()
-                    .expect("DoIP message is always sizable"),
-            )
-            .expect("DoIP payload length exceeds u32::MAX"),
+            payload_len(&request),
         );
         Message {
             header,
@@ -266,12 +269,7 @@ impl<'a> Message<'a> {
         let header = Header::new(
             protocol_version,
             PayloadType::RoutingActivationResponse,
-            u32::try_from(
-                response
-                    .encoded_size()
-                    .expect("DoIP message is always sizable"),
-            )
-            .expect("DoIP payload length exceeds u32::MAX"),
+            payload_len(&response),
         );
         Message {
             header,
@@ -416,13 +414,7 @@ impl OwnedMessage {
             target_address,
             user_data,
         };
-        let payload_size = u32::try_from(
-            message
-                .as_ref()
-                .encoded_size()
-                .expect("DoIP message is always sizable"),
-        )
-        .expect("DoIP payload length exceeds u32::MAX");
+        let payload_size = payload_len(&message.as_ref());
         OwnedMessage {
             header: Header::new(
                 protocol_version,
@@ -462,12 +454,7 @@ impl OwnedMessage {
             ack_code,
             previous_message_data,
         };
-        let payload_size = u32::try_from(
-            ack.as_ref()
-                .encoded_size()
-                .expect("DoIP message is always sizable"),
-        )
-        .expect("DoIP payload length exceeds u32::MAX");
+        let payload_size = payload_len(&ack.as_ref());
         OwnedMessage {
             header: Header::new(
                 protocol_version,
