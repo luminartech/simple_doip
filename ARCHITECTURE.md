@@ -57,7 +57,16 @@ Capability is added in strict Cargo-feature tiers, each building on the previous
 | Owned mirror | `alloc` | `OwnedMessage`, `OwnedPayload`, `OwnedDiagnosticMessage`, `OwnedDiagnosticMessageAck` | `src/messages/mod.rs`, `src/messages/payload.rs` |
 | std | `std` | `std::io::Error` interop (`MessageError::Std`), `std`-backed error traits | `src/messages/message_error.rs` |
 | Codec | `codec` | `MessageCodec`, a `tokio_util::codec` `Encoder`/`Decoder` | `src/message_codec.rs` |
-| Async | `client`, `server` | `Client`, `Server`, `ServerConnectionHandler`, `Connector` | `src/client.rs`, `src/client_inner.rs`, `src/socket_manager.rs`, `src/connection.rs`, `src/server.rs` |
+| Async client | `client` | `Client`, `Connector` (trait + `ConnectorSocket`) | `src/client.rs`, `src/client_inner.rs`, `src/socket_manager.rs`, `src/connection.rs` |
+| Async server | `server` | `Server`, `ServerConnectionHandler` | `src/server.rs` |
+
+`client` and `server` are each defined in `Cargo.toml` as `["codec", ...]`, so
+either one alone pulls in `codec` (and transitively `std`/`alloc`) automatically.
+They do **not** pull in each other: `client_inner.rs`, `socket_manager.rs`,
+`connection.rs`, and `Connector` are all gated `#[cfg(feature = "client")]`
+only, so a `server`-only build gets none of them — only `server.rs`.
+`src/error.rs` (the `Error` type) is gated on `client` **or** `server`, so it is
+present in either build.
 
 Verified against `Cargo.toml` `[features]` and the `#[cfg(feature = ...)]` module
 gating in `src/lib.rs`.
@@ -98,8 +107,11 @@ let (frame, consumed) = try_frame(buf)?.expect("complete frame present");
 let payload = Payload::decode(frame.payload, frame.header.payload_type)?;
 ```
 
-`try_frame` (`src/framer.rs:47-66`) validates the 8-byte header (protocol version
-inverse, payload length), delimits one frame, and returns
+`try_frame` (`src/framer.rs:47-66`) validates the 8-byte header's protocol
+version inverse, checks the declared `payload_length` only against how many
+bytes are actually available in the buffer (never against what the payload
+type requires — that check does not exist at this layer), delimits one frame,
+and returns
 `RawFrame<'a> { header, payload: &'a [u8] }` plus a consumed byte count. It owns
 no I/O resource, performs no reads, and never interprets the payload type beyond
 carrying it in the header. `Ok(None)` means "need more bytes" — this is the
@@ -170,9 +182,11 @@ real `std::io::Error` with an OS code and message, and flattening it would throw
 that away. `src/socket_manager.rs` matches on both when deciding whether a read
 error means "connection reset" (`src/socket_manager.rs:159-184`).
 
-Three variants — `PayloadLengthTooShort`, `UnexpectedPayloadType`, and (on the
-`Error` side) several more — are documented in-tree as "currently never produced
-by this crate". They are part of the public taxonomy but presently unreachable.
+Several variants are documented in-tree as "currently never produced by this
+crate" — part of the public taxonomy but presently unreachable. On the
+`MessageError` side: `PayloadLengthTooShort` and `UnexpectedPayloadType`. On the
+`Error` side: `UnexpectedAckMessage`, `ValueOutOfRange`, `NackReceived`, and
+`InvalidClientType`.
 
 ### 4.1 `is_framing_fatal` is consumed by the codec
 
@@ -252,6 +266,13 @@ appearing in this crate's public API, `automotive-wire-codec`'s semver is part o
 if not one line of `simple_doip` changes. This is documented on the module
 (`src/wire.rs:9-13`) and must be respected at release time.
 
+Separately, `Payload`, `OwnedPayload`, and `MessageError` are all
+`#[non_exhaustive]` (as is `Error`, noted in section 6). New variants can be
+added to any of them in a semver-compatible release, so downstream `match`
+expressions on these types must already carry a wildcard arm — this is a
+deliberate hedge against exactly the kind of addition section 7.2 discusses
+(a new payload-body variant for `0x8003`).
+
 ---
 
 ## 6. Module map
@@ -261,7 +282,7 @@ if not one line of `simple_doip` changes. This is documented on the module
 | Path | Role |
 |---|---|
 | `src/lib.rs` | Crate docs, feature-gated module tree, DoIP ports and timing constants |
-| `src/framer.rs` | `RawFrame`, `try_frame` — the sans-io seam |
+| `src/framer.rs` | `RawFrame`, `try_frame` — the sans-io seam (the module itself is private; both types are re-exported at the crate root, so consumers write `simple_doip::try_frame` / `simple_doip::RawFrame`, not `simple_doip::framer::...`) |
 | `src/messages/mod.rs` | `Message<'a>`, `OwnedMessage`, constructors, `Decode`/`Encode` impls |
 | `src/messages/header.rs` | `Header` (8 bytes, `Header::SIZE`), `PayloadType`, `ProtocolVersion` |
 | `src/messages/payload.rs` | `Payload<'a>` (14 variants) and `OwnedPayload`; `Payload::decode` dispatches on `PayloadType` |
@@ -269,7 +290,7 @@ if not one line of `simple_doip` changes. This is documented on the module
 | `src/messages/traits.rs` | One line: re-export of `Decode`, `Encode`, `take` from the codec crate |
 | `src/messages/*.rs` (rest) | One file per concrete payload body (alive check, diagnostic message, routing activation, entity status, power mode, vehicle identification, NACK codes) |
 | `src/logical_address.rs` | `LogicalAddress` newtype plus tester-range validation |
-| `src/connection_state.rs` | `ConnectionState` machine and `is_message_allowed` gating — currently `#[allow(unused)]` and `pub(crate)` |
+| `src/connection_state.rs` | `ConnectionState` machine and `is_message_allowed` gating — currently `#[allow(unused)]` and `pub(crate)`. The containing module (`pub mod connection_state` in `src/lib.rs`) is public even though its only type is not, so the crate exposes an empty public module — a wart, not a deliberate API surface. |
 | `src/wire.rs` | Re-export surface for the codec crate's types |
 
 `PayloadType` is a closed enum with `Reserved(u16)` and
@@ -301,6 +322,39 @@ User ← Client ← update_receiver ← Inner ← SocketManager.receiver ← TCP
 `Client` and `SocketManager` are generic over `Conn: Connector`, so a caller can
 substitute its own transport (TLS, a test double, a non-TCP link) without
 touching the protocol logic.
+
+#### The pending-request lifecycle
+
+`Inner` (`src/client_inner.rs`) tracks at most one in-flight request in
+`active_request: Option<ControlMessage>`, where `ControlMessage` is either
+`AwaitAck` (waiting on a `DiagnosticMessageAck`) or `AwaitResponse` (waiting on a
+full reply, e.g. to a routing activation request or a diagnostic message sent
+without suppress-positive-response). Each variant owns a oneshot `Sender` that
+eventually completes the caller's `await`.
+
+Three helpers read `active_request`: `take_await_ack`, `take_await_response`,
+and the inline `match` arms in the deadline-timeout branch and the socket-error
+branch of the `run` select loop. All of them share one invariant: **if the
+stored `ControlMessage` does not match the variant a given call site is looking
+for, it must be put back, not dropped.** `Option::take` empties the field
+unconditionally; if the caller then discards the taken value under a
+non-matching arm instead of restoring it, the oneshot `Sender` inside it is
+dropped, its receiver observes a closed channel, and the in-flight request
+dies silently — no error is ever sent, because there is no longer a `Sender` to
+send one on. Downstream, a closed channel is easy to misinterpret as "the peer
+doesn't support this operation" rather than "this crate ate the response",
+which is exactly what happened in the routing-activation path this was found
+through (see `negative_ack_during_routing_activation_does_not_drop_pending_request`
+in `tests/integration_test.rs`).
+
+`take_await_ack` and `take_await_response` both implement the invariant
+correctly: on a non-matching variant, they reassign `self.active_request = other`
+before returning `None`. Three sites that violated this invariant — taking
+`active_request` unconditionally and dropping the mismatched case — were found
+and fixed during this cleanup; three of the integration suite's regression
+tests exist specifically to pin those fixes. Any new code that reads
+`active_request` must preserve the same restore-on-mismatch shape, or a
+future change can silently reintroduce a dropped-`Sender` bug.
 
 ### Tests and examples
 
@@ -380,14 +434,63 @@ behavior is documented as a "Known limitation" on both constructors and on
 `Payload::DiagnosticMessageAck` (`src/messages/payload.rs:30-41`), so callers are
 warned not to rely on the header matching the ack code.
 
-**There is currently no test coverage either way.** Confirmed by inspection: the
-golden vectors for diagnostic-message acks (`golden_diagnostic_message_ack` in
-`tests/golden_vectors.rs`) encode `DiagnosticMessageAck` *bodies* directly and
-never go through the constructor, so they cannot observe the header at all; the
-integration tests and `examples/echo_server.rs` only ever pass
-`DiagnosticAckCode::RoutingConfirmationAck`, a positive code, where the hardcoded
-type happens to be right. A follow-up should add both a positive and a negative
-case asserting `header.payload_type`.
+**The fix is not a one-line payload-type swap — it is a modeling gap.** Verified
+against `src/messages/payload.rs`: `Payload::decode` maps `0x8003`
+(`PayloadType::DiagnosticMessageNegativeAcknowledge`) to `Payload::DiagnosticMessageNack`,
+which is a **unit variant carrying no body at all** — its `decode` arm ignores
+the payload bytes entirely rather than parsing an ack code out of them. But
+`Message::diagnostic_message_ack`/`OwnedMessage::diagnostic_message_ack` build a
+multi-byte `DiagnosticMessageAck` body (ack code plus `previous_message_data`)
+regardless of whether the code is positive or negative. So simply stamping
+`0x8003` into the header for negative codes, without also changing which
+`Payload`/`OwnedPayload` variant carries the body, would produce a frame this
+crate's own decoder cannot round-trip: on receipt, `Payload::decode` would
+discard the ack-code bytes and hand back a bodyless `DiagnosticMessageNack`.
+
+That loss is not hypothetical for this crate's own client. Verified against
+`src/client_inner.rs:411-431`: `Inner::process_received_message` matches on
+`OwnedPayload::DiagnosticMessageAck(ref ack)` to read `ack.ack_code` and, for a
+negative code, complete the pending send with `Err(Error::DiagnosticMessageNack(ack.ack_code))`.
+If negative acks instead arrived decoded as `OwnedPayload::DiagnosticMessageNack`
+(the unit variant), this match arm would simply not fire — the message would
+fall through to the generic `_ => trace!(...)` arm below it, and the specific
+ack code (and the `Error::DiagnosticMessageNack` path) would be silently lost.
+Fixing the header hardcode correctly therefore requires deciding, first,
+what `0x8003` decodes *to* in this crate — e.g. giving `DiagnosticMessageNack`
+a body carrying the ack code, or dropping the separate variant and letting both
+`0x8002` and `0x8003` decode into `DiagnosticMessageAck` distinguished by
+`ack_code` — and only then updating `client_inner.rs` and any other match sites
+to follow. That decision is left to the next owner; it is not attempted here.
+
+**Test coverage: partially present, but blind to the header.** Confirmed by
+inspection. The golden vectors for diagnostic-message acks
+(`golden_diagnostic_message_ack` in `tests/golden_vectors.rs`) encode
+`DiagnosticMessageAck` *bodies* directly and never go through the constructor,
+so they cannot observe the header at all. `tests/integration_test.rs`'s
+`NackingRoutingHandler` (used by
+`negative_ack_during_routing_activation_does_not_drop_pending_request`) *does*
+exercise a genuinely negative code end-to-end — it builds
+`OwnedMessage::diagnostic_message_ack(.., DiagnosticAckCode::UnknownTargetAddress, ..)`
+and the test itself asserts `DiagnosticAckCode::UnknownTargetAddress.is_negative_ack()`
+before sending it, so this is not accidentally a positive code in disguise.
+`examples/echo_server.rs`, by contrast, only ever passes
+`DiagnosticAckCode::RoutingConfirmationAck`, a positive code.
+
+But **no test anywhere asserts an ack frame's `header.payload_type`** — that
+headline claim holds. The negative-ack test drives the frame end-to-end and
+checks the client's resulting `Error`, not the wire header, so the hardcode
+remains invisible to the suite even though a negative code is genuinely
+exercised. Incidentally — verified against `Message::is_response`
+(`src/messages/mod.rs:75-100`) — that test would keep passing unmodified even if
+the hardcode were fixed to stamp `0x8003`: for a pending `RoutingActivationRequest`,
+`is_response` only returns `true` when the received payload type equals
+`RoutingActivationResponse`, so both `0x8002` and `0x8003` fall through to
+`false` and the client still surfaces `Err(Error::UnexpectedMessageType(_))`
+either way. That is incidental to how `is_response` happens to be written for
+this pair of payload types, not a designed check for the hardcode, and should
+not be read as evidence the fix is already validated. A follow-up should add a
+targeted assertion on `header.payload_type` for both a positive and a negative
+ack, in addition to picking a resolution to the modeling gap above.
 
 Changing this is a **behavior change on the wire** for negative acks. It is not
 covered by the frozen golden fixtures (they pin bodies), but it should be treated
@@ -462,7 +565,7 @@ server tracks no per-connection state; a failed `accept()` panics the server tas
 2. **The default build must stay allocator-free.**
    `cargo build --no-default-features` and
    `cargo run --example bare_metal_codec --no-default-features` are the guard.
-3. **`try_frame` must never interpret a payload.** The moment it does, the seam in
+3. **`try_frame` must never interpret a payload.** The moment it does, the
    sans-io seam (section 3) collapses and callers lose the ability to apply their own policy.
 4. **There is exactly one encoder.** `Encode for OwnedMessage` delegates through
    `as_ref()`. Do not add a second serialization path.
