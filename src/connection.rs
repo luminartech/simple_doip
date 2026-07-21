@@ -1,57 +1,68 @@
 //! # Connection Module
-//! This module provides the [Connector] trait and its default implementation [`ConnectorSocket`].
+//!
+//! Provides the [`Connector`] trait and its default implementation [`ConnectorSocket`].
+//!
+//! [`Connector`] is the extension point for callers who need to control how the TCP
+//! connection is established — a non-standard port, custom socket options, or a
+//! pre-existing stream. [`ConnectorSocket`] connects to [`crate::TCP_PORT`] and refuses
+//! any other port, so tests and non-standard deployments substitute their own.
 //!
 //! # Examples
-//! ## Default Implementation
-//! ```rust,ignore(bloop)
-//! // Ignored because you need a running server to test this
+//!
+//! ## Default implementation
+//!
+//! ```no_run
+//! use simple_doip::client::{Client, ClientOptions, RoutingActivationOptions};
+//! use simple_doip::connection::ConnectorSocket;
+//! use simple_doip::messages::{ActivationTypeCode, ProtocolVersion};
+//! use simple_doip::LogicalAddress;
 //! use std::net::{IpAddr, SocketAddr};
 //!
-//! // Usage example
-//! #[tokio::main]
-//! async fn main() {
-//!     let ip_addr: IpAddr = "127.0.0.1".parse().unwrap();
-//!     let gateway_address = SocketAddr::new(ip_addr, 0);
-//!     // Implicitly uses the default ConnectorSocket implementation
-//!     let client = Client<ProtocolResponse, ProtocolRequest>::connect(...);
-//!     let port = client.bind_socket(gateway_address).await.unwrap();
-//! }
+//! # async fn example() -> Result<(), simple_doip::Error> {
+//! let options = ClientOptions {
+//!     server_address: SocketAddr::new("127.0.0.1".parse().unwrap(), simple_doip::TCP_PORT),
+//!     server_logical_address: LogicalAddress(0x0001),
+//!     server_physical_address: LogicalAddress(0x0001),
+//!     client_address: IpAddr::from([0, 0, 0, 0]),
+//!     client_logical_address: LogicalAddress(0x0E01),
+//!     protocol_version: ProtocolVersion::V2012,
+//!     routing_activation_options: Some(RoutingActivationOptions {
+//!         activation_type: ActivationTypeCode::Default,
+//!         oem_specific: None,
+//!     }),
+//! };
+//! // Implicitly uses the default ConnectorSocket implementation.
+//! let client = Client::<ConnectorSocket>::connect(options).await?;
+//! # Ok(())
+//! # }
 //! ```
 //!
-//! ## Custom Implementation
-//! This example shows how to implement a custom connector using a TCP socket.
-//! ```rust,ignore
-//! use doip::connection::Connector;
-//! use tokio::net::{TcpSocket, tcp::{OwnedReadHalf, OwnedWriteHalf}};
-//! use std::net::{IpAddr, SocketAddr};
+//! ## Custom implementation
+//!
+//! ```no_run
+//! use simple_doip::connection::Connector;
+//! use std::net::SocketAddr;
 //! use std::time::Duration;
+//! use tokio::net::{TcpSocket, tcp::{OwnedReadHalf, OwnedWriteHalf}};
 //!
 //! pub struct MyConnector;
 //!
 //! #[async_trait::async_trait]
 //! impl Connector for MyConnector {
-//!    async fn establish_connection(gateway_address: SocketAddr) -> Result<(OwnedReadHalf, OwnedWriteHalf), doip::Error> {
-//!        // Implement the connection logic here
-//!       // For example, create a TcpSocket and connect to the address
-//!        let tcp_socket = TcpSocket::new_v4().unwrap();
-//!        tcp_socket.set_reuseaddr(true)?;
-//!        tcp_socket.set_recv_buffer_size(1024 * 64)?;
-//!        tcp_socket.set_send_buffer_size(1024 * 64)?;
-//!        tcp_socket.set_nodelay(true)?;
-//!        let tcp_stream = tokio::time::timeout(Duration::from_millis(5100), tcp_socket.connect(gateway_address)).await.unwrap().unwrap();
-//!        Ok(tcp_stream.into_split())
+//!     async fn establish_connection(
+//!         gateway_address: SocketAddr,
+//!     ) -> Result<(OwnedReadHalf, OwnedWriteHalf), simple_doip::Error> {
+//!         let tcp_socket = TcpSocket::new_v4()?;
+//!         tcp_socket.set_reuseaddr(true)?;
+//!         tcp_socket.set_nodelay(true)?;
+//!         let tcp_stream = tokio::time::timeout(
+//!             Duration::from_millis(5100),
+//!             tcp_socket.connect(gateway_address),
+//!         )
+//!         .await??;
+//!         Ok(tcp_stream.into_split())
 //!     }
 //! }
-//!
-//! // Usage example
-//! #[tokio::main]
-//! async fn main() {
-//!     let ip_addr: IpAddr = "127.0.0.1".parse().unwrap();
-//!     let gateway_address = SocketAddr::new(ip_addr, 0);
-//!     //let client = Client<ProtocolResponse, ProtocolRequest, MyConnector>::connect(...);
-//!     //let port = client.bind_socket(gateway_address).await.unwrap();
-//!
-//!}
 //! ```
 use std::{boxed::Box, fmt::Debug, net::SocketAddr, time::Duration};
 use tokio::net::{
