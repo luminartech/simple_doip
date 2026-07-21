@@ -1,11 +1,38 @@
-//! # Simple DOIP
+//! # Simple `DoIP`
 //!
-//! DOIP is a protocol for vehicle diagnostics over IP networks.
-//! This library implements the networking protocol specified in [ISO 13400-2](https://www.iso.org/standard/74785.html).
-//!
+//! An implementation of Diagnostics over IP (`DoIP`), the vehicle-diagnostics transport
+//! specified in [ISO 13400-2](https://www.iso.org/standard/74785.html).
 //!
 //! ## Design
 //!
+//! The protocol core is `no_std` and zero-copy: [`messages::Message`] borrows directly
+//! from the receive buffer and never allocates. Wire primitives come from
+//! [`automotive_wire_codec`], re-exported as [`wire`] so consumers do not need their own
+//! dependency on it.
+//!
+//! Capability is layered by Cargo feature, each building on the previous:
+//!
+//! | Feature | Adds |
+//! |---|---|
+//! | *(none)* | `no_std` borrowed messages, [`try_frame`] framing, encode/decode |
+//! | `alloc` | Owned mirrors (`messages::OwnedMessage`) that outlive the receive buffer |
+//! | `std` | `std`-backed I/O and error traits |
+//! | `codec` | `message_codec::MessageCodec`, a `tokio-util` `Encoder`/`Decoder` |
+//! | `client` | The async `client::Client` |
+//! | `server` | The async `server::Server` |
+//!
+//! `default = []`, so an embedded target gets the `no_std` core with no allocator and no
+//! runtime.
+//!
+//! ## Where to start
+//!
+//! - **Bare metal / sans-io:** [`try_frame`] delimits a frame from a byte buffer without
+//!   owning any I/O resource; [`messages::Payload::decode`] then interprets the body.
+//!   See `examples/bare_metal_codec.rs`.
+//! - **Async client:** `client::Client` handles connection, routing activation, and
+//!   acknowledgements (requires the `client` feature). See `examples/simple_client.rs`.
+//! - **Async server:** implement `server::ServerConnectionHandler` and hand it to
+//!   `server::Server` (requires the `server` feature). See `examples/echo_server.rs`.
 
 #![no_std]
 #![warn(missing_docs, missing_debug_implementations)]
