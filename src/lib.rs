@@ -8,6 +8,7 @@
 //!
 
 #![no_std]
+#![warn(missing_docs, missing_debug_implementations)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -53,10 +54,18 @@ pub const TCP_PORT: u16 = 13400;
 /// This is the port used for discovery
 pub const UDP_DISCOVERY_PORT: u16 = 13400;
 
-/// TODO: Implement TLS support
+/// TCP port for `DoIP` over TLS, per ISO 13400-2. Not currently used by this
+/// crate: connections are established in the clear via [`TCP_PORT`]; there is no
+/// TLS support yet.
 pub const TCP_TLS_PORT: u16 = 3496;
 
-/// Is this always the address?
+/// A example tester logical address used by this crate's examples and tests.
+/// This value is **not** mandated by ISO 13400-2 — a tester's logical address is
+/// assigned per-deployment from the range
+/// [`LogicalAddress::MIN_CLIENT_ADDRESS`]..=[`LogicalAddress::MAX_CLIENT_ADDRESS`]
+/// (`0x0E00`-`0x0FFF`). Note that `0xE400` itself falls outside that range;
+/// callers should supply their own deployment-specific tester address rather
+/// than relying on this constant being valid for a given `DoIP` entity.
 pub const TESTER_LOGICAL_ADDRESS: LogicalAddress = LogicalAddress(0xE400);
 
 // DoIP timing and communication parameters

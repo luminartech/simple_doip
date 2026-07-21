@@ -1,3 +1,7 @@
+//! `DoIP` message types: the generic header, the [`Payload`] enum covering every
+//! `DoIP` payload type this crate supports, and the concrete request/response
+//! structs for each one, per ISO 13400-2 §7.
+
 mod alive_check_response;
 pub use alive_check_response::AliveCheckResponse;
 mod diagnostic_message;
@@ -44,7 +48,10 @@ use crate::LogicalAddress;
 /// (zero-copy); use [`Message::to_owned_message`] to detach it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Message<'a> {
+    /// The 8-byte `DoIP` generic header (protocol version, its inverse, payload
+    /// type, and payload length) that describes `payload`.
     pub header: header::Header,
+    /// The decoded, type-specific `DoIP` payload described by `header`.
     pub payload: Payload<'a>,
 }
 
@@ -53,7 +60,11 @@ pub struct Message<'a> {
 #[cfg(feature = "alloc")]
 #[derive(Clone, Debug, PartialEq)]
 pub struct OwnedMessage {
+    /// The 8-byte `DoIP` generic header (protocol version, its inverse, payload
+    /// type, and payload length) that describes `payload`.
     pub header: header::Header,
+    /// The decoded, type-specific `DoIP` payload described by `header`, owning
+    /// any trailing data instead of borrowing from an RX buffer.
     pub payload: OwnedPayload,
 }
 
@@ -110,6 +121,13 @@ impl<'a> Message<'a> {
     }
 
     /// Construct a diagnostic message carrying opaque user data
+    ///
+    /// # Panics
+    /// Panics if `message.encoded_size()` errors, or if the resulting size does
+    /// not fit in a `u32`. Neither is reachable here: `DiagnosticMessage::encoded_size`
+    /// is pure arithmetic over the struct's own fields (no I/O to fail), and its
+    /// result is `Header::SIZE`-plus-`user_data.len()`, far below `u32::MAX` for
+    /// any `user_data` slice that can exist in memory.
     #[must_use]
     pub fn diagnostic_message(
         protocol_version: ProtocolVersion,
@@ -139,6 +157,13 @@ impl<'a> Message<'a> {
     }
 
     /// Construct a diagnostic message acknowledgement
+    ///
+    /// # Panics
+    /// Panics if `ack.encoded_size()` errors, or if the resulting size does not
+    /// fit in a `u32`. Neither is reachable here: `DiagnosticMessageAck::encoded_size`
+    /// is pure arithmetic over the struct's own fields (no I/O to fail), and its
+    /// result is far below `u32::MAX` for any `previous_message_data` slice that
+    /// can exist in memory.
     #[must_use]
     pub fn diagnostic_message_ack(
         protocol_version: ProtocolVersion,
@@ -167,6 +192,12 @@ impl<'a> Message<'a> {
     }
 
     /// Construct a routing activation request message
+    ///
+    /// # Panics
+    /// Panics if `request.encoded_size()` errors, or if the resulting size does
+    /// not fit in a `u32`. Neither is reachable here: `RoutingActivationRequest`
+    /// has a fixed encoded size (well under `u32::MAX`) and `encoded_size` is pure
+    /// arithmetic with no I/O to fail.
     #[must_use]
     pub fn routing_activation_request(
         protocol_version: ProtocolVersion,
@@ -198,6 +229,12 @@ impl<'a> Message<'a> {
     }
 
     /// Construct a routing activation response message
+    ///
+    /// # Panics
+    /// Panics if `response.encoded_size()` errors, or if the resulting size does
+    /// not fit in a `u32`. Neither is reachable here: `RoutingActivationResponse`
+    /// has a fixed encoded size (well under `u32::MAX`) and `encoded_size` is pure
+    /// arithmetic with no I/O to fail.
     #[must_use]
     pub fn routing_activation_response(
         protocol_version: ProtocolVersion,
@@ -346,6 +383,13 @@ impl OwnedMessage {
     }
 
     /// Construct a diagnostic message carrying owned user data
+    ///
+    /// # Panics
+    /// Panics if `message.as_ref().encoded_size()` errors, or if the resulting
+    /// size does not fit in a `u32`. Neither is reachable here: `encoded_size` is
+    /// pure arithmetic over the struct's own fields (no I/O to fail), and its
+    /// result is `Header::SIZE`-plus-`user_data.len()`, far below `u32::MAX` for
+    /// any `user_data` vector that can exist in memory.
     #[must_use]
     pub fn diagnostic_message(
         protocol_version: ProtocolVersion,
@@ -376,6 +420,13 @@ impl OwnedMessage {
     }
 
     /// Construct a diagnostic message acknowledgement carrying owned data
+    ///
+    /// # Panics
+    /// Panics if `ack.as_ref().encoded_size()` errors, or if the resulting size
+    /// does not fit in a `u32`. Neither is reachable here: `encoded_size` is pure
+    /// arithmetic over the struct's own fields (no I/O to fail), and its result is
+    /// far below `u32::MAX` for any `previous_message_data` vector that can exist
+    /// in memory.
     #[must_use]
     pub fn diagnostic_message_ack(
         protocol_version: ProtocolVersion,
@@ -478,7 +529,7 @@ mod tests {
     }
 
     /// Encode a message into a stack buffer and frame it back out again, without any
-    /// `Vec`/`alloc` involved. Exercises the no_std / no_alloc API surface.
+    /// `Vec`/`alloc` involved. Exercises the `no_std` / `no_alloc` API surface.
     #[test]
     fn test_no_std_stack_buffer_roundtrip() {
         let message: Message<'_> = Message::diagnostic_message(

@@ -7,6 +7,9 @@ use automotive_wire_codec::{
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
+/// Whether routing activation was granted, and if not, why (ISO 13400-2 §7.2,
+/// Table 10), carried in
+/// [`RoutingActivationResponse::routing_activation_response_code`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum RoutingActivationResponseCode {
@@ -86,14 +89,22 @@ impl From<RoutingActivationResponseCode> for u8 {
     }
 }
 
+/// A `DoIP` routing activation response (ISO 13400-2 §7.2,
+/// `PayloadType::RoutingActivationResponse`, 0x0006), sent by a `DoIP` entity to
+/// grant or deny a tester's routing activation request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RoutingActivationResponse {
-    /// External test equipment address
+    /// Logical address of the external test equipment (tester) that requested
+    /// routing activation, echoed back from the request.
     pub logical_address_tester: LogicalAddress,
-    /// Routing activation status information
+    /// Logical address of the responding `DoIP` entity.
     pub logical_address_of_doip_entity: LogicalAddress,
+    /// Whether routing activation was granted, and if not, why.
     pub routing_activation_response_code: RoutingActivationResponseCode,
+    /// Reserved for standardization; must be transmitted as `[0, 0, 0, 0]`.
     pub reserved_oem: [u8; 4],
+    /// Optional vehicle-manufacturer-specific data. `None` when the response
+    /// carries only the fixed fields.
     pub oem_specific: Option<[u8; 4]>,
 }
 

@@ -12,21 +12,64 @@ use super::{NackCode, RoutingActivationRequest};
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Payload<'a> {
+    /// Generic negative acknowledgement (`PayloadType::NegativeAcknowledge`, 0x0000):
+    /// the header itself was rejected (e.g. bad payload type or length) rather than
+    /// the diagnostic content within a valid message.
     DoIPNack(NackCode),
+    /// Alive check request (`PayloadType::AliveCheckRequest`, 0x0007), sent by a
+    /// `DoIP` entity to confirm a TCP connection is still active. Carries no data.
     AliveCheckRequest,
+    /// Response to an alive check request (`PayloadType::AliveCheckResponse`, 0x0008),
+    /// identifying the responding entity's logical address.
     AliveCheckResponse(AliveCheckResponse),
+    /// A diagnostic message (`PayloadType::DiagnosticMessage`, 0x8001) carrying a
+    /// UDS/diagnostic payload between tester and ECU, addressed by source and
+    /// target logical address.
     DiagnosticMessage(DiagnosticMessage<'a>),
+    /// Positive acknowledgement of a diagnostic message
+    /// (`PayloadType::DiagnosticMessagePositiveAcknowledge`, 0x8002): the `DoIP`
+    /// entity accepted the message and forwarded it toward its target.
     DiagnosticMessageAck(DiagnosticMessageAck<'a>),
+    /// Negative acknowledgement of a diagnostic message
+    /// (`PayloadType::DiagnosticMessageNegativeAcknowledge`, 0x8003): the message
+    /// was rejected (e.g. unknown target address, routing not activated).
     DiagnosticMessageNack,
+    /// Request for the `DoIP` entity's status (`PayloadType::DoIPEntityStatusRequest`,
+    /// 0x4001): how many diagnostic sockets are open versus the maximum supported.
+    /// Carries no data.
     EntityStatusRequest,
+    /// Response to an entity status request
+    /// (`PayloadType::DoIPEntityStatusResponse`, 0x4002): node type, open/max
+    /// socket counts, and optional max data size.
     EntityStatusResponse(EntityStatusResponse),
+    /// Response to a diagnostic power mode information request
+    /// (`PayloadType::DiagnosticPowerModeInfoResponse`, 0x4004): the vehicle's
+    /// current power mode (e.g. key-off, key-on).
     PowerModeInfoResponse(DiagnosticPowerModeCode),
+    /// Request to activate routing on a TCP connection
+    /// (`PayloadType::RoutingActivationRequest`, 0x0005), sent by the tester before
+    /// diagnostic messages may be exchanged.
     RoutingActivationRequest(RoutingActivationRequest),
+    /// Response to a routing activation request
+    /// (`PayloadType::RoutingActivationResponse`, 0x0006), granting or denying
+    /// diagnostic access on the connection.
     RoutingActivationResponse(RoutingActivationResponse),
     /// Vehicle announcement / vehicle identification response (`PayloadType::VehicleAnnouncement`,
     /// 0x0004). Shares the [`VehicleIdentificationResponse`] wire format.
     VehicleAnnouncement(VehicleIdentificationResponse),
+    /// Request for vehicle identification, in any of its three addressing forms
+    /// (`PayloadType::VehicleIdentificationRequest` 0x0001,
+    /// `..RequestWithEID` 0x0002, or `..RequestWithVIN` 0x0003 — this crate does not
+    /// distinguish which was received). Broadcast by a tester to discover `DoIP`
+    /// entities on the network. Carries no data.
     VehicleIdentificationRequest,
+    /// A directed reply to a specific vehicle identification request, as opposed
+    /// to the unsolicited [`Payload::VehicleAnnouncement`]. ISO 13400-2 defines a
+    /// single wire payload type (0x0004, "vehicle announcement/identification
+    /// response message") for both uses, so this variant encodes identically to
+    /// `VehicleAnnouncement` and [`Payload::decode`] never produces it directly —
+    /// it exists for callers that want to express "this is a reply to a request"
+    /// at construction time.
     VehicleIdentificationResponse(VehicleIdentificationResponse),
 }
 
@@ -37,21 +80,36 @@ pub enum Payload<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum OwnedPayload {
+    /// Owned mirror of [`Payload::DoIPNack`].
     DoIPNack(NackCode),
+    /// Owned mirror of [`Payload::AliveCheckRequest`].
     AliveCheckRequest,
+    /// Owned mirror of [`Payload::AliveCheckResponse`].
     AliveCheckResponse(AliveCheckResponse),
+    /// Owned mirror of [`Payload::DiagnosticMessage`]; owns its trailing
+    /// diagnostic data instead of borrowing from an RX buffer.
     DiagnosticMessage(super::OwnedDiagnosticMessage),
+    /// Owned mirror of [`Payload::DiagnosticMessageAck`]; owns its trailing
+    /// previous-diagnostic-data-byte instead of borrowing from an RX buffer.
     DiagnosticMessageAck(super::OwnedDiagnosticMessageAck),
+    /// Owned mirror of [`Payload::DiagnosticMessageNack`].
     DiagnosticMessageNack,
+    /// Owned mirror of [`Payload::EntityStatusRequest`].
     EntityStatusRequest,
+    /// Owned mirror of [`Payload::EntityStatusResponse`].
     EntityStatusResponse(EntityStatusResponse),
+    /// Owned mirror of [`Payload::PowerModeInfoResponse`].
     PowerModeInfoResponse(DiagnosticPowerModeCode),
+    /// Owned mirror of [`Payload::RoutingActivationRequest`].
     RoutingActivationRequest(RoutingActivationRequest),
+    /// Owned mirror of [`Payload::RoutingActivationResponse`].
     RoutingActivationResponse(RoutingActivationResponse),
     /// Vehicle announcement / vehicle identification response (`PayloadType::VehicleAnnouncement`,
     /// 0x0004). Shares the [`VehicleIdentificationResponse`] wire format.
     VehicleAnnouncement(VehicleIdentificationResponse),
+    /// Owned mirror of [`Payload::VehicleIdentificationRequest`].
     VehicleIdentificationRequest,
+    /// Owned mirror of [`Payload::VehicleIdentificationResponse`].
     VehicleIdentificationResponse(VehicleIdentificationResponse),
 }
 

@@ -3,11 +3,17 @@ use automotive_wire_codec::{read_u8, read_u32_be, write_u8, write_u32_be};
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
+/// Classifies the kind of `DoIP` node reporting its status, per ISO 13400-2 §7.4.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum EntityStatusNodeType {
+    /// A `DoIP` gateway: bridges the IP network to one or more in-vehicle
+    /// diagnostic networks, and may have multiple concurrent TCP sockets.
     DoIPGateway = 0x00,
+    /// A `DoIP` node: a single ECU directly reachable over IP, supporting exactly
+    /// one diagnostic TCP socket.
     DoIPNode = 0x01,
+    /// A node type value outside the range this crate models.
     Reserved(u8),
 }
 
@@ -36,9 +42,13 @@ impl From<EntityStatusNodeType> for u8 {
 /// communication sessions as well as the capabilities of a `DoIP` entity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EntityStatusResponse {
+    /// Whether the responding entity is a gateway or a single node.
     pub node_type: EntityStatusNodeType,
+    /// The maximum number of concurrent diagnostic TCP sockets this entity supports.
     pub max_concurrent_tcp_sockets: u8,
+    /// The number of diagnostic TCP sockets currently open on this entity.
     pub open_tcp_sockets: u8,
+    /// The maximum diagnostic message payload size, in bytes, this entity can accept.
     pub max_data_size: u32,
 }
 

@@ -7,9 +7,14 @@ use super::traits::{Decode, Encode};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum DiagnosticPowerModeCode {
+    /// The vehicle is not currently able to perform reliable diagnostics (e.g.
+    /// insufficient supply voltage or an ECU still starting up).
     NotReady = 0x00,
+    /// The vehicle is ready to perform reliable diagnostics.
     Ready = 0x01,
+    /// This entity does not report power mode information.
     NotSupported = 0x02,
+    /// A power mode value outside the range this crate models.
     Reserved(u8),
 }
 

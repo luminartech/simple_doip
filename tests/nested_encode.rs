@@ -1,5 +1,5 @@
-//! The embedded-server TX hot path: encode a DoIP header + diagnostic payload into ONE
-//! stack buffer, no staging buffer, using encoded_size to pre-size the header
+//! The embedded-server TX hot path: encode a `DoIP` header + diagnostic payload into ONE
+//! stack buffer, no staging buffer, using `encoded_size` to pre-size the header
 //! (automotive-wire-codec spec §7.2 pattern).
 use simple_doip::messages::{
     DiagnosticMessage, Encode, Header, MessageError, Payload, PayloadType, ProtocolVersion,

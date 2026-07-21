@@ -5,10 +5,17 @@ use automotive_wire_codec::{read_u16_be, write_all, write_u16_be};
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
+/// A `DoIP` diagnostic message (ISO 13400-2 §7.3, `PayloadType::DiagnosticMessage`,
+/// 0x8001), carrying a UDS/diagnostic request or response as opaque data between
+/// tester and ECU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DiagnosticMessage<'a> {
+    /// Logical address of the entity sending this diagnostic message.
     pub source_address: LogicalAddress,
+    /// Logical address of the entity this diagnostic message is addressed to.
     pub target_address: LogicalAddress,
+    /// The diagnostic payload itself (e.g. a UDS request/response), treated as
+    /// opaque bytes by this crate.
     pub user_data: &'a [u8],
 }
 
@@ -17,8 +24,12 @@ pub struct DiagnosticMessage<'a> {
 #[cfg(feature = "alloc")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OwnedDiagnosticMessage {
+    /// Logical address of the entity sending this diagnostic message.
     pub source_address: LogicalAddress,
+    /// Logical address of the entity this diagnostic message is addressed to.
     pub target_address: LogicalAddress,
+    /// The diagnostic payload itself (e.g. a UDS request/response), treated as
+    /// opaque bytes by this crate.
     pub user_data: alloc::vec::Vec<u8>,
 }
 
@@ -37,6 +48,8 @@ impl OwnedDiagnosticMessage {
 
 #[cfg(feature = "alloc")]
 impl DiagnosticMessage<'_> {
+    /// Copy the borrowed `user_data` into an owned buffer, detaching this message
+    /// from the RX buffer it was decoded from.
     #[must_use]
     pub fn to_owned_message(&self) -> OwnedDiagnosticMessage {
         OwnedDiagnosticMessage {

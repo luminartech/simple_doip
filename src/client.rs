@@ -1,3 +1,6 @@
+//! `DoIP` tester (client) connection: establishes routing activation with a `DoIP`
+//! entity and exchanges diagnostic messages over the resulting TCP connection.
+
 use crate::{
     Error, LogicalAddress, TCP_TIMEOUT_INITIAL_INACTIVITY,
     client_inner::{ControlMessage, Inner},
@@ -47,9 +50,15 @@ pub struct ClientOptions {
     pub routing_activation_options: Option<RoutingActivationOptions>,
 }
 
+/// Selects which of the ECU's two `DoIP` addresses (ISO 13400-2 §7.1) a
+/// diagnostic message should target.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AddressType {
+    /// The ECU's assigned logical address ([`ClientOptions::server_logical_address`]),
+    /// used for normal, addressed diagnostic requests.
     Logical,
+    /// The ECU's physical/functional address ([`ClientOptions::server_physical_address`]),
+    /// used for broadcast-style requests that multiple ECUs may act on.
     Physical,
 }
 
@@ -59,6 +68,9 @@ pub enum AddressType {
 /// handling `DoIP` acknowledgements and other protocol details that the user doesn't need to worry about.
 #[derive(Debug)]
 pub struct Client<Conn = connection::ConnectorSocket> {
+    /// The connection configuration this client was created with (server
+    /// address, logical/physical addresses, protocol version, routing
+    /// activation options).
     pub client_options: ClientOptions,
     /// Sends messages from the user to the inner client
     control_sender: mpsc::Sender<ControlMessage>,

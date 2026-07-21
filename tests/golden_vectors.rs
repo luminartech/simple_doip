@@ -2,9 +2,9 @@
 //! compare byte-for-byte against fixtures captured from pre-migration `main`.
 //!
 //! Capture mode (run ONCE, before the migration starts, then commit `tests/golden/`):
-//!   GOLDEN_WRITE=1 cargo test --test golden_vectors
+//!   `GOLDEN_WRITE=1` cargo test --test `golden_vectors`
 //! Verify mode (every checkpoint from WP2 on):
-//!   cargo test --test golden_vectors
+//!   cargo test --test `golden_vectors`
 
 use std::path::PathBuf;
 use std::{env, fs};
@@ -23,7 +23,11 @@ fn golden_dir() -> PathBuf {
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    use std::fmt::Write as _;
+    bytes.iter().fold(String::new(), |mut out, b| {
+        let _ = write!(out, "{b:02x}");
+        out
+    })
 }
 
 fn check_bytes(name: &str, bytes: &[u8]) {

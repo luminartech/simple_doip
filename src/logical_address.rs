@@ -1,3 +1,6 @@
+//! `DoIP` logical addressing ([`LogicalAddress`]), the identifier space used to
+//! address testers, ECUs, and gateways on a `DoIP` network (ISO 13400-2 §7.8).
+
 use core::fmt::{Debug, Display, LowerHex, UpperHex};
 use tracing::info;
 
@@ -7,14 +10,25 @@ use tracing::info;
 /// A physical logical address uniquely represents a diagnostic application
 /// layer entity within any `DoIP` entity or on any server of the in-vehicle networks
 /// connected via `DoIP` gateways. See ISO 13400-2 section 7.8
-pub struct LogicalAddress(pub u16);
+pub struct LogicalAddress(
+    /// The 16-bit address value, as transmitted on the wire.
+    pub u16,
+);
 
 impl LogicalAddress {
-    /// 0x0E00
+    /// Lower bound of the logical address range reserved for external test equipment
+    /// (testers), per ISO 13400-2 Table 5. Addresses below this range are reserved
+    /// for other entity classes (e.g. `DoIP` gateways, ECUs).
     pub const MIN_CLIENT_ADDRESS: LogicalAddress = LogicalAddress(0x0E00);
-    /// 0x0FFF
+    /// Upper bound of the logical address range reserved for external test equipment
+    /// (testers), per ISO 13400-2 Table 5.
     pub const MAX_CLIENT_ADDRESS: LogicalAddress = LogicalAddress(0x0FFF);
 
+    /// Sub-range of client addresses reserved for internal on-board diagnostics (OBD)
+    /// tooling rather than general external testers, per ISO 13400-2 Table 5
+    /// (0x0F00-0x0F7F). A client address in this range is still valid, but
+    /// [`is_valid_client_address`](Self::is_valid_client_address) logs a warning
+    /// since this crate's use cases are external testers, not OBD tooling.
     pub const OBD_ADDRESS_RANGE: (LogicalAddress, LogicalAddress) =
         (LogicalAddress(0x0F00), LogicalAddress(0x0F7F));
 

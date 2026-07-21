@@ -1,3 +1,7 @@
+//! `DoIP` entity (server) side of a connection: accepts tester TCP connections,
+//! drives routing activation, and dispatches diagnostic messages to the
+//! implementing application via the [`Server`] trait.
+
 use crate::{
     Error, TCP_PORT,
     logical_address::LogicalAddress,
@@ -22,10 +26,17 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{error, warn};
 
+/// Identifies the tester on the other end of a `DoIP` TCP connection, passed to
+/// [`ServerConnectionHandler`] methods that need to know who is asking (e.g. to
+/// decide whether a Vehicle Identification Request with EID/VIN is addressed to
+/// this entity).
+#[derive(Debug)]
 pub struct ClientConnectionInfo {
-    /// Client IP address
+    /// IP address of the tester's end of the TCP connection.
     pub ip_address: IpAddr,
-    /// Client logical address
+    /// Logical address the tester identified itself with during routing
+    /// activation (ISO 13400-2 §7.2), or `0x0000` if routing activation has not
+    /// completed yet.
     pub logical_address: LogicalAddress,
 }
 
@@ -70,11 +81,23 @@ pub trait ServerConnectionHandler {
     /// Optional field, return `None` if not set.
     fn get_group_id(&self) -> Option<[u8; 6]>;
 
+    /// Decide whether to grant routing activation (ISO 13400-2 §7.2) for the
+    /// requesting tester, and build the response message to send back.
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the routing activation response cannot be
+    /// constructed.
     async fn routing_activation(
         &self,
         request: &RoutingActivationRequest,
     ) -> Result<OwnedMessage, Error>;
 
+    /// Handle a diagnostic message (ISO 13400-2 §7.3) addressed to this entity
+    /// and build the acknowledgement/response message to send back.
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the message cannot be processed or the response
+    /// cannot be constructed.
     async fn diagnostic_message(
         &self,
         message: &DiagnosticMessage<'_>,
@@ -173,11 +196,16 @@ pub trait ServerConnectionHandler {
         Ok(DiagnosticPowerModeCode::NotSupported)
     }
 
+    /// The `DoIP` protocol version this entity reports in outgoing headers.
+    /// Defaults to [`ProtocolVersion::V2012`] (ISO 13400-2:2012).
     fn protocol_version(&self) -> ProtocolVersion {
         ProtocolVersion::V2012
     }
 }
 
+/// A running `DoIP` entity: accepts TCP connections and dispatches incoming
+/// messages to a [`ServerConnectionHandler`] implementation.
+#[derive(Debug)]
 pub struct Server<T> {
     connection_handler: Arc<T>,
     active_connections: AtomicUsize,
@@ -350,8 +378,6 @@ mod tests {
 
     #[test]
     fn guard_decrements_even_on_early_return_via_question_mark() {
-        let active_connections = AtomicUsize::new(0);
-
         fn inner(active_connections: &AtomicUsize) -> Result<(), ()> {
             let _guard = ActiveConnectionGuard::new(active_connections);
             // Simulate an early return caused by `?` on some fallible operation,
@@ -360,6 +386,7 @@ mod tests {
             Ok(())
         }
 
+        let active_connections = AtomicUsize::new(0);
         let result = inner(&active_connections);
         assert!(result.is_err());
         assert_eq!(active_connections.load(Ordering::Relaxed), 0);

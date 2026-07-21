@@ -15,6 +15,7 @@ use super::traits::{Decode, Encode};
 #[derive(Clone, Copy, strum::Display, Eq, PartialEq)]
 #[repr(u8)]
 pub enum ProtocolVersion {
+    /// Reserved by ISO 13400-2; not a valid version for a `DoIP` entity to send.
     Reserved = 0x00,
     /// ISO 13400-2:2010
     V2010 = 0x01,

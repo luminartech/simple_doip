@@ -6,7 +6,11 @@ use crate::messages::{Decode, Header, MessageError};
 /// A delimited, header-validated `DoIP` frame whose payload is NOT yet interpreted.
 #[derive(Debug, PartialEq)]
 pub struct RawFrame<'a> {
+    /// The decoded 8-byte `DoIP` generic header (protocol version, its inverse,
+    /// payload type, and payload length) that prefixed this frame on the wire.
     pub header: Header,
+    /// The frame's payload bytes, exactly `header.payload_length` long, not yet
+    /// decoded into a concrete [`Payload`](crate::messages::Payload) variant.
     pub payload: &'a [u8],
 }
 

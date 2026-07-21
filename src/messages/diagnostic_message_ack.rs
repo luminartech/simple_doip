@@ -23,11 +23,22 @@ pub enum DiagnosticAckCode {
     Reserved(u8),
     /// Negative acknowledgements
     InvalidSourceAddress = 0x02,
+    /// The diagnostic message's target address does not identify any ECU known
+    /// to the `DoIP` entity.
     UnknownTargetAddress = 0x03,
+    /// The diagnostic message's user data exceeds the maximum size this `DoIP`
+    /// entity can forward.
     DiagnosticMessageTooLarge = 0x04,
+    /// The `DoIP` entity has insufficient buffer memory to accept the message.
     OutOfMemory = 0x05,
+    /// The target ECU's in-vehicle network (e.g. CAN bus) is unreachable, so the
+    /// message cannot be forwarded even though the target address is known.
     TargetUnreachable = 0x06,
+    /// The message cannot be forwarded because the required in-vehicle network
+    /// gateway path is not configured or available.
     UnknownNetwork = 0x07,
+    /// Forwarding the message onto the target's transport protocol (e.g. the
+    /// in-vehicle diagnostic bus) failed.
     TransportProtocolError = 0x08,
 }
 
@@ -83,11 +94,21 @@ impl fmt::Debug for DiagnosticAckCode {
     }
 }
 
+/// Acknowledgement of a `DoIP` diagnostic message
+/// (`PayloadType::DiagnosticMessagePositiveAcknowledge`, 0x8002, and negative
+/// codes carried in the same wire format), sent back to whoever transmitted the
+/// original [`DiagnosticMessage`](super::DiagnosticMessage).
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct DiagnosticMessageAck<'a> {
+    /// Logical address of the entity sending this acknowledgement.
     pub source_address: LogicalAddress,
+    /// Logical address of the entity this acknowledgement is addressed to (the
+    /// original diagnostic message's sender).
     pub target_address: LogicalAddress,
+    /// Whether the diagnostic message was accepted, and if not, why.
     pub ack_code: DiagnosticAckCode,
+    /// The first bytes of the diagnostic message being acknowledged, echoed back
+    /// so the sender can correlate this ACK/NACK with its request.
     pub previous_message_data: &'a [u8],
 }
 
@@ -96,9 +117,15 @@ pub struct DiagnosticMessageAck<'a> {
 #[cfg(feature = "alloc")]
 #[derive(Clone, Eq, PartialEq)]
 pub struct OwnedDiagnosticMessageAck {
+    /// Logical address of the entity sending this acknowledgement.
     pub source_address: LogicalAddress,
+    /// Logical address of the entity this acknowledgement is addressed to (the
+    /// original diagnostic message's sender).
     pub target_address: LogicalAddress,
+    /// Whether the diagnostic message was accepted, and if not, why.
     pub ack_code: DiagnosticAckCode,
+    /// The first bytes of the diagnostic message being acknowledged, echoed back
+    /// so the sender can correlate this ACK/NACK with its request.
     pub previous_message_data: alloc::vec::Vec<u8>,
 }
 
@@ -118,6 +145,8 @@ impl OwnedDiagnosticMessageAck {
 
 #[cfg(feature = "alloc")]
 impl DiagnosticMessageAck<'_> {
+    /// Copy the borrowed `previous_message_data` into an owned buffer, detaching
+    /// this acknowledgement from the RX buffer it was decoded from.
     #[must_use]
     pub fn to_owned_message(&self) -> OwnedDiagnosticMessageAck {
         OwnedDiagnosticMessageAck {

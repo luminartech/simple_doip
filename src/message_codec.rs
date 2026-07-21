@@ -1,3 +1,7 @@
+//! `tokio_util::codec` adapter that frames and decodes/encodes [`OwnedMessage`]
+//! values directly on a byte stream, so `DoIP` connections can be driven with
+//! `FramedRead`/`FramedWrite` instead of manual buffer management.
+
 use crate::messages::{Encode, Message, MessageError, OwnedMessage, Payload};
 use bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder};

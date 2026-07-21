@@ -308,9 +308,8 @@ async fn wait_for_connection_close(stream: &mut TcpStream) {
     with_timeout("peer closing the raw connection", async {
         loop {
             match stream.read(&mut buf).await {
-                Ok(0) => return,   // Clean EOF: server closed the connection.
-                Ok(_) => continue, // Unexpected data; keep draining until close.
-                Err(_) => return,  // Reset/aborted: also an acceptable "closed" outcome.
+                Ok(0) | Err(_) => return, // Clean EOF or reset/aborted: connection is closed.
+                Ok(_) => {}               // Unexpected data; keep draining until close.
             }
         }
     })

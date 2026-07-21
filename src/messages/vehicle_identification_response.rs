@@ -5,11 +5,20 @@ use automotive_wire_codec::{read_array, read_u8, read_u16_be, write_all, write_u
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
 
+/// Whether the tester must take further action before diagnostics can proceed
+/// with this vehicle (ISO 13400-2 §7.1, `VIR`/vehicle announcement further-action
+/// byte).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FurtherActionRequired {
+    /// No further action needed; the tester may proceed directly to routing
+    /// activation.
     NoFurtherActionRequired,
+    /// A further-action value outside the range this crate models.
     Reserved(u8),
+    /// The tester must send a routing activation request with a `CentralSecurity`
+    /// activation type before diagnostics can proceed.
     RoutingActivationRequiredToInitiateCentralSecurity,
+    /// Vehicle-manufacturer-specific further-action value.
     VehicleManufacturerSpecific(u8),
 }
 
@@ -35,10 +44,14 @@ impl From<FurtherActionRequired> for u8 {
     }
 }
 
+/// Whether the VIN and group ID (GID) are synchronized across all `DoIP` entities
+/// in the vehicle (ISO 13400-2 §7.1). Relevant when a vehicle has multiple `DoIP`
+/// gateways that must agree on identification data.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VinGidSyncStatus {
     /// VIN and/or GID are synchronized
     Synchronized,
+    /// A sync-status value outside the range this crate models.
     Reserved(u8),
     /// VIN and GID are NOT synchronized
     Incomplete,
@@ -70,12 +83,15 @@ impl From<VinGidSyncStatus> for u8 {
 pub struct VehicleIdentificationResponse {
     /// Vehicle Identification Number
     pub vin: [u8; 17],
+    /// Logical address of the vehicle's `DoIP` gateway or the responding ECU.
     pub logical_address: LogicalAddress,
     /// Unique entity id, e.g. MAC address of network interface.
     pub entity_id: [u8; 6],
     //// Unique group identification of entities within a vehicle.
     /// None when value not set (as indicated by `0x00` or `0xFF`).
     pub group_id: Option<[u8; 6]>,
+    /// Whether the tester must take further action (e.g. routing activation with
+    /// central security) before diagnostics can proceed.
     pub further_action: FurtherActionRequired,
     /// Indicates whether all entities have synced information about VIN or GID.
     pub vin_gid_sync_status: VinGidSyncStatus,
