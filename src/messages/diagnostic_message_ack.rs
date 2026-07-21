@@ -161,6 +161,15 @@ impl<'a> Decode<'a> for DiagnosticMessageAck<'a> {
 impl Encode for DiagnosticMessageAck<'_> {
     type Error = MessageError;
 
+    /// Closed form matching [`Self::encode`]: 2-byte source + 2-byte target + 1-byte ack
+    /// code + previous message data.
+    ///
+    /// # Errors
+    /// Never returns an error; the size is always computable.
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(5 + self.previous_message_data.len())
+    }
+
     /// Serialize this diagnostic message acknowledgement into `writer`
     ///
     /// # Errors

@@ -118,6 +118,19 @@ impl<'a> Decode<'a> for RoutingActivationRequest {
 impl Encode for RoutingActivationRequest {
     type Error = MessageError;
 
+    /// Closed form matching [`Self::encode`]: 2-byte source + 1-byte activation type +
+    /// 4-byte reserved, plus 4 more when the optional VM-specific tail is present.
+    ///
+    /// # Errors
+    /// Never returns an error; the size is always computable.
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(if self.reserved_vehicle_manufacturer.is_some() {
+            11
+        } else {
+            7
+        })
+    }
+
     /// Serialize this routing activation request into `writer`
     ///
     /// # Errors

@@ -134,6 +134,15 @@ impl<'a> Decode<'a> for RoutingActivationResponse {
 impl Encode for RoutingActivationResponse {
     type Error = MessageError;
 
+    /// Closed form matching [`Self::encode`]: 2-byte tester + 2-byte entity + 1-byte
+    /// response code + 4-byte reserved OEM, plus 4 more when OEM-specific data is present.
+    ///
+    /// # Errors
+    /// Never returns an error; the size is always computable.
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(9 + self.oem_specific.map_or(0, |_| 4))
+    }
+
     /// Serialize this routing activation response into `writer`
     ///
     /// # Errors

@@ -76,6 +76,14 @@ impl<'a> Decode<'a> for DiagnosticMessage<'a> {
 impl Encode for DiagnosticMessage<'_> {
     type Error = MessageError;
 
+    /// Closed form matching [`Self::encode`]: 2-byte source + 2-byte target + user data.
+    ///
+    /// # Errors
+    /// Never returns an error; the size is always computable.
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(4 + self.user_data.len())
+    }
+
     /// Serialize this diagnostic message into `writer`
     ///
     /// # Errors

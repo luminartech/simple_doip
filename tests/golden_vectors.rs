@@ -13,9 +13,9 @@ use simple_doip::LogicalAddress;
 use simple_doip::messages::{
     ActivationTypeCode, AliveCheckResponse, DiagnosticAckCode, DiagnosticMessage,
     DiagnosticMessageAck, DiagnosticPowerModeCode, Encode, EntityStatusNodeType,
-    EntityStatusResponse, FurtherActionRequired, Header, NackCode, PayloadType, ProtocolVersion,
-    RoutingActivationRequest, RoutingActivationResponse, RoutingActivationResponseCode,
-    VehicleIdentificationResponse, VinGidSyncStatus,
+    EntityStatusResponse, FurtherActionRequired, Header, MessageError, NackCode, PayloadType,
+    ProtocolVersion, RoutingActivationRequest, RoutingActivationResponse,
+    RoutingActivationResponseCode, VehicleIdentificationResponse, VinGidSyncStatus,
 };
 
 fn golden_dir() -> PathBuf {
@@ -43,38 +43,31 @@ fn check_bytes(name: &str, bytes: &[u8]) {
     assert_eq!(actual, expected.trim(), "{name}: wire bytes changed");
 }
 
-// NOTE: encode errors are matched, not `.unwrap()`-ed, so this file compiles both
-// before WP2 (local `Encode`, concrete `MessageError`) and after (L0 `Encode` with an
-// associated `Error` type that this generic context cannot bound by `Debug` pre-WP2).
-fn check(name: &str, value: &impl Encode) {
+fn check(name: &str, value: &impl Encode<Error = MessageError>) {
     let mut buf = [0u8; 128];
     let written = {
         let mut writer: &mut [u8] = &mut buf;
-        match value.encode(&mut writer) {
-            Ok(n) => n,
-            Err(_) => panic!("{name}: encode failed"),
-        }
+        value.encode(&mut writer).expect("encode failed")
     };
+    // encoded_size() must agree with what encode() actually wrote. A mismatch means a
+    // closed-form override has drifted from its encode(), which silently corrupts the
+    // DoIP header's payload_length field.
+    assert_eq!(
+        value.encoded_size().expect("encoded_size failed"),
+        written,
+        "{name}: encoded_size() disagrees with encode()"
+    );
     check_bytes(name, &buf[..written]);
 }
 
-/// Full frame: 8-byte header (length derived by encoding the payload once) + payload body.
+/// Full frame: 8-byte header (length from `encoded_size`) + payload body.
 fn check_frame(
     name: &str,
     protocol_version: ProtocolVersion,
     payload_type: PayloadType,
-    payload: &impl Encode,
+    payload: &impl Encode<Error = MessageError>,
 ) {
-    // Size the payload by encoding it once — avoids naming encoded_size(), whose return
-    // type changes across the migration.
-    let mut payload_buf = [0u8; 128];
-    let payload_len = {
-        let mut writer: &mut [u8] = &mut payload_buf;
-        match payload.encode(&mut writer) {
-            Ok(n) => n,
-            Err(_) => panic!("{name}: payload sizing encode failed"),
-        }
-    };
+    let payload_len = payload.encoded_size().expect("payload encoded_size failed");
     let header = Header::new(
         protocol_version,
         payload_type,
@@ -83,16 +76,15 @@ fn check_frame(
     let mut buf = [0u8; 128];
     let written = {
         let mut writer: &mut [u8] = &mut buf;
-        let header_written = match header.encode(&mut writer) {
-            Ok(n) => n,
-            Err(_) => panic!("{name}: header encode failed"),
-        };
-        let payload_written = match payload.encode(&mut writer) {
-            Ok(n) => n,
-            Err(_) => panic!("{name}: payload encode failed"),
-        };
+        let header_written = header.encode(&mut writer).expect("header encode failed");
+        let payload_written = payload.encode(&mut writer).expect("payload encode failed");
         header_written + payload_written
     };
+    assert_eq!(
+        payload_len + Header::SIZE,
+        written,
+        "{name}: frame size disagrees with encoded_size()"
+    );
     check_bytes(name, &buf[..written]);
 }
 
