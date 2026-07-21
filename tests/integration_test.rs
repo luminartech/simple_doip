@@ -20,8 +20,8 @@ use simple_doip::{
     client::{AddressType, Client, ClientOptions, RoutingActivationOptions},
     connection::Connector,
     messages::{
-        ActivationTypeCode, DiagnosticAckCode, DiagnosticMessage, OwnedMessage, ProtocolVersion,
-        RoutingActivationRequest, RoutingActivationResponseCode,
+        ActivationTypeCode, DiagnosticAckCode, DiagnosticMessage, Encode, OwnedMessage,
+        ProtocolVersion, RoutingActivationRequest, RoutingActivationResponseCode,
     },
     server::{Server, ServerConnectionHandler},
 };
@@ -318,19 +318,18 @@ async fn wait_for_connection_close(stream: &mut TcpStream) {
 }
 
 /// Test 3: a well-formed `DoIP` header carrying a payload type the server doesn't
-/// support (`DiagnosticPowerModeInfoRequest`, 0x4003) must not take the server down.
+/// support (`DiagnosticPowerModeInfoRequest`, 0x4003) must not take the server down -
+/// and, more specifically, must not tear down the connection it arrived on.
 ///
 /// Unlike a framing-fatal error, an unsupported payload type is now RECOVERABLE at the
 /// codec layer (see `MessageCodec::decode` / `MessageError::is_framing_fatal`): the bad
-/// frame is skipped and consumed, and the connection is left open rather than being
-/// torn down by the server. So, unlike test 4, this test cannot wait for the SERVER to
-/// close the raw connection - it won't, and `wait_for_connection_close` would just
-/// block for the full `TEST_TIMEOUT` and fail.
-///
-/// Instead, the test closes its own end of the raw connection (signaling EOF to the
-/// server) and then asserts what actually matters: the server's accept loop - which
-/// (per `start_server`'s doc comment) awaits each connection inline, sequentially -
-/// moves on and a brand new client can still connect and activate.
+/// frame is skipped and consumed, and decoding resumes on the very next frame in the
+/// SAME connection. This test proves exactly that by writing the unsupported frame
+/// followed immediately by a well-formed `RoutingActivationRequest` on one raw
+/// `TcpStream`, then reading the server's routing activation response back on that same
+/// stream. Under the pre-fix codec the unsupported frame's recoverable error would
+/// propagate out of `decode`, the connection would be torn down, and no response would
+/// ever arrive - so this test fails without the fix.
 #[tokio::test]
 async fn unsupported_payload_type_does_not_kill_server() {
     let server = start_server().await;
@@ -341,21 +340,55 @@ async fn unsupported_payload_type_does_not_kill_server() {
 
     // Header: version 0x02 (V2012), correct inverse 0xFD, payload type
     // DiagnosticPowerModeInfoRequest (0x4003), payload length 0.
-    let header = [0x02, 0xFD, 0x40, 0x03, 0x00, 0x00, 0x00, 0x00];
+    let unsupported_frame = [0x02, 0xFD, 0x40, 0x03, 0x00, 0x00, 0x00, 0x00];
+
+    // A well-formed routing activation request, built via the crate's own API rather
+    // than hand-rolled bytes.
+    let routing_activation_request = OwnedMessage::routing_activation_request(
+        ProtocolVersion::V2012,
+        CLIENT_LOGICAL_ADDRESS,
+        ActivationTypeCode::Default,
+        None,
+    );
+    let mut activation_bytes = vec![0u8; routing_activation_request.encoded_size().unwrap()];
+    let written = {
+        let mut writer: &mut [u8] = &mut activation_bytes;
+        routing_activation_request.encode(&mut writer).unwrap()
+    };
+    activation_bytes.truncate(written);
+
+    // Write both frames back-to-back on the same connection before reading anything
+    // back, so the server must decode straight through the unsupported frame to reach
+    // the valid one.
     with_timeout(
-        "write unsupported-payload frame",
-        raw_stream.write_all(&header),
+        "write unsupported-payload frame followed by a valid routing activation request",
+        async {
+            raw_stream.write_all(&unsupported_frame).await?;
+            raw_stream.write_all(&activation_bytes).await
+        },
     )
     .await
-    .expect("write should succeed");
+    .expect("writes should succeed");
 
-    // Close our end so the server observes EOF on this (now idle) connection and its
-    // sequential accept loop can move on to the next one.
+    // If the codec incorrectly tore down the connection on the unsupported frame, this
+    // read would hang until TEST_TIMEOUT and fail; on the fix, the server skips that
+    // frame, decodes the routing activation request right after it, and responds.
+    let mut response_buf = [0u8; 64];
+    let read = with_timeout(
+        "read routing activation response",
+        raw_stream.read(&mut response_buf),
+    )
+    .await
+    .expect("read should succeed");
+    assert!(read > 0, "server should have sent a routing activation response");
+    assert_eq!(
+        server.routing_activation_requests.load(Ordering::SeqCst),
+        1,
+        "server should have processed the routing activation request that followed the \
+         skipped unsupported frame, on the same connection"
+    );
+
     drop(raw_stream);
-
-    // The server must still be alive: a brand new client can connect and activate.
-    let fresh_client = connect_and_activate(server.addr, &server).await;
-    with_timeout("client shutdown", fresh_client.shut_down()).await;
     server.shutdown().await;
 }
 

@@ -23,11 +23,14 @@ impl Decoder for MessageCodec {
 
     /// Decode one `DoIP` message from `src`.
     ///
-    /// Frames whose header is valid but whose body cannot be decoded (an unmodeled
-    /// payload type, a short body) are **skipped**: the frame is consumed and decoding
+    /// Frames whose header is valid but whose body cannot be decoded are handled
+    /// according to [`MessageError::is_framing_fatal`]: a RECOVERABLE body error (e.g. an
+    /// unmodeled payload type) is **skipped** — the frame is consumed and decoding
     /// continues with the next one, so one unsupported message does not tear down the
-    /// connection. Only framing-fatal errors — where stream sync itself is lost, per
-    /// [`MessageError::is_framing_fatal`] — propagate to the caller.
+    /// connection. A truncated body yields [`MessageError::Incomplete`], which is
+    /// classified framing-FATAL (stream sync cannot be trusted), so it propagates to the
+    /// caller instead of being skipped, and the buffer is left untouched for the caller
+    /// to decide how to proceed.
     ///
     /// # Errors
     /// Returns a [`MessageError`] when framing fails fatally and the connection must be
@@ -83,7 +86,7 @@ mod tests {
     const NACK_FRAME: [u8; 9] = [0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03];
 
     /// Valid header, but payload type 0x9999 is unmodeled. Framing succeeds; the body
-    /// decode fails with a RECOVERABLE UnsupportedPayloadType.
+    /// decode fails with a RECOVERABLE `UnsupportedPayloadType`.
     const UNSUPPORTED_FRAME: [u8; 9] = [0x02, 0xFD, 0x99, 0x99, 0x00, 0x00, 0x00, 0x01, 0x00];
 
     /// Corrupt inverse protocol version (0xFE, expected 0xFD): framing-FATAL.
@@ -112,7 +115,7 @@ mod tests {
     }
 
     /// The regression this task exists for: a recoverable body error must skip the bad
-    /// frame and keep the stream alive, not tear down the FramedRead.
+    /// frame and keep the stream alive, not tear down the `FramedRead`.
     #[test]
     fn unsupported_payload_type_is_skipped_not_fatal() {
         let mut codec = MessageCodec::new();
@@ -137,6 +140,24 @@ mod tests {
         let err = codec.decode(&mut src).unwrap_err();
         assert!(err.is_framing_fatal(), "got a non-fatal error: {err:?}");
         assert!(matches!(err, MessageError::VersionInverseIncorrect { .. }));
+    }
+
+    /// Header declares a 2-byte NACK body but only 1 body byte is present. This pins the
+    /// `Err(e) if e.is_framing_fatal() => return Err(e)` arm in `decode` specifically -
+    /// distinct from `corrupt_header_is_fatal`, which exercises the `?` on
+    /// `crate::try_frame` and never reaches `Payload::decode` at all. Here framing
+    /// succeeds (the header is well-formed) and it is `Payload::decode` itself that
+    /// returns a framing-fatal `MessageError::Incomplete`, which `decode` must propagate
+    /// rather than skip.
+    const TRUNCATED_BODY_FRAME: [u8; 9] = [0x02, 0xFD, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0x03];
+
+    #[test]
+    fn truncated_body_is_fatal_via_classifier() {
+        let mut codec = MessageCodec::new();
+        let mut src = BytesMut::from(&TRUNCATED_BODY_FRAME[..]);
+        let err = codec.decode(&mut src).unwrap_err();
+        assert!(err.is_framing_fatal(), "got a non-fatal error: {err:?}");
+        assert!(matches!(err, MessageError::Incomplete { .. }));
     }
 
     #[test]
