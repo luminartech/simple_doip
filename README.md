@@ -34,6 +34,15 @@ gaps a new integrator should know about before relying on them:
   `OwnedMessage`, so a handler can send the required acknowledgement *or* a
   functional response, not the acknowledgement followed by a separate
   response as DoIP prescribes.
+- **A `DiagnosticMessage` arriving while the client is waiting for an ACK is
+  silently discarded.** After `Client::send_diagnostic_message`, the inner
+  client is in its `AwaitAck` state; a `DiagnosticMessage` that arrives before
+  the acknowledgement is neither buffered nor forwarded to the update channel
+  (only a generic `trace!` of the received message marks its passing) — it is
+  simply dropped. This requires the peer to acknowledge
+  before it responds. A peer that responds first (or that coalesces both into
+  one burst the client reads out of order) will appear to never answer, and the
+  subsequent `receive_diagnostic_response` will time out.
 - **`ClientConnectionInfo::logical_address` is always `0x0000`.** The server
   does not yet track per-connection logical addresses, so this field is a
   placeholder rather than the client's real address.

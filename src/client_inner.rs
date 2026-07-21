@@ -434,6 +434,14 @@ where
                     _ => trace!("Received message: {received_message:?}"),
                 }
                 if let Some((request_message, response)) = self.take_await_response() {
+                    // Note: unlike the `take_await_ack` path above, this one deliberately
+                    // leaves `await_response_deadline` set. That is safe, if not obvious:
+                    // the timeout branch of the run loop is guarded on
+                    // `active_request.is_some()`, which is now false, and every path that
+                    // repopulates `active_request` from a user-issued control message
+                    // (`RoutingActivation`, `SendDiagnosticMessage`,
+                    // `ReceiveDiagnosticResponse`) sets a fresh deadline first - so the
+                    // stale value can never fire.
                     trace!("Received response for request: {:?}", request_message);
                     trace!("{received_message:?}");
                     if request_message.is_response(received_message.header.payload_type) {

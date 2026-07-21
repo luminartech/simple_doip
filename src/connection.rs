@@ -104,8 +104,10 @@ impl Connector for ConnectorSocket {
             return Err(crate::Error::InvalidPort(gateway_address.port()));
         }
         let tcp_socket = match gateway_address {
-            SocketAddr::V4(_) => TcpSocket::new_v4().unwrap(),
-            SocketAddr::V6(_) => TcpSocket::new_v6().unwrap(),
+            // Creating the socket can genuinely fail (EMFILE/ENFILE on fd exhaustion),
+            // so surface it as an error rather than panicking the caller.
+            SocketAddr::V4(_) => TcpSocket::new_v4()?,
+            SocketAddr::V6(_) => TcpSocket::new_v6()?,
         };
         tcp_socket.set_reuseaddr(true)?;
         tcp_socket.set_recv_buffer_size(BUFFER_SIZE)?;

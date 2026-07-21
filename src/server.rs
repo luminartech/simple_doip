@@ -1,6 +1,8 @@
 //! `DoIP` entity (server) side of a connection: accepts tester TCP connections,
 //! drives routing activation, and dispatches diagnostic messages to the
-//! implementing application via the [`Server`] trait.
+//! implementing application through its [`ServerConnectionHandler`]
+//! implementation. [`Server`] itself is the struct that owns the handler and
+//! drives the connection.
 
 use crate::{
     Error, TCP_PORT,
