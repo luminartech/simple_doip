@@ -6,7 +6,7 @@ use crate::{
     messages::{MessageError, OwnedMessage, OwnedPayload},
     socket_manager::SocketManager,
 };
-use std::{format, future, net::SocketAddr};
+use std::{future, net::SocketAddr};
 use tokio::{
     select,
     sync::{mpsc, oneshot},
@@ -14,16 +14,8 @@ use tokio::{
 use tracing::{debug, trace};
 
 /// Messages used to control the `DoIP` entities
-#[allow(unused)]
 #[derive(Debug)]
 pub(super) enum ControlMessage {
-    /// No payload
-    AliveCheckRequest(oneshot::Sender<Result<(), Error>>),
-    AliveCheckResponse(OwnedMessage),
-    /// No oneshot needed, the response is sent
-    /// and does not need to be awaited
-    SendNoResponse(OwnedMessage),
-
     BindSocket(SocketAddr, oneshot::Sender<Result<u16, Error>>),
     UnbindSocket(oneshot::Sender<Result<(), Error>>),
     RoutingActivation(OwnedMessage, oneshot::Sender<Result<OwnedMessage, Error>>),
@@ -187,20 +179,6 @@ where
         }
     }
 
-    #[allow(unused)]
-    /// Send an alive check response, can be sent regardless of if there was a request
-    async fn send_alive_check_response(&mut self) -> Result<(), Error> {
-        if self.tcp_data_socket.is_none() {
-            return Err(Error::SocketNotBound);
-        }
-        // Send to the tcp_data_socket
-        self.send_to_socket(OwnedMessage::alive_check_response(
-            self.client_options.protocol_version,
-            self.client_options.client_logical_address,
-        ))
-        .await
-    }
-
     /// Send a message to the socket manager
     ///
     /// Errors:
@@ -234,7 +212,6 @@ where
     /// ### Diagnostic Acks:
     /// * will not be sent to the user
     /// * will be handled internally
-    #[allow(clippy::too_many_lines)]
     async fn handle_control_message(&mut self) {
         // No active request? Nothing to do
         let Some(control_message) = self.active_request.take() else {
@@ -242,36 +219,6 @@ where
         };
 
         match control_message {
-            ControlMessage::AliveCheckRequest(response) => {
-                let send_result = self
-                    .send_to_socket(OwnedMessage::alive_check_request(
-                        self.client_options.protocol_version,
-                    ))
-                    .await;
-                if response.send(send_result).is_err() {
-                    debug!("Failed to send alive check response");
-                }
-            }
-            ControlMessage::AliveCheckResponse(message) => {
-                let _ = self
-                    .send_to_socket(OwnedMessage::alive_check_response(
-                        self.client_options.protocol_version,
-                        self.client_options.client_logical_address,
-                    ))
-                    .await;
-                // Don't really have to handle the alive check response
-                // it's intended to keep the connection alive and that is handled in the socket manager
-                debug!("Received alive check response: {:?}", message);
-            }
-            ControlMessage::SendNoResponse(message) => {
-                let err_msg = format!("Failed to send message: {message:?}");
-                // Send the message to the socket
-                let send_result = self.send_to_socket(message).await;
-
-                if send_result.is_err() {
-                    debug!(err_msg);
-                }
-            }
             ControlMessage::BindSocket(gateway_address, response) => {
                 if response
                     .send(self.bind_socket(gateway_address).await)
