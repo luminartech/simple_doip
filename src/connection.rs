@@ -31,7 +31,9 @@
 //!         oem_specific: None,
 //!     }),
 //! };
-//! // Implicitly uses the default ConnectorSocket implementation.
+//! // The turbofish is required even though `Client<Conn>` defaults to `ConnectorSocket`:
+//! // a type parameter's default is not used for inference on an associated-function call,
+//! // so omitting it fails with E0283 "type annotations needed".
 //! let client = Client::<ConnectorSocket>::connect(options).await?;
 //! # Ok(())
 //! # }
@@ -52,6 +54,8 @@
 //!     async fn establish_connection(
 //!         gateway_address: SocketAddr,
 //!     ) -> Result<(OwnedReadHalf, OwnedWriteHalf), simple_doip::Error> {
+//!         // IPv4 only, for brevity. `ConnectorSocket` below picks `new_v4`/`new_v6`
+//!         // from `gateway_address`; do the same if you need to support both.
 //!         let tcp_socket = TcpSocket::new_v4()?;
 //!         tcp_socket.set_reuseaddr(true)?;
 //!         tcp_socket.set_nodelay(true)?;
