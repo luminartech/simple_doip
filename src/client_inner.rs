@@ -105,10 +105,14 @@ pub(super) struct Inner<Conn> {
     /// Socket manager for TCP data socket if bound
     tcp_data_socket: Option<SocketManager<Conn>>,
 
-    /// Whether to keep the inner client running
+    /// Write-only bookkeeping flag. It is assigned in four places but never read:
+    /// the [`Inner::run`] loop has no `while self.run` check.
     ///
-    /// This is used to gracefully shut down the inner client
-    /// when the outer client is dropped
+    /// Shutdown does not go through this field. The loop exits when the control
+    /// channel closes (the outer [`Client`](crate::client::Client) and its
+    /// `control_sender` were dropped) or when
+    /// [`Inner::process_received_message`] returns `true`. See ARCHITECTURE.md's
+    /// known-issues section.
     run: bool,
 
     /// Buffer for diagnostic responses that arrive between send and receive calls.
@@ -409,7 +413,23 @@ where
                             trace!("Received Diagnostic Message Ack, waiting for full response");
                             return false;
                         }
-                        // Negative ACK for AwaitResponse - fall through to handle as error
+                        // Negative ACK while an AwaitResponse is pending. Despite
+                        // appearances this does NOT become an error today: for a
+                        // `ReceiveDiagnosticResponse` the pending request message is
+                        // `OwnedMessage::default()` (payload type `DiagnosticMessage`), and
+                        // `Message::is_response` accepts
+                        // `DiagnosticMessagePositiveAcknowledge` for it. Negative acks are
+                        // stamped `0x8002` too, because
+                        // `OwnedMessage::diagnostic_message_ack` hardcodes the positive
+                        // payload type - so the `is_response` guard below passes and the
+                        // caller receives `Ok(..)` carrying a rejection.
+                        //
+                        // ENTANGLEMENT: this is downstream of the deliberately-deferred
+                        // `0x8002` hardcode (see ARCHITECTURE.md section 7.2). Whoever fixes
+                        // that hardcode changes this path: once negative acks carry `0x8003`,
+                        // `is_response` stops matching and the caller starts seeing an error
+                        // instead. Decide deliberately what a rejected diagnostic message
+                        // should surface as when making that change.
                     }
                     _ => trace!("Received message: {received_message:?}"),
                 }

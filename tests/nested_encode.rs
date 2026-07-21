@@ -1,6 +1,5 @@
 //! The embedded-server TX hot path: encode a `DoIP` header + diagnostic payload into ONE
-//! stack buffer, no staging buffer, using `encoded_size` to pre-size the header
-//! (automotive-wire-codec spec §7.2 pattern).
+//! stack buffer, no staging buffer, using `encoded_size` to pre-size the header.
 use simple_doip::messages::{
     DiagnosticMessage, Encode, Header, MessageError, Payload, PayloadType, ProtocolVersion,
 };
@@ -41,7 +40,8 @@ fn nested_encode_no_staging_buffer() {
 
     // 4. Too-small buffer errors recoverably (no panic): embedded-io's `&mut [u8]`
     //    writer surfaces exhaustion as `Io(WriteZero)` — recoverable per the tier
-    //    classifier (S3 finding, pinned here).
+    //    classifier. Pinned here so a future change cannot turn buffer exhaustion on
+    //    this path into a panic or a framing-fatal error.
     let mut small = [0u8; 4];
     let mut w: &mut [u8] = &mut small;
     let err = header.encode(&mut w).unwrap_err();

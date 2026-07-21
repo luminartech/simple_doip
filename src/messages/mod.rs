@@ -468,7 +468,8 @@ impl OwnedMessage {
 
 /// Encode delegates through the borrowed view so there is exactly one wire
 /// implementation (`Message<'_>: Encode`). This is the impl `message_codec.rs`'s
-/// `Encoder<&OwnedMessage>` relies on (pass 4 risk item 3).
+/// `Encoder<&OwnedMessage>` relies on: adding a second, independent serializer here
+/// would let the owned and borrowed wire formats drift apart silently.
 #[cfg(feature = "alloc")]
 impl Encode for OwnedMessage {
     type Error = MessageError;

@@ -536,13 +536,34 @@ Moving it to `PayloadType` would:
 - leave the single production call site (in `Inner::process_received_message`,
   `src/client_inner.rs`) a one-line change.
 
-### 7.5 `SocketManager::session_id` is write-only
+### 7.5 Three write-only fields
 
 `SocketManager` (`src/socket_manager.rs`) declares a `session_id: u16` field,
 initialises it to `0` in `bind`, and increments it on every `send`. A repo-wide grep
 finds no other reference — it is never read, never sent on the wire, never
 exposed. It is dead state that silently wraps at 65536 sends. Either wire it to
 something real or delete it.
+
+It is not the only one. Two other fields are written and never read:
+
+**`Server::active_connections` (`src/server.rs`).** An `AtomicUsize` incremented
+and decremented by the `ActiveConnectionGuard` RAII guard taken at the top of
+`handle_client_connection`. Nothing ever loads it — there is no connection
+limit, no metric, no log line. Note that three unit tests in `src/server.rs`
+carefully pin the guard's RAII behavior (normal scope exit, early return, and
+panic unwind), so the crate has more test coverage of this counter than it has
+consumers of it. Deleting the field means deleting the guard and those three
+tests together; keeping it means giving it a reader (an accept-loop connection
+cap is the obvious one, given that the server currently serves one connection at
+a time anyway).
+
+**`Inner::run` (`src/client_inner.rs`).** A `bool` assigned in four places and
+never read; the select loop has no `while self.run` check. Its doc comment used
+to claim it was how the inner client shuts down when the outer client is
+dropped, which was simply wrong and has been corrected in place. Shutdown
+actually happens two ways: the control channel closing (which is what dropping
+the outer `Client` causes) breaks the loop, and `process_received_message`
+returning `true` breaks it. Either delete the field or make the loop honor it.
 
 ### 7.6 Other rough edges
 

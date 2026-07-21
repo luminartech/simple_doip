@@ -3,7 +3,7 @@
 //!
 //! Capture mode (run ONCE, before the migration starts, then commit `tests/golden/`):
 //!   `GOLDEN_WRITE=1` cargo test --test `golden_vectors`
-//! Verify mode (every checkpoint from WP2 on):
+//! Verify mode (the normal mode; the fixtures in `tests/golden/` are frozen):
 //!   cargo test --test `golden_vectors`
 
 use std::path::PathBuf;

@@ -9,7 +9,7 @@
 //! | `Incomplete` | framing-fatal | wire decode |
 //! | `TrailingBytes` | recoverable | wire decode |
 //! | `PayloadLengthTooShort`, `UnexpectedPayloadType`, `UnsupportedPayloadType` | recoverable (body) | wire decode |
-//! | `Io` | recoverable (TX-side short write, e.g. `Io(WriteZero)` on an undersized stack buffer — S3) | encode / embedded-io |
+//! | `Io` | recoverable (TX-side short write, e.g. `Io(WriteZero)` on an undersized stack buffer) | encode / embedded-io |
 //! | `Std` | not a frame property at all | tokio/codec boundary |
 
 use crate::messages::header::PayloadType;
