@@ -29,6 +29,10 @@
 //! - **Bare metal / sans-io:** [`try_frame`] delimits a frame from a byte buffer without
 //!   owning any I/O resource; [`messages::Payload::decode`] then interprets the body.
 //!   See `examples/bare_metal_codec.rs`.
+//! - **Bare-metal entity (server):** [`bare_metal_entity::Entity`] is a complete sans-io
+//!   ISO 13400-2 entity — vehicle announcement, routing activation, diagnostic-message
+//!   dispatch — driven through platform callbacks, for `no_std` targets with a single
+//!   diagnostic TCP socket.
 //! - **Async client:** `client::Client` handles connection, routing activation, and
 //!   acknowledgements (requires the `client` feature). See `examples/simple_client.rs`.
 //! - **Async server:** implement `server::ServerConnectionHandler` and hand it to
@@ -42,6 +46,7 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod bare_metal_entity;
 pub mod logical_address;
 pub mod messages;
 pub mod wire;
