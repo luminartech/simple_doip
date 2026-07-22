@@ -2,6 +2,7 @@
 //! address testers, ECUs, and gateways on a `DoIP` network, per ISO 13400-2.
 
 use core::fmt::{Debug, Display, LowerHex, UpperHex};
+#[cfg(feature = "std")]
 use tracing::info;
 
 #[derive(Clone, Copy, Eq)]
@@ -42,6 +43,7 @@ impl LogicalAddress {
             // but it is not recommended to use this range for client addresses
             // and is not in the use case of the crate at this time
             if *self >= Self::OBD_ADDRESS_RANGE.0 && *self <= Self::OBD_ADDRESS_RANGE.1 {
+                #[cfg(feature = "std")]
                 info!(
                     "Logical addresses in the 0x0F00-0x0F7F range are intended for internal \
                 data collection/on-board diagnotics only. Ensure that this is the intended use case."
