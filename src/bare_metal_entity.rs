@@ -135,6 +135,7 @@ impl Default for Entity {
 
 impl Entity {
     /// An uninitialised entity; every input is ignored until [`Entity::init`].
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             vin: [0; VIN_LEN],
@@ -257,7 +258,7 @@ impl Entity {
             node_type: EntityStatusNodeType::DoIPNode,
             max_concurrent_tcp_sockets: 1,
             open_tcp_sockets: u8::from(self.active_tester.is_some()),
-            max_data_size: MAX_RX_PAYLOAD as u32,
+            max_data_size: u32::try_from(MAX_RX_PAYLOAD).unwrap_or(u32::MAX),
         };
         framed(
             PayloadType::DoIPEntityStatusResponse,
@@ -410,9 +411,12 @@ fn handle_diagnostic_message(s: &mut Session<'_>, dm: &DiagnosticMessage<'_>) ->
         DiagnosticAckCode::RoutingConfirmationAck,
     );
 
-    let written = (s.cb.on_uds_request)(dm.user_data, &mut s.uds_resp_buf[..]);
+    // `<= 0` means the dispatch produced no response; a negative return maps to
+    // zero written bytes, which the guard below then skips.
+    let written =
+        usize::try_from((s.cb.on_uds_request)(dm.user_data, &mut s.uds_resp_buf[..])).unwrap_or(0);
     if written > 0 {
-        let len = (written as usize).min(UDS_RESP_CAP);
+        let len = written.min(UDS_RESP_CAP);
         let msg = Message::diagnostic_message(
             PROTOCOL_VERSION,
             LogicalAddress(s.own_address),
