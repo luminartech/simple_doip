@@ -1,4 +1,8 @@
-use std::fmt::{Debug, Display, LowerHex, UpperHex};
+//! `DoIP` logical addressing ([`LogicalAddress`]), the identifier space used to
+//! address testers, ECUs, and gateways on a `DoIP` network, per ISO 13400-2.
+
+use core::fmt::{Debug, Display, LowerHex, UpperHex};
+#[cfg(feature = "std")]
 use tracing::info;
 
 #[derive(Clone, Copy, Eq)]
@@ -6,15 +10,27 @@ use tracing::info;
 ///
 /// A physical logical address uniquely represents a diagnostic application
 /// layer entity within any `DoIP` entity or on any server of the in-vehicle networks
-/// connected via `DoIP` gateways. See ISO 13400-2 section 7.8
-pub struct LogicalAddress(pub u16);
+/// connected via `DoIP` gateways.
+pub struct LogicalAddress(
+    /// The 16-bit address value, as transmitted on the wire.
+    pub u16,
+);
 
 impl LogicalAddress {
-    /// 0x0E00
+    /// Lower bound of the logical address range reserved for external test equipment
+    /// (testers). Addresses below this range are reserved
+    /// for other entity classes (e.g. `DoIP` gateways, ECUs).
     pub const MIN_CLIENT_ADDRESS: LogicalAddress = LogicalAddress(0x0E00);
-    /// 0x0FFF
+    /// Upper bound of the logical address range reserved for external test equipment
+    /// (testers).
     pub const MAX_CLIENT_ADDRESS: LogicalAddress = LogicalAddress(0x0FFF);
 
+    /// Sub-range of client addresses reserved for internal on-board diagnostics (OBD)
+    /// tooling rather than general external testers (0x0F00-0x0F7F).
+    /// A client address in this range is still valid, but
+    /// [`is_valid_client_address`](Self::is_valid_client_address) logs an
+    /// informational (`tracing::info!`) message
+    /// since this crate's use cases are external testers, not OBD tooling.
     pub const OBD_ADDRESS_RANGE: (LogicalAddress, LogicalAddress) =
         (LogicalAddress(0x0F00), LogicalAddress(0x0F7F));
 
@@ -27,8 +43,9 @@ impl LogicalAddress {
             // but it is not recommended to use this range for client addresses
             // and is not in the use case of the crate at this time
             if *self >= Self::OBD_ADDRESS_RANGE.0 && *self <= Self::OBD_ADDRESS_RANGE.1 {
+                #[cfg(feature = "std")]
                 info!(
-                    "Logical addresses in the 0xF000-0xF7F range are intended for internal \
+                    "Logical addresses in the 0x0F00-0x0F7F range are intended for internal \
                 data collection/on-board diagnotics only. Ensure that this is the intended use case."
                 );
             }
@@ -40,22 +57,22 @@ impl LogicalAddress {
 }
 
 impl Display for LogicalAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:#06X}", self.0)
     }
 }
 impl Debug for LogicalAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:#06X}", self.0)
     }
 }
 impl UpperHex for LogicalAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         UpperHex::fmt(&self.0, f)
     }
 }
 impl LowerHex for LogicalAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         LowerHex::fmt(&self.0, f)
     }
 }
@@ -70,12 +87,12 @@ impl From<LogicalAddress> for u16 {
     }
 }
 impl PartialOrd<u16> for LogicalAddress {
-    fn partial_cmp(&self, other: &u16) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &u16) -> Option<core::cmp::Ordering> {
         self.0.partial_cmp(other)
     }
 }
 impl PartialOrd<LogicalAddress> for LogicalAddress {
-    fn partial_cmp(&self, other: &LogicalAddress) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &LogicalAddress) -> Option<core::cmp::Ordering> {
         self.0.partial_cmp(&other.0)
     }
 }
@@ -88,21 +105,6 @@ impl PartialEq<LogicalAddress> for LogicalAddress {
     fn eq(&self, other: &LogicalAddress) -> bool {
         self.0 == other.0
     }
-}
-
-/// Creates a logical address from a u16 and checks if it is in the valid range
-/// for a client address (0x0E00 - 0x0FFF)
-#[macro_export]
-macro_rules! client_logical_address {
-    ($addr:expr) => {{
-        const _: () = {
-            assert!(
-                $addr >= 0x0E00 && $addr <= 0x0FFF,
-                "Invalid client address - must be in range 0x0E00 - 0x0FFF"
-            );
-        };
-        LogicalAddress($addr)
-    }};
 }
 
 #[cfg(test)]

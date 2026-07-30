@@ -1,10 +1,9 @@
-//! User → Client → control_sender → Inner → SocketManager.sender → TCP Socket → Server
-//! User ← Client ← update_receiver ← Inner ← SocketManager.receiver ← TCP Socket ← Server
+//! User → Client → `control_sender` → Inner → SocketManager.sender → TCP Socket → Server
+//! User ← Client ← `update_receiver` ← Inner ← SocketManager.receiver ← TCP Socket ← Server
 use crate::{
     Error,
     client::ClientOptions,
-    connection_state::ConnectionState,
-    messages::{Message, MessageError, Payload},
+    messages::{MessageError, OwnedMessage, OwnedPayload},
     socket_manager::SocketManager,
 };
 use std::{future, net::SocketAddr};
@@ -15,33 +14,28 @@ use tokio::{
 use tracing::{debug, trace};
 
 /// Messages used to control the `DoIP` entities
-#[allow(unused)]
 #[derive(Debug)]
 pub(super) enum ControlMessage {
-    /// No payload
-    AliveCheckRequest(oneshot::Sender<Result<(), Error>>),
-    AliveCheckResponse(Message),
-    /// No oneshot needed, the response is sent
-    /// and does not need to be awaited
-    SendNoResponse(Message),
-
     BindSocket(SocketAddr, oneshot::Sender<Result<u16, Error>>),
     UnbindSocket(oneshot::Sender<Result<(), Error>>),
-    RoutingActivation(Message, oneshot::Sender<Result<Message, Error>>),
+    RoutingActivation(OwnedMessage, oneshot::Sender<Result<OwnedMessage, Error>>),
     AwaitResponse(
         /// the Request message that was sent
-        Message,
+        OwnedMessage,
         /// the response channel to send the response to
-        oneshot::Sender<Result<Message, Error>>,
+        oneshot::Sender<Result<OwnedMessage, Error>>,
     ),
 
-    /// Send diagnostic message and wait for DoIP ACK only (not full response)
-    SendDiagnosticMessage(Message, oneshot::Sender<Result<(), Error>>),
+    /// Send diagnostic message and wait for `DoIP` ACK only (not full response)
+    SendDiagnosticMessage(OwnedMessage, oneshot::Sender<Result<(), Error>>),
 
     /// Wait for next diagnostic response (no send)
-    ReceiveDiagnosticResponse(std::time::Duration, oneshot::Sender<Result<Message, Error>>),
+    ReceiveDiagnosticResponse(
+        std::time::Duration,
+        oneshot::Sender<Result<OwnedMessage, Error>>,
+    ),
 
-    /// Internal: waiting for ACK only (after SendDiagnosticMessage)
+    /// Internal: waiting for ACK only (after `SendDiagnosticMessage`)
     AwaitAck(oneshot::Sender<Result<(), Error>>),
 }
 
@@ -55,10 +49,9 @@ impl ControlMessage {
     }
 
     /// Create a control message to send a routing activation request
-    #[allow(unused)]
     pub fn create_routing_activation_message(
-        message: &Message,
-    ) -> (oneshot::Receiver<Result<Message, Error>>, Self) {
+        message: &OwnedMessage,
+    ) -> (oneshot::Receiver<Result<OwnedMessage, Error>>, Self) {
         trace!(message = "RoutingActivationRequest");
         Self::create_oneshot(|sender| Self::RoutingActivation(message.clone(), sender))
     }
@@ -77,7 +70,7 @@ impl ControlMessage {
 
     /// Create a control message to send a diagnostic message and wait for ACK only
     pub fn create_send_diagnostic_message(
-        message: Message,
+        message: OwnedMessage,
     ) -> (oneshot::Receiver<Result<(), Error>>, Self) {
         Self::create_oneshot(|sender| Self::SendDiagnosticMessage(message, sender))
     }
@@ -85,7 +78,7 @@ impl ControlMessage {
     /// Create a control message to receive the next diagnostic response
     pub fn create_receive_diagnostic_response(
         timeout: std::time::Duration,
-    ) -> (oneshot::Receiver<Result<Message, Error>>, Self) {
+    ) -> (oneshot::Receiver<Result<OwnedMessage, Error>>, Self) {
         Self::create_oneshot(|sender| Self::ReceiveDiagnosticResponse(timeout, sender))
     }
 }
@@ -101,7 +94,7 @@ pub(super) struct Inner<Conn> {
     /// MPSC Receiver used to receive control messages from outer client
     control_receiver: mpsc::Receiver<ControlMessage>,
     /// MPSC Sender used to send updates to outer client
-    update_sender: mpsc::Sender<Result<Message, MessageError>>,
+    update_sender: mpsc::Sender<Result<OwnedMessage, MessageError>>,
 
     /// active request in flight (if it exists) in case the connection is lost
     active_request: Option<ControlMessage>,
@@ -112,24 +105,25 @@ pub(super) struct Inner<Conn> {
     /// Socket manager for TCP data socket if bound
     tcp_data_socket: Option<SocketManager<Conn>>,
 
-    /// Represents the `DoIP` connection state of the socket
-    connection_state: ConnectionState,
-
-    /// Whether to keep the inner client running
+    /// Write-only bookkeeping flag. It is assigned in four places but never read:
+    /// the [`Inner::run`] loop has no `while self.run` check.
     ///
-    /// This is used to gracefully shut down the inner client
-    /// when the outer client is dropped
+    /// Shutdown does not go through this field. The loop exits when the control
+    /// channel closes (the outer [`Client`](crate::client::Client) and its
+    /// `control_sender` were dropped) or when
+    /// [`Inner::process_received_message`] returns `true`. See ARCHITECTURE.md's
+    /// known-issues section.
     run: bool,
 
     /// Buffer for diagnostic responses that arrive between send and receive calls.
     /// This handles the race condition where the server responds before
     /// `receive_diagnostic_response()` is called.
-    pending_diagnostic_response: Option<Message>,
+    pending_diagnostic_response: Option<OwnedMessage>,
 }
 /// Sender for the control messages sent via the control channel
 type ControlSender = mpsc::Sender<ControlMessage>;
 /// Receiver for the update messages from the socket
-type UpdateReceiver<E> = mpsc::Receiver<Result<Message, E>>;
+type UpdateReceiver<E> = mpsc::Receiver<Result<OwnedMessage, E>>;
 
 impl<Conn> Inner<Conn>
 where
@@ -147,7 +141,6 @@ where
             active_request: None,
             await_response_deadline: None,
             tcp_data_socket: None,
-            connection_state: ConnectionState::Listen,
             run: true,
             pending_diagnostic_response: None,
         };
@@ -168,7 +161,6 @@ where
         // Bind a new socket
         let socket_manager: SocketManager<Conn> =
             SocketManager::bind(self.client_options, gateway_address).await?;
-        self.connection_state = ConnectionState::Initialized;
         let port = socket_manager.port();
         debug!("Bound socket to port: {}", port);
         self.tcp_data_socket = Some(socket_manager);
@@ -190,25 +182,11 @@ where
         }
     }
 
-    #[allow(unused)]
-    /// Send an alive check response, can be sent regardless of if there was a request
-    async fn send_alive_check_response(&mut self) -> Result<(), Error> {
-        if self.tcp_data_socket.is_none() {
-            return Err(Error::SocketNotBound);
-        }
-        // Send to the tcp_data_socket
-        self.send_to_socket(Message::alive_check_response(
-            self.client_options.protocol_version,
-            self.client_options.client_logical_address,
-        ))
-        .await
-    }
-
     /// Send a message to the socket manager
     ///
     /// Errors:
     /// [`Error::SocketNotBound`] - if the socket is not bound
-    async fn send_to_socket(&mut self, message: Message) -> Result<(), Error> {
+    async fn send_to_socket(&mut self, message: OwnedMessage) -> Result<(), Error> {
         if let Some(socket) = &mut self.tcp_data_socket {
             socket.send(message).await
         } else {
@@ -218,7 +196,7 @@ where
 
     async fn receive_socket(
         socket_manager: &mut Option<SocketManager<Conn>>,
-    ) -> Result<Message, Error> {
+    ) -> Result<OwnedMessage, Error> {
         if let Some(receiver) = socket_manager {
             match receiver.receive().await {
                 Some(message) => message.map_err(|_| Error::SocketClosedUnexpectedly),
@@ -244,36 +222,6 @@ where
         };
 
         match control_message {
-            ControlMessage::AliveCheckRequest(response) => {
-                let send_result = self
-                    .send_to_socket(Message::alive_check_request(
-                        self.client_options.protocol_version,
-                    ))
-                    .await;
-                if response.send(send_result).is_err() {
-                    debug!("Failed to send alive check response");
-                }
-            }
-            ControlMessage::AliveCheckResponse(message) => {
-                let _ = self
-                    .send_to_socket(Message::alive_check_response(
-                        self.client_options.protocol_version,
-                        self.client_options.client_logical_address,
-                    ))
-                    .await;
-                // Don't really have to handle the alive check response
-                // it's intended to keep the connection alive and that is handled in the socket manager
-                debug!("Received alive check response: {:?}", message);
-            }
-            ControlMessage::SendNoResponse(message) => {
-                let err_msg = format!("Failed to send message: {message:?}");
-                // Send the message to the socket
-                let send_result = self.send_to_socket(message).await;
-
-                if send_result.is_err() {
-                    debug!(err_msg);
-                }
-            }
             ControlMessage::BindSocket(gateway_address, response) => {
                 if response
                     .send(self.bind_socket(gateway_address).await)
@@ -342,8 +290,10 @@ where
 
                 self.await_response_deadline = Some(tokio::time::Instant::now() + timeout);
                 // Use a placeholder message - we just want any diagnostic response
-                self.active_request =
-                    Some(ControlMessage::AwaitResponse(Message::default(), response));
+                self.active_request = Some(ControlMessage::AwaitResponse(
+                    OwnedMessage::default(),
+                    response,
+                ));
             }
             ControlMessage::AwaitAck(response) => {
                 // This is handled in the run loop while receiving messages
@@ -352,27 +302,101 @@ where
         }
     }
 
+    /// Take the pending request only if it is an [`ControlMessage::AwaitAck`].
+    ///
+    /// Any other pending request is put back untouched: taking it unconditionally would
+    /// drop its oneshot `Sender`, closing the channel and silently destroying an
+    /// in-flight request.
+    fn take_await_ack(&mut self) -> Option<oneshot::Sender<Result<(), Error>>> {
+        match self.active_request.take() {
+            Some(ControlMessage::AwaitAck(response)) => Some(response),
+            other => {
+                self.active_request = other;
+                None
+            }
+        }
+    }
+
+    /// Take the pending request only if it is an [`ControlMessage::AwaitResponse`].
+    ///
+    /// As with [`Inner::take_await_ack`], any other pending request is put back untouched
+    /// rather than dropped.
+    fn take_await_response(
+        &mut self,
+    ) -> Option<(OwnedMessage, oneshot::Sender<Result<OwnedMessage, Error>>)> {
+        match self.active_request.take() {
+            Some(ControlMessage::AwaitResponse(request_message, response)) => {
+                Some((request_message, response))
+            }
+            other => {
+                self.active_request = other;
+                None
+            }
+        }
+    }
+
+    /// Complete any still-pending request with [`Error::RequestSuperseded`] so that a
+    /// newly arrived control message can take its place.
+    ///
+    /// Nothing here may panic: [`Inner::run`] is a detached task, so a panic would be
+    /// invisible and would brick the client behind a closed control channel.
+    fn supersede_active_request(&mut self) {
+        match self.active_request.take() {
+            None => {}
+            Some(ControlMessage::AwaitAck(response)) => {
+                debug!("Superseding pending AwaitAck");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::AwaitResponse(_, response)) => {
+                debug!("Superseding pending AwaitResponse");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::RoutingActivation(_, response)) => {
+                debug!("Superseding pending RoutingActivation");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::ReceiveDiagnosticResponse(_, response)) => {
+                debug!("Superseding pending ReceiveDiagnosticResponse");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::SendDiagnosticMessage(_, response)) => {
+                debug!("Superseding pending SendDiagnosticMessage");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::BindSocket(_, response)) => {
+                debug!("Superseding pending BindSocket");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+            Some(ControlMessage::UnbindSocket(response)) => {
+                debug!("Superseding pending UnbindSocket");
+                let _ = response.send(Err(Error::RequestSuperseded));
+            }
+        }
+        // The displaced request's deadline no longer applies; the arms of
+        // `handle_control_message` that leave a request pending each set a fresh one.
+        self.await_response_deadline = None;
+    }
+
     /// Process a message received from the socket. Returns `true` if the run loop should exit.
-    async fn process_received_message(&mut self, message: Result<Message, Error>) -> bool {
+    async fn process_received_message(&mut self, message: Result<OwnedMessage, Error>) -> bool {
         match message {
             Ok(received_message) => {
                 match received_message.payload {
-                    Payload::AliveCheckRequest => {
+                    OwnedPayload::AliveCheckRequest => {
                         trace!("Received Alive Check Request");
                         let _ = self
                             .tcp_data_socket
                             .as_mut()
                             .unwrap()
-                            .send(Message::alive_check_response(
+                            .send(OwnedMessage::alive_check_response(
                                 self.client_options.protocol_version,
                                 self.client_options.client_logical_address,
                             ))
                             .await;
                     }
-                    Payload::DiagnosticMessageAck(ref ack) => {
+                    OwnedPayload::DiagnosticMessageAck(ref ack) => {
                         // Handle AwaitAck - complete immediately on ACK
-                        if let Some(ControlMessage::AwaitAck(response)) = self.active_request.take()
-                        {
+                        if let Some(response) = self.take_await_ack() {
                             self.await_response_deadline = None;
                             if ack.ack_code.is_positive_ack() {
                                 trace!("Received positive ACK, completing send");
@@ -389,31 +413,53 @@ where
                             trace!("Received Diagnostic Message Ack, waiting for full response");
                             return false;
                         }
-                        // Negative ACK for AwaitResponse - fall through to handle as error
+                        // Negative ACK while an AwaitResponse is pending. Despite
+                        // appearances this does NOT become an error today: for a
+                        // `ReceiveDiagnosticResponse` the pending request message is
+                        // `OwnedMessage::default()` (payload type `DiagnosticMessage`), and
+                        // `Message::is_response` accepts
+                        // `DiagnosticMessagePositiveAcknowledge` for it. Negative acks are
+                        // stamped `0x8002` too, because
+                        // `OwnedMessage::diagnostic_message_ack` hardcodes the positive
+                        // payload type - so the `is_response` guard below passes and the
+                        // caller receives `Ok(..)` carrying a rejection.
+                        //
+                        // ENTANGLEMENT: this is downstream of the deliberately-deferred
+                        // `0x8002` hardcode (see ARCHITECTURE.md section 7.2). Whoever fixes
+                        // that hardcode changes this path: once negative acks carry `0x8003`,
+                        // `is_response` stops matching and the caller starts seeing an error
+                        // instead. Decide deliberately what a rejected diagnostic message
+                        // should surface as when making that change.
                     }
                     _ => trace!("Received message: {received_message:?}"),
                 }
-                if let Some(active) = self.active_request.take() {
-                    if let ControlMessage::AwaitResponse(request_message, response) = active {
-                        trace!("Received response for request: {:?}", request_message);
-                        trace!("{received_message:?}");
-                        if request_message.is_response(received_message.header.payload_type) {
-                            debug!("Received expected response, sending to the update channel");
-                            if response.send(Ok(received_message)).is_err() {
-                                return true;
-                            }
-                        } else if response
-                            .send(Err(Error::UnexpectedMessageType(
-                                received_message.header.payload_type,
-                            )))
-                            .is_err()
-                        {
+                if let Some((request_message, response)) = self.take_await_response() {
+                    // Note: unlike the `take_await_ack` path above, this one deliberately
+                    // leaves `await_response_deadline` set. That is safe, if not obvious:
+                    // the timeout branch of the run loop is guarded on
+                    // `active_request.is_some()`, which is now false, and every path that
+                    // repopulates `active_request` from a user-issued control message
+                    // (`RoutingActivation`, `SendDiagnosticMessage`,
+                    // `ReceiveDiagnosticResponse`) sets a fresh deadline first - so the
+                    // stale value can never fire.
+                    trace!("Received response for request: {:?}", request_message);
+                    trace!("{received_message:?}");
+                    if request_message.is_response(received_message.header.payload_type) {
+                        debug!("Received expected response, sending to the update channel");
+                        if response.send(Ok(received_message)).is_err() {
                             return true;
                         }
+                    } else if response
+                        .send(Err(Error::UnexpectedMessageType(
+                            received_message.header.payload_type,
+                        )))
+                        .is_err()
+                    {
+                        return true;
                     }
-                } else {
+                } else if self.active_request.is_none() {
                     // No active request - check if this is a DiagnosticMessage we should buffer
-                    if matches!(received_message.payload, Payload::DiagnosticMessage(_)) {
+                    if matches!(received_message.payload, OwnedPayload::DiagnosticMessage(_)) {
                         debug!(
                             "Buffering diagnostic response (no active request): {:?}",
                             received_message
@@ -439,7 +485,6 @@ where
                     socket.shut_down().await;
                 }
                 self.await_response_deadline = None;
-                self.connection_state = ConnectionState::Listen;
                 // Notify any active request of the connection error
                 match self.active_request.take() {
                     Some(ControlMessage::AwaitResponse(_, response)) => {
@@ -461,7 +506,7 @@ where
         tokio::spawn(async move {
             debug!("Starting DOIP processing loop");
             loop {
-                let mut socket_message: Option<Result<Message, Error>> = None;
+                let mut socket_message: Option<Result<OwnedMessage, Error>> = None;
                 let Self {
                     control_receiver,
                     tcp_data_socket,
@@ -478,10 +523,18 @@ where
                         }
                     }, if active_request.is_some() && await_response_deadline.is_some() => {
                         debug!("Await response deadline reached, server did not respond, which may mean you will not receive Negative Response or message was suppressed");
-                        if let Some(ControlMessage::AwaitResponse(_, response)) = active_request.take()
-                            && response.send(Err(Error::ResponseTimeoutExceeded)).is_err()
-                        {
-                            debug!("Failed to send suppressed response");
+                        match active_request.take() {
+                            Some(ControlMessage::AwaitResponse(_, response)) => {
+                                if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
+                                    debug!("Failed to send suppressed response");
+                                }
+                            }
+                            Some(ControlMessage::AwaitAck(response)) => {
+                                if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
+                                    debug!("Failed to send suppressed ack timeout");
+                                }
+                            }
+                            other => *active_request = other,
                         }
                         *await_response_deadline = None;
                     }
@@ -492,8 +545,16 @@ where
                             *run = false;
                             break;
                         }
-                        assert!(self.active_request.is_none());
                         debug!("Received control message: {:?}", ctrl_opt.as_ref().unwrap());
+                        // A request may still be pending here: the caller can stop awaiting
+                        // one (`tokio::time::timeout`, `tokio::select!`, or the deliberately
+                        // recoverable routing-activation timeout in `Client::bind_socket`) and
+                        // then issue another. The new request wins - refusing it would strand
+                        // the client behind a request nobody is waiting for - but the displaced
+                        // request is told rather than dropped, per the take-or-restore
+                        // discipline: dropping its oneshot `Sender` would surface as an
+                        // indistinguishable closed channel.
+                        self.supersede_active_request();
                         self.active_request = ctrl_opt;
                     }
                     // Receive a message from the socket

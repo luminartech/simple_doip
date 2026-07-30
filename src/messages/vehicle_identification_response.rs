@@ -1,16 +1,23 @@
-use std::io::{Read, Write};
-
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-
 use crate::logical_address::LogicalAddress;
 
-use super::message_error::MessageError;
+use automotive_wire_codec::{read_array, read_u8, read_u16_be, write_all, write_u8, write_u16_be};
 
+use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
+
+/// Whether the tester must take further action before diagnostics can proceed
+/// with this vehicle (the `VIR`/vehicle announcement further-action byte).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FurtherActionRequired {
+    /// No further action needed; the tester may proceed directly to routing
+    /// activation.
     NoFurtherActionRequired,
+    /// A further-action value outside the range this crate models.
     Reserved(u8),
+    /// The tester must send a routing activation request with a `CentralSecurity`
+    /// activation type before diagnostics can proceed.
     RoutingActivationRequiredToInitiateCentralSecurity,
+    /// Vehicle-manufacturer-specific further-action value.
     VehicleManufacturerSpecific(u8),
 }
 
@@ -36,10 +43,14 @@ impl From<FurtherActionRequired> for u8 {
     }
 }
 
+/// Whether the VIN and group ID (GID) are synchronized across all `DoIP` entities
+/// in the vehicle. Relevant when a vehicle has multiple `DoIP`
+/// gateways that must agree on identification data.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VinGidSyncStatus {
     /// VIN and/or GID are synchronized
     Synchronized,
+    /// A sync-status value outside the range this crate models.
     Reserved(u8),
     /// VIN and GID are NOT synchronized
     Incomplete,
@@ -71,72 +82,85 @@ impl From<VinGidSyncStatus> for u8 {
 pub struct VehicleIdentificationResponse {
     /// Vehicle Identification Number
     pub vin: [u8; 17],
+    /// Logical address of the vehicle's `DoIP` gateway or the responding ECU.
     pub logical_address: LogicalAddress,
     /// Unique entity id, e.g. MAC address of network interface.
     pub entity_id: [u8; 6],
     //// Unique group identification of entities within a vehicle.
     /// None when value not set (as indicated by `0x00` or `0xFF`).
     pub group_id: Option<[u8; 6]>,
+    /// Whether the tester must take further action (e.g. routing activation with
+    /// central security) before diagnostics can proceed.
     pub further_action: FurtherActionRequired,
     /// Indicates whether all entities have synced information about VIN or GID.
     pub vin_gid_sync_status: VinGidSyncStatus,
 }
 
-impl VehicleIdentificationResponse {
-    /// Deserialize a vehicle identification response from a byte stream
+impl<'a> Decode<'a> for VehicleIdentificationResponse {
+    type Error = MessageError;
+
+    /// Deserialize a vehicle identification response from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be read
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        let mut vin = [0x00; 17];
-        reader.read_exact(&mut vin)?;
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (vin, rest) = read_array::<17>(buf)?;
 
-        let logical_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
+        let (logical_address, rest) = read_u16_be(rest)?;
 
-        let mut entity_id = [0x00; 6];
-        reader.read_exact(&mut entity_id)?;
+        let (entity_id, rest) = read_array::<6>(rest)?;
 
-        let mut group_id = [0x00; 6];
-        reader.read_exact(&mut group_id)?;
+        let (group_id, rest) = read_array::<6>(rest)?;
 
-        // Table 1 - value not set
+        // Sentinel values meaning "group ID not set"
         let group_id = if group_id == [0x00; 6] || group_id == [0xFF; 6] {
             None
         } else {
             Some(group_id)
         };
 
-        let further_action_byte = reader.read_u8()?;
-        let further_action = FurtherActionRequired::from(further_action_byte);
+        let (further_action, rest) = read_u8(rest)?;
+        let further_action = FurtherActionRequired::from(further_action);
 
-        let vin_gid_sync_status_byte = reader.read_u8()?;
-        let vin_gid_sync_status = VinGidSyncStatus::from(vin_gid_sync_status_byte);
+        let (vin_gid_sync_status, rest) = read_u8(rest)?;
+        let vin_gid_sync_status = VinGidSyncStatus::from(vin_gid_sync_status);
 
-        Ok(Self {
-            vin,
-            logical_address,
-            entity_id,
-            group_id,
-            further_action,
-            vin_gid_sync_status,
-        })
+        Ok((
+            Self {
+                vin,
+                logical_address: LogicalAddress(logical_address),
+                entity_id,
+                group_id,
+                further_action,
+                vin_gid_sync_status,
+            },
+            rest,
+        ))
+    }
+}
+
+impl Encode for VehicleIdentificationResponse {
+    type Error = MessageError;
+
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(33)
     }
 
-    /// Serialize this vehicle identification response to a byte stream
+    /// Serialize this vehicle identification response into `writer`
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be written
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_all(&self.vin)?;
-        writer.write_u16::<BigEndian>(self.logical_address.into())?;
-        writer.write_all(&self.entity_id)?;
+    /// Returns [`MessageError::Io`] if the writer fails.
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        write_all(writer, &self.vin)?;
+        write_u16_be(writer, self.logical_address.into())?;
+        write_all(writer, &self.entity_id)?;
         if let Some(group_id) = self.group_id {
-            writer.write_all(&group_id)?;
+            write_all(writer, &group_id)?;
         } else {
-            writer.write_all(&[0x00; 6])?;
+            write_all(writer, &[0x00; 6])?;
         }
-        writer.write_u8(self.further_action.into())?;
-        writer.write_u8(self.vin_gid_sync_status.into())?;
+        write_u8(writer, self.further_action.into())?;
+        write_u8(writer, self.vin_gid_sync_status.into())?;
         Ok(33)
     }
 }

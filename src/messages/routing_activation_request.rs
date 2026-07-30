@@ -1,15 +1,17 @@
 use core::fmt;
-use std::{
-    fmt::UpperHex,
-    io::{Read, Write},
-};
-
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use core::fmt::UpperHex;
 
 use crate::LogicalAddress;
 
-use super::message_error::MessageError;
+use automotive_wire_codec::{
+    read_array, read_optional_array, read_u8, read_u16_be, write_all, write_u8, write_u16_be,
+};
 
+use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
+
+/// The reason a tester is requesting routing activation, carried in
+/// [`RoutingActivationRequest::activation_type`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ActivationTypeCode {
     /// ISO 14229
@@ -51,16 +53,23 @@ impl From<ActivationTypeCode> for u8 {
 impl UpperHex for ActivationTypeCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let val: u8 = (*self).into();
-        let val = format!("{val:02X}");
-        f.write_str(&val)
+        write!(f, "{val:02X}")
     }
 }
+/// A `DoIP` routing activation request
+/// (`PayloadType::RoutingActivationRequest`, 0x0005), sent by a tester to enable
+/// diagnostic message exchange on a TCP connection.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct RoutingActivationRequest {
     /// Address of `DoIP` entity that requests routing activation.
     pub source_address: LogicalAddress,
+    /// The reason routing activation is being requested.
     pub activation_type: ActivationTypeCode,
+    /// Reserved for standardization; must be transmitted as `[0, 0, 0, 0]`.
     pub reserved: [u8; 4],
+    /// Optional vehicle-manufacturer-specific data (e.g. required by a
+    /// manufacturer-defined `CentralSecurity`/`VehicleManufacturerSpecific`
+    /// activation type). `None` when the request carries only the fixed fields.
     pub reserved_vehicle_manufacturer: Option<[u8; 4]>,
 }
 
@@ -85,38 +94,64 @@ impl fmt::Debug for RoutingActivationRequest {
     }
 }
 
-impl RoutingActivationRequest {
-    /// Deserialize a routing activation request from a byte stream
+impl<'a> Decode<'a> for RoutingActivationRequest {
+    type Error = MessageError;
+
+    /// Deserialize a routing activation request from a byte slice
+    ///
+    /// The optional manufacturer-specific tail is decoded when at least 4 bytes remain
+    /// after the fixed fields.
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be read
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        let source_address = LogicalAddress(reader.read_u16::<BigEndian>()?);
-        let activation_type = ActivationTypeCode::from(reader.read_u8()?);
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (source_address, rest) = read_u16_be(buf)?;
+        let (activation_type, rest) = read_u8(rest)?;
+        let activation_type = ActivationTypeCode::from(activation_type);
 
-        let mut reserved = [0x00; 4];
-        reader.read_exact(&mut reserved)?;
+        let (reserved, rest) = read_array::<4>(rest)?;
 
-        let reserved_vehicle_manufacturer = None; // TODO
+        let (reserved_vehicle_manufacturer, rest) = read_optional_array::<4>(rest);
 
-        Ok(Self {
-            source_address,
-            activation_type,
-            reserved,
-            reserved_vehicle_manufacturer,
+        Ok((
+            Self {
+                source_address: LogicalAddress(source_address),
+                activation_type,
+                reserved,
+                reserved_vehicle_manufacturer,
+            },
+            rest,
+        ))
+    }
+}
+
+impl Encode for RoutingActivationRequest {
+    type Error = MessageError;
+
+    /// Closed form matching [`Self::encode`]: 2-byte source + 1-byte activation type +
+    /// 4-byte reserved, plus 4 more when the optional VM-specific tail is present.
+    ///
+    /// # Errors
+    /// Never returns an error; the size is always computable.
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(if self.reserved_vehicle_manufacturer.is_some() {
+            11
+        } else {
+            7
         })
     }
-    /// Serialize this routing activation request to a byte stream
+
+    /// Serialize this routing activation request into `writer`
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be written
+    /// Returns [`MessageError::Io`] if the writer fails.
     // TODO: Investigate if we should write the optional vehicle manufacturer specific data if none
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_u16::<BigEndian>(self.source_address.into())?;
-        writer.write_u8(self.activation_type.into())?;
-        writer.write_all(&self.reserved)?;
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        write_u16_be(writer, self.source_address.into())?;
+        write_u8(writer, self.activation_type.into())?;
+        write_all(writer, &self.reserved)?;
         if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {
-            writer.write_all(&reserved_vehicle_manufacturer)?;
+            write_all(writer, &reserved_vehicle_manufacturer)?;
             return Ok(11);
         }
         Ok(7)

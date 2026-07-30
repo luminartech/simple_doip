@@ -3,7 +3,8 @@ use simple_doip::{
     Error,
     logical_address::LogicalAddress,
     messages::{
-        DiagnosticMessage, Message, RoutingActivationRequest, RoutingActivationResponseCode,
+        DiagnosticAckCode, DiagnosticMessage, OwnedMessage, RoutingActivationRequest,
+        RoutingActivationResponseCode,
     },
     server::{Server, ServerConnectionHandler},
 };
@@ -32,14 +33,14 @@ impl ServerConnectionHandler for ServerHandler {
     async fn routing_activation(
         &self,
         request: &RoutingActivationRequest,
-    ) -> Result<Message, Error> {
+    ) -> Result<OwnedMessage, Error> {
         info!(
             "Routing activation request from {:?}",
             request.source_address
         );
         // 3.DoIP-090 NL
         // If source_address (SA) is not assigned to TCP_DATA sockets
-        Ok(Message::routing_activation_response(
+        Ok(OwnedMessage::routing_activation_response(
             self.protocol_version(),
             request.source_address,
             self.get_logical_address(),
@@ -49,23 +50,27 @@ impl ServerConnectionHandler for ServerHandler {
         ))
     }
 
-    async fn diagnostic_message(&self, message: &DiagnosticMessage) -> Result<Message, Error> {
+    async fn diagnostic_message(
+        &self,
+        message: &DiagnosticMessage<'_>,
+    ) -> Result<OwnedMessage, Error> {
         debug!(
             "Received diagnostic message from {:?} to {:?}",
             message.source_address, message.target_address
         );
-        // Simply echo back the received data as raw bytes
-        let response_data = message.user_data.clone();
-
-        // Note: Using diagnostic_message() instead of diagnostic_message_ack()
-        // - diagnostic_message() sends actual diagnostic data (the echoed payload)
-        // - diagnostic_message_ack() would only send a transport-level acknowledgment
-        // This creates a proper echo response rather than just acknowledging receipt
-        Ok(Message::diagnostic_message(
+        // A DoIP entity must acknowledge a diagnostic message first; any
+        // functional (UDS) response is a separate, later DiagnosticMessage.
+        // `ServerConnectionHandler::diagnostic_message` can only return a single
+        // message, so this example echoes the received bytes back inside the
+        // positive acknowledgement's previous-message-data field. A real entity
+        // that must also send a UDS response needs its own write path; the
+        // handler trait as it stands cannot emit two messages for one request.
+        Ok(OwnedMessage::diagnostic_message_ack(
             self.protocol_version(),
-            message.source_address, // Keep original source as source
-            message.target_address, // Keep original target as target
-            response_data,
+            message.target_address, // We are the target, so we answer as source
+            message.source_address, // ...back to the tester that asked
+            DiagnosticAckCode::RoutingConfirmationAck,
+            message.user_data.to_vec(),
         ))
     }
 }

@@ -8,6 +8,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -36,3 +39,55 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt -- --check
+
+  feature-matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup target add thumbv7em-none-eabihf
+      - run: cargo check --no-default-features
+      - run: cargo check --no-default-features --features alloc
+      - run: cargo check --no-default-features --features std
+      - run: cargo check --no-default-features --features server
+      - run: cargo check --no-default-features --features client
+      - run: cargo check --no-default-features --features codec
+      - run: cargo check --features client,server
+      - run: cargo check --no-default-features --target thumbv7em-none-eabihf
+      - run: cargo clippy --all-targets --features client,server -- -D warnings
+      - run: cargo test --no-default-features
+      - run: cargo test --features client,server
+      - run: cargo build --example bare_metal_codec --no-default-features
+      - run: cargo run --example bare_metal_codec --no-default-features
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.88"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-features
+      - run: cargo check --no-default-features
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo publish --dry-run

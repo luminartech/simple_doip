@@ -1,26 +1,22 @@
+//! `DoIP` tester (client) connection: establishes routing activation with a `DoIP`
+//! entity and exchanges diagnostic messages over the resulting TCP connection.
+
 use crate::{
     Error, LogicalAddress, TCP_TIMEOUT_INITIAL_INACTIVITY,
     client_inner::{ControlMessage, Inner},
     connection,
     messages::{
-        ActivationTypeCode, Message, MessageError, ProtocolVersion, RoutingActivationResponse,
+        ActivationTypeCode, MessageError, OwnedMessage, ProtocolVersion, RoutingActivationResponse,
     },
 };
 use std::{
     net::{IpAddr, SocketAddr},
+    string::ToString,
     time::Duration,
+    vec::Vec,
 };
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
-
-#[derive(Debug, strum::Display)]
-/// Send updates to the user
-pub enum ClientUpdate {
-    /// Unicase message from the server
-    Unicast(Message),
-    /// Inner `DoIP` client error
-    Error(Error),
-}
 
 /// Activation options for the routing activation request
 ///
@@ -54,20 +50,18 @@ pub struct ClientOptions {
     pub routing_activation_options: Option<RoutingActivationOptions>,
 }
 
+/// Selects which of the two target addresses configured on [`ClientOptions`] a
+/// diagnostic message should be addressed to.
+///
+/// This is purely a choice between two configured [`LogicalAddress`] values; the
+/// crate does not implement any broadcast or multicast delivery semantics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AddressType {
+    /// Address the message to [`ClientOptions::server_logical_address`].
     Logical,
+    /// Address the message to [`ClientOptions::server_physical_address`], the
+    /// point-to-point address of a single ECU (range `0x0001`-`0x0DFF`).
     Physical,
-}
-
-/// The result of sending a message to the server. When a message
-/// is suppressed (ie via UDS), the server might not respond and returns `Suppressed`
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SendResult<ReadDefinitions> {
-    /// The message was sent successfully
-    Response(ReadDefinitions),
-    /// The message was sent, but the server did not respond
-    Suppressed,
 }
 
 /// The client is the main entry point for the user to interact with the `DoIP` protocol.
@@ -76,11 +70,14 @@ pub enum SendResult<ReadDefinitions> {
 /// handling `DoIP` acknowledgements and other protocol details that the user doesn't need to worry about.
 #[derive(Debug)]
 pub struct Client<Conn = connection::ConnectorSocket> {
+    /// The connection configuration this client was created with (server
+    /// address, logical/physical addresses, protocol version, routing
+    /// activation options).
     pub client_options: ClientOptions,
     /// Sends messages from the user to the inner client
     control_sender: mpsc::Sender<ControlMessage>,
     /// Receives messages from the inner client to the user
-    update_receiver: mpsc::Receiver<Result<Message, MessageError>>,
+    update_receiver: mpsc::Receiver<Result<OwnedMessage, MessageError>>,
     _phantom: std::marker::PhantomData<Conn>,
 }
 
@@ -125,7 +122,7 @@ where
         // Automatically send a routing activation request if the client options specify it
         'routing: {
             if let Some(routing_activation_options) = client_options.routing_activation_options {
-                let message = Message::routing_activation_request(
+                let message = OwnedMessage::routing_activation_request(
                     client_options.protocol_version,
                     client_options.client_logical_address,
                     routing_activation_options.activation_type,
@@ -158,8 +155,8 @@ where
                 // if the timeout specifically and keep working, the routing activation may not be supported
                 debug!("Routing Activation Response received: {:?}", res);
                 match res {
-                    Ok(Message { payload, header: _ }) => {
-                        let crate::messages::Payload::RoutingActivationResponse(
+                    Ok(OwnedMessage { payload, header }) => {
+                        let crate::messages::OwnedPayload::RoutingActivationResponse(
                             RoutingActivationResponse {
                                 logical_address_tester,
                                 logical_address_of_doip_entity,
@@ -169,9 +166,12 @@ where
                             },
                         ) = payload
                         else {
-                            todo!(
-                                "Responded with something other than a routing activation response"
-                            );
+                            // Unreachable in practice: client_inner only forwards a
+                            // response whose payload type satisfies `is_response`, which
+                            // for a routing activation request means exactly
+                            // RoutingActivationResponse. Kept as defence in depth so a
+                            // future refactor degrades to an error, not a panic.
+                            return Err(Error::UnexpectedMessageType(header.payload_type));
                         };
                         info!("Routing Activation Response received:");
                         info!("  Logical Address Tester: {:04X}", logical_address_tester.0);
@@ -214,11 +214,10 @@ where
     ///
     /// # Errors
     /// Returns an [`Error`] if the socket cannot be re-bound
-    pub async fn reconnect(&mut self) -> Result<Option<Message>, Error> {
+    pub async fn reconnect(&mut self) -> Result<Option<OwnedMessage>, Error> {
         let _ = Self::bind_socket(&self.control_sender, &self.client_options).await?;
         trace!("Reconnected, checking for in-flight messages over 5 seconds");
-        let res =
-            tokio::time::timeout(Duration::from_millis(5000), self.update_receiver.recv()).await;
+        let res = tokio::time::timeout(Duration::from_secs(5), self.update_receiver.recv()).await;
         // Elapsed error handling, no response in flight
         let Ok(res) = res else {
             return Ok(None);
@@ -259,7 +258,7 @@ where
         address_type: AddressType,
         user_data: Vec<u8>,
     ) -> Result<(), Error> {
-        let message = Message::diagnostic_message(
+        let message = OwnedMessage::diagnostic_message(
             self.client_options.protocol_version,
             self.client_options.client_logical_address,
             match address_type {
@@ -289,7 +288,7 @@ where
     pub async fn receive_diagnostic_response(
         &mut self,
         timeout: Duration,
-    ) -> Result<Message, Error> {
+    ) -> Result<OwnedMessage, Error> {
         let (response, ctrl_msg) = ControlMessage::create_receive_diagnostic_response(timeout);
         self.control_sender
             .send(ctrl_msg)

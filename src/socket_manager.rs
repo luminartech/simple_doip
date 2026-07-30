@@ -8,10 +8,10 @@ use crate::{
     client::ClientOptions,
     connection,
     message_codec::MessageCodec,
-    messages::{Message, MessageError},
+    messages::{MessageError, OwnedMessage},
 };
 use futures::{SinkExt, StreamExt};
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, string::ToString};
 use tokio::{
     net::tcp::{OwnedReadHalf, OwnedWriteHalf},
     select,
@@ -23,12 +23,12 @@ use tracing::{debug, error, info, trace};
 /// 1-to-1 mapping of the socket manager to the client (currently)
 /// There is only one socket manager per client.
 #[derive(Debug)]
-pub struct SocketManager<Conn> {
+pub(crate) struct SocketManager<Conn> {
     /// Receiver used to receive messages from the socket
     /// This is the channel that the socket manager uses to send messages back up to the client
-    receiver: mpsc::Receiver<Result<Message, MessageError>>,
+    receiver: mpsc::Receiver<Result<OwnedMessage, MessageError>>,
     /// Sender used to send messages to the socket
-    sender: mpsc::Sender<Message>,
+    sender: mpsc::Sender<OwnedMessage>,
     local_port: u16,
     session_id: u16,
 
@@ -89,7 +89,7 @@ where
     ///
     /// # Errors
     /// Returns an [`Error::ConnectionClosed`] if the message cannot be sent
-    pub async fn send(&mut self, message: Message) -> Result<(), Error> {
+    pub async fn send(&mut self, message: OwnedMessage) -> Result<(), Error> {
         self.sender.send(message).await.map_err(|e| {
             error!("Failed to send message: {}", e);
             Error::ConnectionClosed
@@ -99,27 +99,8 @@ where
     }
 
     /// Receive a message from the receiver/Request channel
-    pub async fn receive(&mut self) -> Option<Result<Message, MessageError>> {
+    pub async fn receive(&mut self) -> Option<Result<OwnedMessage, MessageError>> {
         self.receiver.recv().await
-    }
-
-    /// Receive a message from the socket, returning `None` if the timeout elapses
-    ///
-    /// # Panics
-    /// Panics if the internal receiver channel is closed
-    pub async fn receive_timeout(
-        &mut self,
-        timeout: Duration,
-    ) -> Option<Result<Message, MessageError>> {
-        tokio::time::timeout(timeout, self.receiver.recv())
-            .await
-            .unwrap()
-    }
-
-    /// Return the current session ID
-    #[must_use]
-    pub fn session_id(&self) -> u16 {
-        self.session_id
     }
 
     /// Return the local TCP port this socket is bound to
@@ -147,8 +128,8 @@ where
 
     /// Spawn the socket loop to get messages from the socket
     fn spawn_socket_loop(
-        rx_tx: mpsc::Sender<Result<Message, MessageError>>,
-        mut tx_rx: mpsc::Receiver<Message>,
+        rx_tx: mpsc::Sender<Result<OwnedMessage, MessageError>>,
+        mut tx_rx: mpsc::Receiver<OwnedMessage>,
         mut socket_read_stream: FramedRead<OwnedReadHalf, MessageCodec>,
         mut socket_write_sink: FramedWrite<OwnedWriteHalf, MessageCodec>,
     ) {
@@ -161,8 +142,8 @@ where
                 select! {
                     () = tokio::time::sleep_until(last_activity + TCP_TIMEOUT_GENERAL_INACTIVITY) => {
                         info!("General inactivity timeout reached, closing socket");
-                        // TODO: Do we need to send an update message to update the connection state?
-                        // or should the connection state be located in the socket manager?
+                        // Breaking out of this loop drops the socket, which closes the
+                        // connection; callers observe that through the stream ending.
                         break;
                     }
                     // Once there is information in the Response/Read stream we'll do work on it
@@ -173,17 +154,30 @@ where
                             // Decoding the message can fail, so we handle that here
                             Some(Err(e)) => {
                                 last_activity = tokio::time::Instant::now();
-                                if let MessageError::Io(ref io_err) = e {
-                                    if io_err.kind() == std::io::ErrorKind::ConnectionReset {
-                                        info!(concat!("Connection reset by peer, closing socket\n", "{:?}"), io_err);
-                                        // The socket has been closed by the remote end, so we should exit
-                                        break;
+                                // Socket-level errors from the tokio layer arrive as
+                                // `MessageError::Std`, preserving OS error detail.
+                                // `MessageError::Io` is encode-side only (embedded-io
+                                // short writes) and is not expected on this RX path, but
+                                // is classified identically so the match stays honest.
+                                let reset = match &e {
+                                    MessageError::Std(io_err) => {
+                                        Some(io_err.kind() == std::io::ErrorKind::ConnectionReset)
                                     }
-                                    error!(concat!("{:?}\n",
-                                        "Check that you are not sending too many requests to the server.",
-                                        "The server may be closing the connection due to overload."
-                                    ), io_err);
-                                    // The socket has been closed by the remote end, so we should exit
+                                    MessageError::Io(kind) => {
+                                        Some(*kind == embedded_io::ErrorKind::ConnectionReset)
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(was_reset) = reset {
+                                    if was_reset {
+                                        info!("Connection reset by peer, closing socket: {e}");
+                                    } else {
+                                        error!(concat!("{}\n",
+                                            "Check that you are not sending too many requests to the server.",
+                                            "The server may be closing the connection due to overload."
+                                        ), e);
+                                    }
+                                    // Either way the socket is unusable; exit the read loop.
                                     break;
                                 }
                                 error!("Error decoding message: {:?}", e.to_string());

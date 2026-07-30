@@ -1,16 +1,19 @@
-use std::io::{Read, Write};
-
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use automotive_wire_codec::{read_u8, write_u8};
 
 use super::message_error::MessageError;
+use super::traits::{Decode, Encode};
 
 ///Identifies whether or not the vehicle is in diagnostic power mode and ready to perform reliable diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum DiagnosticPowerModeCode {
+    /// The vehicle is not currently able to perform reliable diagnostics.
     NotReady = 0x00,
+    /// The vehicle is ready to perform reliable diagnostics.
     Ready = 0x01,
+    /// This entity does not report power mode information.
     NotSupported = 0x02,
+    /// A power mode value outside the range this crate models.
     Reserved(u8),
 }
 
@@ -35,21 +38,32 @@ impl From<DiagnosticPowerModeCode> for u8 {
     }
 }
 
-impl DiagnosticPowerModeCode {
-    /// Deserialize a diagnostic power mode code from a byte stream
+impl<'a> Decode<'a> for DiagnosticPowerModeCode {
+    type Error = MessageError;
+
+    /// Deserialize a diagnostic power mode code from a byte slice
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be read
-    pub fn read<T: Read>(reader: &mut T) -> Result<Self, MessageError> {
-        Ok(reader.read_u8()?.into())
+    /// Returns [`MessageError::Incomplete`] if `buf` is too short
+    fn decode(buf: &'a [u8]) -> Result<(Self, &'a [u8]), MessageError> {
+        let (value, rest) = read_u8(buf)?;
+        Ok((value.into(), rest))
+    }
+}
+
+impl Encode for DiagnosticPowerModeCode {
+    type Error = MessageError;
+
+    fn encoded_size(&self) -> Result<usize, MessageError> {
+        Ok(1)
     }
 
-    /// Serialize this diagnostic power mode code to a byte stream
+    /// Serialize this diagnostic power mode code into `writer`
     ///
     /// # Errors
-    /// Returns [`MessageError::Io`] if the byte stream cannot be written
-    pub fn write<T: Write>(&self, writer: &mut T) -> Result<usize, MessageError> {
-        writer.write_u8((*self).into())?;
+    /// Returns [`MessageError::Io`] if the writer fails.
+    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+        write_u8(writer, (*self).into())?;
         Ok(1)
     }
 }
