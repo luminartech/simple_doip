@@ -137,6 +137,17 @@ fn is_transparently_handled_control(payload: &OwnedPayload) -> bool {
     matches!(payload, OwnedPayload::AliveCheckRequest)
 }
 
+/// How long to wait for the `DoIP` acknowledgement of a diagnostic message we
+/// have sent.
+///
+/// This is `A_DoIP_Diagnostic_Message`, the parameter ISO 13400-2 defines for
+/// the sender's wait on an ack/nack. It is deliberately *not*
+/// [`crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL`] (50 ms), which is the
+/// *entity's* budget for emitting that ack once it has received the message —
+/// using the entity's generation budget as the tester's wait made any ECU busy
+/// enough to answer in >50 ms (rebooting, erasing flash) look like a dead link.
+const ACK_TIMEOUT: std::time::Duration = crate::TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE;
+
 impl<Conn> Inner<Conn>
 where
     Conn: crate::connection::Connector + 'static + Send + Sync,
@@ -277,9 +288,7 @@ where
                 let send_result = self.send_to_socket(message).await;
                 if send_result.is_ok() {
                     // Set up to wait for ACK only
-                    self.await_response_deadline = Some(
-                        tokio::time::Instant::now() + crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL,
-                    );
+                    self.await_response_deadline = Some(tokio::time::Instant::now() + ACK_TIMEOUT);
                     self.active_request = Some(ControlMessage::AwaitAck(response));
                 } else if let Err(e) = send_result {
                     let _ = response.send(Err(e));
@@ -628,7 +637,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{ControlMessage, Inner, is_transparently_handled_control};
+    use super::{ACK_TIMEOUT, ControlMessage, Inner, is_transparently_handled_control};
     use crate::client::ClientOptions;
     use crate::connection::ConnectorSocket;
     use crate::messages::{DiagnosticAckCode, OwnedMessage, OwnedPayload, ProtocolVersion};
@@ -776,6 +785,17 @@ mod tests {
         );
         assert!(inner.active_request.is_none());
         assert!(inner.await_response_deadline.is_none());
+    }
+
+    #[test]
+    fn the_ack_wait_uses_the_iso_13400_ack_timeout() {
+        // The 50 ms `TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL` is the *entity's*
+        // budget for emitting an ack after receiving a diagnostic message, not
+        // the tester's budget for waiting on one. Waiting only 50 ms made every
+        // busy ECU look like a dead link. `A_DoIP_Diagnostic_Message` is the
+        // parameter that governs this wait.
+        assert_eq!(ACK_TIMEOUT, crate::TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE);
+        assert!(ACK_TIMEOUT > crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL);
     }
 
     #[test]
