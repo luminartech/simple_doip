@@ -148,6 +148,25 @@ fn is_transparently_handled_control(payload: &OwnedPayload) -> bool {
 /// enough to answer in >50 ms (rebooting, erasing flash) look like a dead link.
 const ACK_TIMEOUT: std::time::Duration = crate::TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE;
 
+/// Classify a frame taken from the socket manager's receive channel.
+///
+/// Only a closed channel (`None`) means the connection is gone: the socket loop
+/// in [`SocketManager`] breaks — dropping its sender — on EOF, on a connection
+/// reset, and on any other Io error. A `Some(Err(..))` is a frame that failed to
+/// *decode*; that loop forwards it and keeps reading, so the socket is still
+/// live. Collapsing both into [`Error::SocketClosedUnexpectedly`] made a single
+/// undecodable frame tear down a healthy connection and report a close that
+/// never happened.
+fn classify_socket_frame(
+    frame: Option<Result<OwnedMessage, MessageError>>,
+) -> Result<OwnedMessage, Error> {
+    match frame {
+        Some(Ok(message)) => Ok(message),
+        Some(Err(e)) => Err(Error::MessageError(e)),
+        None => Err(Error::SocketClosedUnexpectedly),
+    }
+}
+
 impl<Conn> Inner<Conn>
 where
     Conn: crate::connection::Connector + 'static + Send + Sync,
@@ -221,10 +240,7 @@ where
         socket_manager: &mut Option<SocketManager<Conn>>,
     ) -> Result<OwnedMessage, Error> {
         if let Some(receiver) = socket_manager {
-            match receiver.receive().await {
-                Some(message) => message.map_err(|_| Error::SocketClosedUnexpectedly),
-                None => Err(Error::SocketClosedUnexpectedly),
-            }
+            classify_socket_frame(receiver.receive().await)
         } else {
             // If we don't have a receiver, we should return a future that never resolves
             future::pending().await
@@ -566,6 +582,19 @@ where
                 }
                 false
             }
+            // A frame we could not decode is not a closed connection. The
+            // socket is still live and the response we are waiting for may
+            // still be coming, so keep the connection and the pending wait
+            // intact and let that wait's own deadline decide.
+            //
+            // TODO(ISO 13400-2 §7.1.5): answer this with a generic DoIP header
+            // negative ack, and close the socket only for the nack codes that
+            // require it. Part of the fuller spec coverage tracked alongside the
+            // 14229-2 session-layer work.
+            Err(Error::MessageError(e)) => {
+                debug!("Discarding an undecodable frame, connection left intact: {e:?}");
+                false
+            }
             Err(e) => {
                 debug!("Socket error, cleaning up connection: {:?}", e);
                 // Clean up the broken socket but keep the inner task running
@@ -655,10 +684,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{ACK_TIMEOUT, ControlMessage, Inner, is_transparently_handled_control};
+    use super::{
+        ACK_TIMEOUT, ControlMessage, Inner, classify_socket_frame, is_transparently_handled_control,
+    };
     use crate::client::ClientOptions;
     use crate::connection::ConnectorSocket;
-    use crate::messages::{DiagnosticAckCode, OwnedMessage, OwnedPayload, ProtocolVersion};
+    use crate::messages::{
+        DiagnosticAckCode, MessageError, OwnedMessage, OwnedPayload, PayloadType, ProtocolVersion,
+    };
     use crate::{Error, LogicalAddress, TCP_PORT};
     use alloc::vec;
     use tokio::sync::{mpsc, oneshot};
@@ -858,6 +891,93 @@ mod tests {
         // parameter that governs this wait.
         assert_eq!(ACK_TIMEOUT, crate::TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE);
         assert!(ACK_TIMEOUT > crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL);
+    }
+
+    #[test]
+    fn an_undecodable_frame_is_not_a_closed_socket() {
+        // The socket loop forwards non-Io decode errors and keeps running
+        // (`socket_manager.rs`), so collapsing them into
+        // `SocketClosedUnexpectedly` reports a close that never happened.
+        let frame = classify_socket_frame(Some(Err(MessageError::UnexpectedPayloadType(
+            PayloadType::VehicleAnnouncement,
+        ))));
+        assert!(
+            matches!(frame, Err(Error::MessageError(_))),
+            "a decode failure must surface as a message error, not a socket close"
+        );
+    }
+
+    #[test]
+    fn a_closed_receive_channel_is_a_closed_socket() {
+        // `None` means the socket loop exited — the only genuine close signal.
+        assert!(matches!(
+            classify_socket_frame(None),
+            Err(Error::SocketClosedUnexpectedly)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_decode_error_leaves_the_pending_wait_and_its_deadline_intact() {
+        let mut inner = inner();
+        let deadline = tokio::time::Instant::now() + core::time::Duration::from_secs(5);
+        inner.await_response_deadline = Some(deadline);
+        let (resp_tx, mut resp_rx) = oneshot::channel();
+        inner.active_request = Some(ControlMessage::AwaitResponse(
+            OwnedMessage::default(),
+            resp_tx,
+        ));
+
+        let terminate = inner
+            .process_received_message(Err(Error::MessageError(
+                MessageError::UnexpectedPayloadType(PayloadType::VehicleAnnouncement),
+            )))
+            .await;
+
+        assert!(!terminate, "loop must keep running");
+        assert!(
+            matches!(resp_rx.try_recv(), Err(oneshot::error::TryRecvError::Empty)),
+            "the pending wait must survive a frame we could not decode"
+        );
+        assert!(
+            matches!(
+                inner.active_request,
+                Some(ControlMessage::AwaitResponse(..))
+            ),
+            "must still be waiting for the real response"
+        );
+        // The connection-lost path clears this. Still set means we did not take
+        // it, so the real response can still arrive and the wait can still time
+        // out on its own schedule.
+        assert_eq!(
+            inner.await_response_deadline,
+            Some(deadline),
+            "an undecodable frame must not cancel the pending wait's deadline"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_real_socket_close_still_fails_the_pending_wait() {
+        // The behaviour the fix above must not regress.
+        let mut inner = inner();
+        inner.await_response_deadline =
+            Some(tokio::time::Instant::now() + core::time::Duration::from_secs(5));
+        let (resp_tx, resp_rx) = oneshot::channel();
+        inner.active_request = Some(ControlMessage::AwaitResponse(
+            OwnedMessage::default(),
+            resp_tx,
+        ));
+
+        let terminate = inner
+            .process_received_message(Err(Error::SocketClosedUnexpectedly))
+            .await;
+
+        assert!(!terminate, "the task stays alive so a reconnect can rebind");
+        assert!(matches!(
+            resp_rx.await,
+            Ok(Err(Error::SocketClosedUnexpectedly))
+        ));
+        assert!(inner.active_request.is_none());
+        assert!(inner.await_response_deadline.is_none());
     }
 
     #[test]
