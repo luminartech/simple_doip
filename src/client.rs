@@ -143,6 +143,12 @@ where
             .await
             .map_err(|_| Error::BindFailed("Connection task terminated unexpectedly".into()))?;
 
+        // The bind itself may have failed (e.g. connection refused while the
+        // ECU is still rebooting). Fail fast instead of sending a routing
+        // activation into an unbound socket, which only reports the misleading
+        // `SocketNotBound` from the activation step and hides the real cause.
+        let port = port?;
+
         // Automatically send a routing activation request if the client options specify it
         'routing: {
             if let Some(routing_activation_options) = client_options.routing_activation_options {
@@ -235,7 +241,7 @@ where
                 }
             }
         }
-        port
+        Ok(port)
     }
 
     /// Unbind the socket from the local address and port

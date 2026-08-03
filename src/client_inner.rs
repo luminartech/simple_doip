@@ -501,6 +501,31 @@ where
                             return true;
                         }
                     }
+                } else {
+                    // A request is active but it is not an AwaitResponse — in
+                    // practice an AwaitAck for a message we just sent. A
+                    // diagnostic response can overtake that ack: after a
+                    // reconnect the ECU answers the pre-reboot request on the
+                    // new socket while our post-reconnect TesterPresent is still
+                    // unacknowledged.
+                    //
+                    // `take_await_response` correctly restored the AwaitAck, but
+                    // falling through here without buffering silently discarded
+                    // the response. Buffer it for the next
+                    // ReceiveDiagnosticResponse, exactly as the
+                    // no-active-request path above does, and keep waiting for
+                    // the ack.
+                    if matches!(received_message.payload, OwnedPayload::DiagnosticMessage(_)) {
+                        debug!(
+                            "Buffering diagnostic response received while another request is active: {received_message:?}"
+                        );
+                        self.pending_diagnostic_response = Some(received_message);
+                    } else {
+                        trace!(
+                            "Ignoring {:?} received while another request is active",
+                            received_message.header.payload_type
+                        );
+                    }
                 }
                 false
             }
@@ -603,8 +628,155 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::is_transparently_handled_control;
-    use crate::messages::OwnedPayload;
+    use super::{ControlMessage, Inner, is_transparently_handled_control};
+    use crate::client::ClientOptions;
+    use crate::connection::ConnectorSocket;
+    use crate::messages::{DiagnosticAckCode, OwnedMessage, OwnedPayload, ProtocolVersion};
+    use crate::{LogicalAddress, TCP_PORT};
+    use alloc::vec;
+    use tokio::sync::{mpsc, oneshot};
+
+    const TESTER: LogicalAddress = LogicalAddress(0x0E00);
+    const ECU: LogicalAddress = LogicalAddress(0x4010);
+
+    fn options() -> ClientOptions {
+        ClientOptions {
+            server_address: (std::net::Ipv4Addr::LOCALHOST, TCP_PORT).into(),
+            server_logical_address: ECU,
+            server_physical_address: ECU,
+            client_address: std::net::Ipv4Addr::UNSPECIFIED.into(),
+            client_logical_address: TESTER,
+            protocol_version: ProtocolVersion::V2012,
+            routing_activation_options: None,
+        }
+    }
+
+    /// An `Inner` with no socket. The paths exercised here (diagnostic
+    /// messages and their acks) never touch the socket.
+    fn inner() -> Inner<ConnectorSocket> {
+        let (_control_sender, control_receiver) = mpsc::channel(16);
+        let (update_sender, _update_receiver) = mpsc::channel(16);
+        Inner {
+            client_options: options(),
+            control_receiver,
+            update_sender,
+            active_request: None,
+            await_response_deadline: None,
+            tcp_data_socket: None,
+            run: true,
+            pending_diagnostic_response: None,
+        }
+    }
+
+    /// `50 02 00 0A 01 F4` — a positive response to DiagnosticSessionControl
+    /// ProgrammingSession, as seen from the sensor.
+    fn programming_session_response() -> OwnedMessage {
+        OwnedMessage::diagnostic_message(
+            ProtocolVersion::V2012,
+            ECU,
+            TESTER,
+            vec![0x50, 0x02, 0x00, 0x0A, 0x01, 0xF4],
+        )
+    }
+
+    /// A positive ack for the TesterPresent (`3E 80`) we just sent.
+    fn tester_present_ack() -> OwnedMessage {
+        OwnedMessage::diagnostic_message_ack(
+            ProtocolVersion::V2012,
+            ECU,
+            TESTER,
+            DiagnosticAckCode::RoutingConfirmationAck,
+            vec![0x3E, 0x80],
+        )
+    }
+
+    #[tokio::test]
+    async fn response_overtaking_an_ack_is_buffered_not_dropped() {
+        // Regression: after a reconnect the ECU answers the pre-reboot request
+        // on the new socket while our post-reconnect TesterPresent is still
+        // unacknowledged. `take_await_response` restores the AwaitAck, but
+        // without the buffering branch the response was silently discarded.
+        // Both must survive.
+        let mut inner = inner();
+        let (ack_tx, mut ack_rx) = oneshot::channel();
+        inner.active_request = Some(ControlMessage::AwaitAck(ack_tx));
+
+        let terminate = inner
+            .process_received_message(Ok(programming_session_response()))
+            .await;
+
+        assert!(!terminate, "loop must keep running");
+        // `Empty` (sender alive, nothing sent) — NOT `Closed`, which is what a
+        // dropped oneshot produces and what the caller misreports as a
+        // connection close. `is_err()` alone would accept either.
+        assert!(
+            matches!(ack_rx.try_recv(), Err(oneshot::error::TryRecvError::Empty)),
+            "the AwaitAck oneshot must still be open, not resolved or dropped"
+        );
+        assert!(
+            matches!(inner.active_request, Some(ControlMessage::AwaitAck(_))),
+            "must still be waiting for the ack"
+        );
+        let buffered = inner
+            .pending_diagnostic_response
+            .expect("response must be buffered for the next receive");
+        let OwnedPayload::DiagnosticMessage(diag) = buffered.payload else {
+            panic!("expected a diagnostic message");
+        };
+        assert_eq!(diag.user_data, vec![0x50, 0x02, 0x00, 0x0A, 0x01, 0xF4]);
+    }
+
+    #[tokio::test]
+    async fn ack_arriving_during_a_response_wait_leaves_the_wait_intact() {
+        // Regression: `if let Some(AwaitAck(..)) = active_request.take()` took
+        // unconditionally, so an ack arriving while an AwaitResponse was
+        // pending dropped that response's oneshot. The code then logged
+        // "waiting for full response" with nothing left to answer, and the
+        // caller saw a spurious "connection closed".
+        let mut inner = inner();
+        let (resp_tx, mut resp_rx) = oneshot::channel();
+        inner.active_request = Some(ControlMessage::AwaitResponse(
+            OwnedMessage::default(),
+            resp_tx,
+        ));
+
+        let terminate = inner
+            .process_received_message(Ok(tester_present_ack()))
+            .await;
+
+        assert!(!terminate, "loop must keep running");
+        // `Empty`, not `Closed` — see the note in the test above.
+        assert!(
+            matches!(resp_rx.try_recv(), Err(oneshot::error::TryRecvError::Empty)),
+            "the AwaitResponse oneshot must still be open"
+        );
+        assert!(
+            matches!(
+                inner.active_request,
+                Some(ControlMessage::AwaitResponse(..))
+            ),
+            "must still be waiting for the response"
+        );
+    }
+
+    #[tokio::test]
+    async fn ack_still_completes_a_matching_send() {
+        // The behaviour the two fixes above must not regress.
+        let mut inner = inner();
+        let (ack_tx, ack_rx) = oneshot::channel();
+        inner.active_request = Some(ControlMessage::AwaitAck(ack_tx));
+
+        inner
+            .process_received_message(Ok(tester_present_ack()))
+            .await;
+
+        assert!(
+            matches!(ack_rx.await, Ok(Ok(()))),
+            "a matching ack must complete the send"
+        );
+        assert!(inner.active_request.is_none());
+        assert!(inner.await_response_deadline.is_none());
+    }
 
     #[test]
     fn alive_check_request_is_handled_in_band_not_surfaced() {
