@@ -398,6 +398,34 @@ where
         self.await_response_deadline = None;
     }
 
+    /// Fail the active request once its response deadline has elapsed.
+    ///
+    /// Extracted from the [`Inner::run`] select arm so it can be tested
+    /// directly. Behaviour is unchanged: every wait that can arm a deadline is
+    /// answered, and anything else is put back rather than dropped — dropping a
+    /// oneshot `Sender` reaches the caller as [`Error::ConnectionClosed`] (see
+    /// [`crate::client::Client::send_diagnostic_message`]), which reports a dead
+    /// link on a connection that is fine.
+    fn handle_deadline_elapsed(&mut self) {
+        debug!(
+            "Await response deadline reached, server did not respond, which may mean you will not receive Negative Response or message was suppressed"
+        );
+        match self.active_request.take() {
+            Some(ControlMessage::AwaitResponse(_, response)) => {
+                if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
+                    debug!("Failed to send suppressed response");
+                }
+            }
+            Some(ControlMessage::AwaitAck(response)) => {
+                if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
+                    debug!("Failed to send suppressed ack timeout");
+                }
+            }
+            other => self.active_request = other,
+        }
+        self.await_response_deadline = None;
+    }
+
     /// Process a message received from the socket. Returns `true` if the run loop should exit.
     async fn process_received_message(&mut self, message: Result<OwnedMessage, Error>) -> bool {
         match message {
@@ -568,6 +596,7 @@ where
             debug!("Starting DOIP processing loop");
             loop {
                 let mut socket_message: Option<Result<OwnedMessage, Error>> = None;
+                let mut deadline_elapsed = false;
                 let Self {
                     control_receiver,
                     tcp_data_socket,
@@ -583,21 +612,7 @@ where
                             tokio::time::sleep_until(deadline).await;
                         }
                     }, if active_request.is_some() && await_response_deadline.is_some() => {
-                        debug!("Await response deadline reached, server did not respond, which may mean you will not receive Negative Response or message was suppressed");
-                        match active_request.take() {
-                            Some(ControlMessage::AwaitResponse(_, response)) => {
-                                if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
-                                    debug!("Failed to send suppressed response");
-                                }
-                            }
-                            Some(ControlMessage::AwaitAck(response)) => {
-                                if response.send(Err(Error::ResponseTimeoutExceeded)).is_err() {
-                                    debug!("Failed to send suppressed ack timeout");
-                                }
-                            }
-                            other => *active_request = other,
-                        }
-                        *await_response_deadline = None;
+                        deadline_elapsed = true;
                     }
                     // Receive a control message
                     ctrl_opt = control_receiver.recv() => {
@@ -624,6 +639,9 @@ where
                         socket_message = Some(message);
                     }
                 }
+                if deadline_elapsed {
+                    self.handle_deadline_elapsed();
+                }
                 if let Some(msg) = socket_message
                     && self.process_received_message(msg).await
                 {
@@ -641,7 +659,7 @@ mod tests {
     use crate::client::ClientOptions;
     use crate::connection::ConnectorSocket;
     use crate::messages::{DiagnosticAckCode, OwnedMessage, OwnedPayload, ProtocolVersion};
-    use crate::{LogicalAddress, TCP_PORT};
+    use crate::{Error, LogicalAddress, TCP_PORT};
     use alloc::vec;
     use tokio::sync::{mpsc, oneshot};
 
@@ -783,6 +801,50 @@ mod tests {
             matches!(ack_rx.await, Ok(Ok(()))),
             "a matching ack must complete the send"
         );
+        assert!(inner.active_request.is_none());
+        assert!(inner.await_response_deadline.is_none());
+    }
+
+    #[tokio::test]
+    async fn an_unacked_send_times_out_rather_than_looking_like_a_closed_connection() {
+        // Regression: the deadline arm ran `active_request.take()` before
+        // matching `AwaitResponse`, so an `AwaitAck` whose deadline elapsed was
+        // taken and dropped along with its oneshot. `send_diagnostic_message`
+        // maps a closed oneshot to `Error::ConnectionClosed`, which uds_on_ip
+        // classifies as a connection error and reconnects — on a link that was
+        // merely slow to acknowledge.
+        let mut inner = inner();
+        let (ack_tx, ack_rx) = oneshot::channel();
+        inner.active_request = Some(ControlMessage::AwaitAck(ack_tx));
+        inner.await_response_deadline = Some(tokio::time::Instant::now());
+
+        inner.handle_deadline_elapsed();
+
+        assert!(
+            matches!(ack_rx.await, Ok(Err(Error::ResponseTimeoutExceeded))),
+            "an unacknowledged send must report a timeout, not a closed connection"
+        );
+        assert!(inner.active_request.is_none());
+        assert!(inner.await_response_deadline.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_response_wait_still_times_out_on_its_deadline() {
+        // The behaviour the fix above must not regress.
+        let mut inner = inner();
+        let (resp_tx, resp_rx) = oneshot::channel();
+        inner.active_request = Some(ControlMessage::AwaitResponse(
+            OwnedMessage::default(),
+            resp_tx,
+        ));
+        inner.await_response_deadline = Some(tokio::time::Instant::now());
+
+        inner.handle_deadline_elapsed();
+
+        assert!(matches!(
+            resp_rx.await,
+            Ok(Err(Error::ResponseTimeoutExceeded))
+        ));
         assert!(inner.active_request.is_none());
         assert!(inner.await_response_deadline.is_none());
     }
