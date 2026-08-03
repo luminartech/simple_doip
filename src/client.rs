@@ -82,6 +82,29 @@ pub struct Client<Conn = connection::ConnectorSocket> {
     _phantom: std::marker::PhantomData<Conn>,
 }
 
+/// Discard update-channel frames left over from a connection that has dropped.
+///
+/// Returns the number of frames discarded.
+///
+/// Deliberately **not** `async`: draining must never wait. See
+/// [`Client::reconnect`] for why waiting here is actively harmful. Keeping this
+/// synchronous means it structurally cannot block on the channel.
+///
+/// Frames are drained even once the sender has been dropped — `try_recv` yields
+/// buffered frames before reporting `Disconnected` — so a closed-but-populated
+/// channel is still emptied, and a closed-and-empty one terminates rather than
+/// spinning.
+fn discard_stale_frames(
+    receiver: &mut mpsc::Receiver<Result<OwnedMessage, MessageError>>,
+) -> usize {
+    let mut stale = 0usize;
+    while let Ok(msg) = receiver.try_recv() {
+        stale += 1;
+        trace!("Discarding stale frame from the previous connection: {msg:?}");
+    }
+    stale
+}
+
 impl<Conn> Client<Conn>
 where
     Conn: connection::Connector + 'static + Sync + Send,
@@ -228,24 +251,51 @@ where
         response.await.unwrap()
     }
 
-    /// Returns an Option of a Response if there was one in flight when the client or server disconnected
+    /// Re-bind the socket (and re-send routing activation) after a connection loss.
+    ///
+    /// Returns as soon as the new connection is established. The returned
+    /// `Option` is always `None`; see below.
+    ///
+    /// # Why this does not wait for an in-flight response
+    ///
+    /// This used to block for a fixed 5 seconds on the update channel, hoping
+    /// to surface a response that was in flight when the link dropped. That
+    /// wait could never do its job:
+    ///
+    /// * A genuine in-flight `DiagnosticMessage` never reaches the update
+    ///   channel. `Inner` buffers it into `pending_diagnostic_response` and
+    ///   hands it to the next `ReceiveDiagnosticResponse`, so the caller's own
+    ///   response wait already collects it.
+    /// * The only frames that *can* reach the update channel are non-diagnostic
+    ///   control frames, and callers uniformly reject those (`uds_on_ip` fails
+    ///   with "Expected DiagnosticMessage, got ..."). Returning one is worse
+    ///   than returning nothing.
+    ///
+    /// So the wait's only reachable outcome was to burn 5 seconds and return
+    /// `None`. That is fatal here: 5 seconds is the ISO 14229 default S3
+    /// session timer, so a reconnect mid-sequence would routinely let the ECU
+    /// fall back to the default session before the tester could speak again.
+    ///
+    /// Returning immediately with `None` is both faster and more correct — it
+    /// is the path callers already handle by re-sending the request.
+    ///
+    /// The channel is still drained non-blockingly: it is bounded, and stale
+    /// frames from the dead connection would otherwise accumulate and
+    /// eventually stall `Inner`'s send.
     ///
     /// # Errors
     /// Returns an [`Error`] if the socket cannot be re-bound
     pub async fn reconnect(&mut self) -> Result<Option<OwnedMessage>, Error> {
         let _ = Self::bind_socket(&self.control_sender, &self.client_options).await?;
-        trace!("Reconnected, checking for in-flight messages over 5 seconds");
-        let res = tokio::time::timeout(Duration::from_secs(5), self.update_receiver.recv()).await;
-        // Elapsed error handling, no response in flight
-        let Ok(res) = res else {
-            return Ok(None);
-        };
-        let Some(msg_res) = res else {
-            return Ok(None);
-        };
-        let Ok(msg) = msg_res else { return Ok(None) };
-        debug!("Reconnected, received in-flight message: {:?}", msg);
-        Ok(Some(msg))
+
+        let stale = discard_stale_frames(&mut self.update_receiver);
+        if stale > 0 {
+            debug!("Reconnected, discarded {stale} stale frame(s)");
+        } else {
+            trace!("Reconnected, no stale frames pending");
+        }
+
+        Ok(None)
     }
 
     /// Shut down the client, closing the connection and cleaning up resources
@@ -313,5 +363,58 @@ where
             .await
             .map_err(|e| Error::SendError(e.to_string()))?;
         response.await.map_err(|_| Error::ConnectionClosed)?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::discard_stale_frames;
+    use crate::messages::{MessageError, OwnedMessage};
+    use tokio::sync::mpsc;
+
+    type Frame = Result<OwnedMessage, MessageError>;
+
+    fn channel() -> (mpsc::Sender<Frame>, mpsc::Receiver<Frame>) {
+        mpsc::channel(16)
+    }
+
+    #[test]
+    fn empty_channel_discards_nothing() {
+        let (_sender, mut receiver) = channel();
+        assert_eq!(discard_stale_frames(&mut receiver), 0);
+    }
+
+    #[tokio::test]
+    async fn queued_frames_are_all_discarded_and_channel_left_empty() {
+        let (sender, mut receiver) = channel();
+        for _ in 0..3 {
+            sender.send(Ok(OwnedMessage::default())).await.unwrap();
+        }
+
+        assert_eq!(discard_stale_frames(&mut receiver), 3);
+        // Nothing left behind for a later receive to mistake for a live response.
+        assert_eq!(discard_stale_frames(&mut receiver), 0);
+    }
+
+    #[tokio::test]
+    async fn frames_are_drained_even_after_the_sender_is_dropped() {
+        // `reconnect()` runs after a connection has died, so the inner task may
+        // already be gone. Buffered frames must still be cleared rather than
+        // the drain bailing out on the first `Disconnected`.
+        let (sender, mut receiver) = channel();
+        sender.send(Ok(OwnedMessage::default())).await.unwrap();
+        sender.send(Ok(OwnedMessage::default())).await.unwrap();
+        drop(sender);
+
+        assert_eq!(discard_stale_frames(&mut receiver), 2);
+    }
+
+    #[test]
+    fn closed_empty_channel_terminates() {
+        // Guards against rewriting the drain in terms of a blocking `recv`,
+        // which would hang (or spin) instead of returning here.
+        let (sender, mut receiver) = channel();
+        drop(sender);
+        assert_eq!(discard_stale_frames(&mut receiver), 0);
     }
 }
