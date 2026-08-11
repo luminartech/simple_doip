@@ -1,6 +1,6 @@
 [package]
 name = "simple_doip"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 rust-version = "1.88"
 description = "An ISO 13400-2 (DoIP) implementation with a no_std, zero-copy protocol core and optional async client and server"
