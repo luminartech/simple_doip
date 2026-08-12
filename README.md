@@ -18,17 +18,27 @@ gaps a new integrator should know about before relying on them:
 - **No TLS.** Connections are established in the clear on `TCP_PORT`
   (`13400`); `TCP_TLS_PORT` (`3496`) is defined per ISO 13400-2 but nothing in
   this crate uses it.
-- **No UDP vehicle announcement / discovery.** The server does not send the
-  UDP vehicle-announcement broadcast on startup, nor answer vehicle
-  identification requests over UDP.
-- **The server accepts one TCP connection at a time.** `Server::run_server`'s
-  accept loop awaits each client's connection handling to completion before
-  calling `accept()` again, so a second client cannot connect while the first
-  is still being served.
+- **No unsolicited UDP vehicle announcement.** The server never sends the UDP
+  vehicle-announcement broadcast on startup, so a tester learns of an entity
+  only by asking. Vehicle identification requests over UDP *are* answered, but
+  only by `Server::run_udp_responder`, on a `UdpSocket` the caller bound and
+  drives: `run_server` binds TCP alone, so an entity that starts through it
+  and nothing else is invisible to a discovery probe. `run_udp_responder`
+  answers the broadcast request form (`0x0001`) only; the directed
+  with-EID (`0x0002`) and with-VIN (`0x0003`) forms are declined, because
+  `Payload::decode` discards the EID/VIN bytes and the responder cannot tell
+  whether it is the addressee.
+- **The server accepts one TCP connection at a time.** The accept loop in
+  `Server::run_server_with_listener` (which `Server::run_server` delegates to)
+  awaits each client's connection handling to completion before calling
+  `accept()` again, so a second client cannot connect while the first is still
+  being served — and one tester that connects and then stalls wedges that
+  entity until it disconnects.
 - **Entity status requests and vehicle identification requests over TCP are
   silently dropped.** `Server::handle_client_message` logs a warning and sends
   no reply for either, so a tester that asks gets silence rather than an error
-  or a negative response.
+  or a negative response. Identification requests are answered on the UDP path
+  only.
 - **A `DiagnosticMessage` arriving while the client is waiting for an ACK is
   silently discarded.** After `Client::send_diagnostic_message`, the inner
   client is in its `AwaitAck` state; a `DiagnosticMessage` that arrives before
@@ -41,11 +51,10 @@ gaps a new integrator should know about before relying on them:
 - **`ClientConnectionInfo::logical_address` is always `0x0000`.** The server
   does not yet track per-connection logical addresses, so this field is a
   placeholder rather than the client's real address.
-- The handler passed to `Server::new` is not validated, and a failed
-  `accept()` currently panics the server task rather than being handled.
+- The handler passed to `Server::new` is not validated.
 
 None of this blocks bare-metal or single-client use; it matters if you need
-concurrent clients, discovery, or TLS today.
+concurrent clients, unsolicited announcement, or TLS today.
 
 ## Quickstart
 
@@ -122,9 +131,14 @@ cargo test --features client,server
   `TCP_PORT` (`13400`), returning `Error::InvalidPort` — pointing a client at a
   non-standard port requires your own `Connector` implementation.
 
-  `echo_server` answers a diagnostic message with a positive acknowledgement
-  that carries the received bytes back in its previous-message-data field; see
-  the single-response handler limitation under [Status](#status).
+  `echo_server` answers a diagnostic message the way DoIP prescribes: first a
+  positive acknowledgement carrying the received bytes back in its
+  previous-message-data field, then the echo itself as a separate
+  `DiagnosticMessage`. Both are written into the `ResponseWriter` the handler
+  is given, which is the shape a real UDS response takes.
+
+  `echo_server` calls `run_server`, so it serves TCP only and does not answer
+  UDP discovery probes; see `Server::run_udp_responder` for that half.
 
 ## Relationship to `automotive-wire-codec`
 

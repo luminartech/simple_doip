@@ -6,7 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 While the crate is at `0.x`, the minor position carries breaking changes.
 
-## 0.4.0
+This changelog begins at 0.4.0. Releases 0.1.0 through 0.3.x predate it and have
+no entries here; their absence records only that nothing was written down, not
+that nothing changed. Consult the git history for those.
+
+## 0.4.0 - 2026-08-12
 
 The release that makes `simple_doip::server` able to drive a real UDS tester: a
 handler can now emit the `DiagnosticMessageAck` and the UDS response as separate
