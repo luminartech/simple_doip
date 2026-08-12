@@ -44,8 +44,15 @@ and answer UDP discovery.
 
 ### Fixed
 
-- The TCP accept loop no longer panics on an accept error; it logs and
-  continues.
+- The TCP accept loop no longer panics on an accept error; it logs, waits
+  100 ms, and continues. The delay matters because not every accept error is
+  transient: descriptor exhaustion (EMFILE/ENFILE) persists until an unrelated
+  descriptor is released, and retrying it without a pause would peg a core and
+  emit an unbounded error log. The UDP receive loop backs off the same way.
+- Routine UDP traffic — a datagram whose payload type this responder does not
+  serve, and a directed identification request it declines — now logs at
+  `debug` rather than `warn`. On an entity bound to `0.0.0.0` with a tester
+  doing directed discovery, both are expected traffic, not warnings.
 - `TCP_NODELAY` is now set on accepted connections. `ConnectorSocket` already
   set it client-side, but an accepted socket did not, so consecutive small
   frames — an ack then a response, or successive NRC `0x78` pendings — waited

@@ -306,8 +306,10 @@ where
     /// nothing logs that fact, because no datagram is ever received.
     ///
     /// Discovery lives in [`run_udp_responder`](Self::run_udp_responder), on a
-    /// socket the caller binds. Both methods take `&self` and neither returns,
-    /// so compose them on one `Server`:
+    /// socket the caller binds. Both methods take `&self`, and neither
+    /// completes normally — this method can still return early if the bind
+    /// fails, per the `# Errors` section below — so compose them on one
+    /// `Server`:
     ///
     /// ```
     /// # use simple_doip::{Error, UDP_DISCOVERY_PORT, server::{Server, ServerConnectionHandler}};
