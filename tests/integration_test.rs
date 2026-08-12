@@ -215,16 +215,6 @@ where
             let Ok((stream, peer_addr)) = listener.accept().await else {
                 break;
             };
-            // Disable Nagle on the server side. `ConnectorSocket` already does this for
-            // the client (`src/connection.rs`), but nothing does it for an accepted
-            // connection, so consecutive small responses stall on the tester's delayed
-            // ACK - measured at ~40ms between two 5-byte writes on loopback. That is a
-            // transport artifact with nothing to say about handler behavior, and it
-            // would otherwise swamp the sub-50ms timings
-            // `handler_holds_pending_wait_open_between_sends` asserts on. Setting it here
-            // rather than in `src/` keeps this a test-only change; whether `run_server`
-            // itself should set it is a separate question about live P2 timing.
-            let _ = stream.set_nodelay(true);
             // Await the connection inline, sequentially, matching `run_server`'s
             // control flow. `run_server` logs a handler error and keeps accepting;
             // mirror that by discarding the error here.
@@ -1068,6 +1058,78 @@ async fn handler_can_emit_ack_then_response() {
 
     accept_loop.abort();
     let _ = accept_loop.await;
+}
+
+/// A caller must be able to hand the server a listener it bound itself, instead of being
+/// forced onto `0.0.0.0:13400`.
+#[tokio::test]
+async fn run_server_with_listener_serves_a_caller_bound_socket() {
+    // A caller-bound listener is how the sim reaches port 13400 on a loopback
+    // alias, and how tests get an ephemeral port they can run in parallel on.
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind ephemeral port");
+    let addr = listener.local_addr().expect("read local addr");
+
+    let server = Server::new(AckThenRespondHandler).expect("construct server");
+    let _task = tokio::spawn(async move {
+        let _ = server.run_server_with_listener(listener).await;
+    });
+
+    let mut stream = with_timeout("connect", TcpStream::connect(addr))
+        .await
+        .expect("connect to caller-bound server");
+    let (rx, tx) = stream.split();
+    let mut reader = FramedRead::new(rx, MessageCodec::new());
+    let mut writer = FramedWrite::new(tx, MessageCodec::new());
+    send_routing_activation(&mut writer, CLIENT_LOGICAL_ADDRESS).await;
+    let activation = read_message(&mut reader).await;
+    assert!(matches!(
+        activation.payload,
+        OwnedPayload::RoutingActivationResponse(_)
+    ));
+}
+
+/// The accept loop must survive clients that come and go without saying anything.
+///
+/// Note the limit of this test: it exercises the loop's resilience across many
+/// connections, NOT the `Err` branch of `accept()` itself. Provoking a real accept
+/// failure means exhausting the process's file descriptors, which is not something a
+/// test in this suite can do without destabilizing every other test in the binary. The
+/// no-panic-on-accept-error change therefore remains unverified by automated test; this
+/// covers only that the loop keeps serving after connections churn.
+#[tokio::test]
+async fn server_keeps_accepting_after_clients_disconnect_abruptly() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind ephemeral port");
+    let addr = listener.local_addr().expect("read local addr");
+    let server = Server::new(AckThenRespondHandler).expect("construct server");
+    let _task = tokio::spawn(async move {
+        let _ = server.run_server_with_listener(listener).await;
+    });
+
+    // Connect and drop without saying anything, several times over.
+    for _ in 0..5 {
+        let stream = with_timeout("connect", TcpStream::connect(addr))
+            .await
+            .expect("connect");
+        drop(stream);
+    }
+
+    // The entity must still serve a well-behaved client afterwards.
+    let mut stream = with_timeout("connect", TcpStream::connect(addr))
+        .await
+        .expect("connect after churn");
+    let (rx, tx) = stream.split();
+    let mut reader = FramedRead::new(rx, MessageCodec::new());
+    let mut writer = FramedWrite::new(tx, MessageCodec::new());
+    send_routing_activation(&mut writer, CLIENT_LOGICAL_ADDRESS).await;
+    let activation = read_message(&mut reader).await;
+    assert!(matches!(
+        activation.payload,
+        OwnedPayload::RoutingActivationResponse(_)
+    ));
 }
 
 /// A handler that emits two NRC `0x78` "response pending" messages with a real delay

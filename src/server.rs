@@ -274,17 +274,29 @@ where
         })
     }
 
-    /// Start listening for incoming `DoIP` TCP connections
+    /// Start listening for incoming `DoIP` TCP connections on the standard
+    /// [`TCP_PORT`] across all interfaces.
     ///
     /// # Errors
-    /// Returns an [`Error`] if the TCP listener cannot be bound
-    ///
-    /// # Panics
-    /// Panics if accepting a new TCP client connection fails
+    /// Returns an [`Error`] if the TCP listener cannot be bound.
     pub async fn run_server(&self) -> Result<(), Error> {
         // TODO: Vehicle Announcement over UDP
 
         let tcp_listener = TcpListener::bind(("0.0.0.0", TCP_PORT)).await?;
+        self.run_server_with_listener(tcp_listener).await
+    }
+
+    /// Serve connections from a listener the caller already bound.
+    ///
+    /// Lets the caller choose the interface and port — a loopback alias such as
+    /// `127.0.0.2:13400` so several entities coexist on one host, or port `0`
+    /// for an OS-assigned port the caller reads back with
+    /// [`TcpListener::local_addr`] before calling this.
+    ///
+    /// # Errors
+    /// Returns an [`Error`] only if a connection handler fails fatally; accept
+    /// errors are logged and the loop continues.
+    pub async fn run_server_with_listener(&self, tcp_listener: TcpListener) -> Result<(), Error> {
         loop {
             match tcp_listener.accept().await {
                 Ok((tcp_stream, client_socket_addr)) => {
@@ -296,8 +308,11 @@ where
                     }
                 }
                 Err(accept_error) => {
-                    // TODO: Don't panic here, this might happen
-                    panic!("Failed to accept new TCP client: {accept_error}");
+                    // Transient conditions (EMFILE, a peer resetting between
+                    // the SYN and our accept) must not take the entity down —
+                    // a simulator that aborts here turns a client bug into an
+                    // opaque transport failure.
+                    error!("Failed to accept TCP client, continuing: {accept_error}");
                 }
             }
         }
@@ -313,6 +328,19 @@ where
         tcp_stream: TcpStream,
     ) -> Result<(), Error> {
         let _active_connection_guard = ActiveConnectionGuard::new(&self.active_connections);
+
+        // Diagnostics are a request/response conversation of small frames: an
+        // ack, then a response, then often several NRC 0x78 pendings. With
+        // Nagle enabled the second small write waits on the peer's delayed
+        // ACK of the first — up to ~40ms per exchange, straight out of the P2
+        // budget. `ConnectorSocket` already disables it on the client side
+        // (`connection.rs`); an accepted socket needs the same treatment.
+        // A failure here is not fatal: the connection still works, just with
+        // worse latency, so log and carry on rather than dropping the tester.
+        if let Err(nodelay_error) = tcp_stream.set_nodelay(true) {
+            warn!("Failed to set TCP_NODELAY for {client_socket_addr}: {nodelay_error}");
+        }
+
         let (rx, tx) = tcp_stream.into_split();
         let mut read_stream = FramedRead::new(rx, MessageCodec::new());
         let mut write_sink = FramedWrite::new(tx, MessageCodec::new());
