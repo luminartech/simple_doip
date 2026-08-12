@@ -30,7 +30,7 @@ use tokio::{
     time::sleep,
 };
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 /// How long a socket loop waits before retrying after a non-fatal error.
 ///
@@ -467,7 +467,11 @@ where
             };
 
             if !matches!(message.payload, Payload::VehicleIdentificationRequest) {
-                warn!(
+                // Routine, not a fault: on `0.0.0.0:13400` this socket sees
+                // every DoIP datagram on the network, most of which this
+                // responder is not the addressee for. Warning about them would
+                // make a healthy entity look broken.
+                debug!(
                     "Unsupported UDP payload type {:?} from {peer}, ignoring",
                     message.header.payload_type
                 );
@@ -483,7 +487,10 @@ where
                 message.header.payload_type,
                 PayloadType::VehicleIdentificationRequest
             ) {
-                warn!(
+                // Also routine: a tester doing directed discovery on a live
+                // network sends these as a matter of course, and declining is
+                // the designed behavior rather than a problem to report.
+                debug!(
                     "Ignoring directed identification request {:?} from {peer}: this crate \
                      cannot match the EID/VIN it names",
                     message.header.payload_type
