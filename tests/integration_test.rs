@@ -62,6 +62,28 @@ async fn with_timeout<F: std::future::Future>(context: &str, fut: F) -> F::Outpu
         .unwrap_or_else(|_| panic!("timed out waiting for: {context}"))
 }
 
+/// Send the positive `DiagnosticMessageAck` that ISO 13400 requires before any UDS
+/// response, addressed from this entity back to the requesting tester and echoing the
+/// request's bytes.
+///
+/// Every handler below needs this exact ack and differs only in what it does *after*
+/// it, so it lives here once instead of being re-derived (and re-mistyped) per handler.
+async fn send_positive_ack(
+    handler: &impl ServerConnectionHandler,
+    message: &DiagnosticMessage<'_>,
+    responses: &mut dyn ResponseWriter,
+) -> Result<(), Error> {
+    responses
+        .send(OwnedMessage::diagnostic_message_ack(
+            handler.protocol_version(),
+            handler.get_logical_address(),
+            message.source_address,
+            DiagnosticAckCode::RoutingConfirmationAck,
+            message.user_data.to_vec(),
+        ))
+        .await
+}
+
 /// Test [`ServerConnectionHandler`]. Always accepts routing activation and positively
 /// acknowledges diagnostic messages, recording the last diagnostic payload it received
 /// so tests can assert on it (the [`Client`] facade only surfaces ack success/failure,
@@ -111,15 +133,7 @@ impl ServerConnectionHandler for TestHandler {
         responses: &mut dyn ResponseWriter,
     ) -> Result<(), Error> {
         *self.last_diagnostic_payload.lock().unwrap() = Some(message.user_data.to_vec());
-        responses
-            .send(OwnedMessage::diagnostic_message_ack(
-                self.protocol_version(),
-                message.source_address,
-                message.target_address,
-                DiagnosticAckCode::RoutingConfirmationAck,
-                message.user_data.to_vec(),
-            ))
-            .await
+        send_positive_ack(self, message, responses).await
     }
 }
 
@@ -545,15 +559,7 @@ impl ServerConnectionHandler for MisbehavingHandler {
         message: &DiagnosticMessage<'_>,
         responses: &mut dyn ResponseWriter,
     ) -> Result<(), Error> {
-        responses
-            .send(OwnedMessage::diagnostic_message_ack(
-                self.protocol_version(),
-                message.source_address,
-                message.target_address,
-                DiagnosticAckCode::RoutingConfirmationAck,
-                message.user_data.to_vec(),
-            ))
-            .await
+        send_positive_ack(self, message, responses).await
     }
 }
 
@@ -649,15 +655,7 @@ impl ServerConnectionHandler for DenyingRoutingHandler {
         message: &DiagnosticMessage<'_>,
         responses: &mut dyn ResponseWriter,
     ) -> Result<(), Error> {
-        responses
-            .send(OwnedMessage::diagnostic_message_ack(
-                self.protocol_version(),
-                message.source_address,
-                message.target_address,
-                DiagnosticAckCode::RoutingConfirmationAck,
-                message.user_data.to_vec(),
-            ))
-            .await
+        send_positive_ack(self, message, responses).await
     }
 }
 
@@ -753,15 +751,7 @@ impl ServerConnectionHandler for NackingRoutingHandler {
         message: &DiagnosticMessage<'_>,
         responses: &mut dyn ResponseWriter,
     ) -> Result<(), Error> {
-        responses
-            .send(OwnedMessage::diagnostic_message_ack(
-                self.protocol_version(),
-                message.source_address,
-                message.target_address,
-                DiagnosticAckCode::RoutingConfirmationAck,
-                message.user_data.to_vec(),
-            ))
-            .await
+        send_positive_ack(self, message, responses).await
     }
 }
 
@@ -1020,15 +1010,7 @@ impl ServerConnectionHandler for AckThenRespondHandler {
         message: &DiagnosticMessage<'_>,
         responses: &mut dyn ResponseWriter,
     ) -> Result<(), Error> {
-        responses
-            .send(OwnedMessage::diagnostic_message_ack(
-                self.protocol_version(),
-                self.get_logical_address(),
-                message.source_address,
-                DiagnosticAckCode::RoutingConfirmationAck,
-                Vec::new(),
-            ))
-            .await?;
+        send_positive_ack(self, message, responses).await?;
         responses
             .send(OwnedMessage::diagnostic_message(
                 self.protocol_version(),
@@ -1076,4 +1058,134 @@ async fn handler_can_emit_ack_then_response() {
 
     accept_loop.abort();
     let _ = accept_loop.await;
+}
+
+/// A handler that emits two NRC `0x78` "response pending" messages with a real delay
+/// between them, then the final positive response. The delay is what distinguishes a
+/// held pending wait from a burst: a client that mishandles P2* timing sees the gap,
+/// whereas back-to-back writes hide it.
+struct HeldPendingHandler;
+
+#[async_trait]
+impl ServerConnectionHandler for HeldPendingHandler {
+    fn get_vin(&self) -> [u8; 17] {
+        [0x00; 17]
+    }
+
+    fn get_logical_address(&self) -> LogicalAddress {
+        SERVER_LOGICAL_ADDRESS
+    }
+
+    fn get_entity_id(&self) -> [u8; 6] {
+        [0x00; 6]
+    }
+
+    fn get_group_id(&self) -> Option<[u8; 6]> {
+        None
+    }
+
+    async fn routing_activation(
+        &self,
+        request: &RoutingActivationRequest,
+    ) -> Result<OwnedMessage, Error> {
+        Ok(OwnedMessage::routing_activation_response(
+            self.protocol_version(),
+            request.source_address,
+            self.get_logical_address(),
+            RoutingActivationResponseCode::RoutingSuccessfullyActivated,
+            [0; 4],
+            None,
+        ))
+    }
+
+    async fn diagnostic_message(
+        &self,
+        message: &DiagnosticMessage<'_>,
+        responses: &mut dyn ResponseWriter,
+    ) -> Result<(), Error> {
+        send_positive_ack(self, message, responses).await?;
+
+        for _ in 0..2 {
+            responses
+                .send(OwnedMessage::diagnostic_message(
+                    self.protocol_version(),
+                    self.get_logical_address(),
+                    message.source_address,
+                    // 0x7F <requested SID> 0x78 = requestCorrectlyReceived-ResponsePending
+                    vec![0x7F, 0x22, 0x78],
+                ))
+                .await?;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        responses
+            .send(OwnedMessage::diagnostic_message(
+                self.protocol_version(),
+                self.get_logical_address(),
+                message.source_address,
+                vec![0x62, 0xFD, 0x69, 0xAA],
+            ))
+            .await?;
+        Ok(())
+    }
+}
+
+/// A handler must be able to hold a pending wait open: emit an NRC `0x78`, await real
+/// work, then emit more, with the tester observing the delay on the wire.
+///
+/// This is the requirement that ruled out returning a `Vec<OwnedMessage>` from
+/// `diagnostic_message`: a batch return drains back-to-back once the handler has already
+/// finished, so the elapsed-time assertion below would be unsatisfiable. The test is
+/// therefore an executable guard on the [`ResponseWriter`] sink design, not a red-green
+/// cycle - it is expected to pass as written, and to fail loudly if the sink is ever
+/// replaced by a batched return.
+#[tokio::test]
+async fn handler_holds_pending_wait_open_between_sends() {
+    let (server_addr, _accept_loop) = start_server_with(HeldPendingHandler).await;
+    let mut stream = with_timeout("connect", TcpStream::connect(server_addr))
+        .await
+        .expect("connect to test server");
+    let (rx, tx) = stream.split();
+    let mut reader = FramedRead::new(rx, MessageCodec::new());
+    let mut writer = FramedWrite::new(tx, MessageCodec::new());
+
+    send_routing_activation(&mut writer, CLIENT_LOGICAL_ADDRESS).await;
+    let _activation = read_message(&mut reader).await;
+
+    let started = std::time::Instant::now();
+    send_diagnostic_message(&mut writer, CLIENT_LOGICAL_ADDRESS, &[0x22, 0xFD, 0x69]).await;
+
+    let ack = read_message(&mut reader).await;
+    assert!(matches!(ack.payload, OwnedPayload::DiagnosticMessageAck(_)));
+
+    for index in 0..2 {
+        let pending = read_message(&mut reader).await;
+        match pending.payload {
+            OwnedPayload::DiagnosticMessage(ref diag) => {
+                assert_eq!(
+                    diag.user_data,
+                    vec![0x7F, 0x22, 0x78],
+                    "message {index} should be an NRC 0x78 pending"
+                );
+            }
+            other => panic!("expected pending DiagnosticMessage, got {other:?}"),
+        }
+    }
+
+    let final_response = read_message(&mut reader).await;
+    match final_response.payload {
+        OwnedPayload::DiagnosticMessage(ref diag) => {
+            assert_eq!(diag.user_data, vec![0x62, 0xFD, 0x69, 0xAA]);
+        }
+        other => panic!("expected final DiagnosticMessage, got {other:?}"),
+    }
+
+    // Two 50ms sleeps must actually have elapsed on the wire. If the sink buffered
+    // everything and flushed at the end, this is near-zero and the held-pending property
+    // does not hold.
+    assert!(
+        started.elapsed() >= Duration::from_millis(100),
+        "responses arrived in {:?}; expected >=100ms of held pending waits",
+        started.elapsed()
+    );
 }
