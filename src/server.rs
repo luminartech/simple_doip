@@ -294,8 +294,11 @@ where
     /// [`TcpListener::local_addr`] before calling this.
     ///
     /// # Errors
-    /// Returns an [`Error`] only if a connection handler fails fatally; accept
-    /// errors are logged and the loop continues.
+    /// This method does not currently return. Both accept errors and handler
+    /// errors are logged and the loop continues, so the future never resolves.
+    /// The `Result` is retained so [`run_server`](Self::run_server) can
+    /// propagate its bind failure through a matching return type, and so a
+    /// future shutdown path has somewhere to report one.
     pub async fn run_server_with_listener(&self, tcp_listener: TcpListener) -> Result<(), Error> {
         loop {
             match tcp_listener.accept().await {
@@ -319,6 +322,10 @@ where
     }
 
     /// Handle an individual client TCP connection, reading and responding to messages
+    ///
+    /// Sets `TCP_NODELAY` on `tcp_stream`, overriding the caller's setting if it
+    /// configured one, because diagnostics write consecutive small frames whose
+    /// latency Nagle would otherwise inflate (see the comment on the call).
     ///
     /// # Errors
     /// Returns an [`Error`] if message handling or response encoding fails

@@ -1,11 +1,13 @@
 //! End-to-end integration tests that exercise a real client and server over an
 //! actual TCP socket on localhost.
 //!
-//! The server side is driven through [`Server::handle_client_connection`], which is
-//! the same per-connection entry point [`Server::run_server`] uses internally. This
-//! lets each test bind to `127.0.0.1:0` (an OS-assigned ephemeral port) instead of the
-//! fixed [`simple_doip::TCP_PORT`] that `run_server` hardcodes, keeping the tests free
-//! of port collisions.
+//! Most tests drive the server through [`Server::handle_client_connection`], the same
+//! per-connection entry point the accept loop uses internally, so they can bind
+//! `127.0.0.1:0` (an OS-assigned ephemeral port) instead of the fixed
+//! [`simple_doip::TCP_PORT`] that [`Server::run_server`] hardcodes, keeping the tests
+//! free of port collisions. The tests covering the accept loop itself instead pass a
+//! listener they bound on an ephemeral port to [`Server::run_server_with_listener`],
+//! which exercises the shipped loop at no cost in port collisions.
 //!
 //! The client side uses the real [`Client`] API, but with a small test-only
 //! [`Connector`] implementation instead of [`simple_doip::connection::ConnectorSocket`].
@@ -1072,7 +1074,7 @@ async fn run_server_with_listener_serves_a_caller_bound_socket() {
     let addr = listener.local_addr().expect("read local addr");
 
     let server = Server::new(AckThenRespondHandler).expect("construct server");
-    let _task = tokio::spawn(async move {
+    let accept_loop = tokio::spawn(async move {
         let _ = server.run_server_with_listener(listener).await;
     });
 
@@ -1088,6 +1090,9 @@ async fn run_server_with_listener_serves_a_caller_bound_socket() {
         activation.payload,
         OwnedPayload::RoutingActivationResponse(_)
     ));
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
 }
 
 /// The accept loop must survive clients that come and go without saying anything.
@@ -1105,7 +1110,7 @@ async fn server_keeps_accepting_after_clients_disconnect_abruptly() {
         .expect("bind ephemeral port");
     let addr = listener.local_addr().expect("read local addr");
     let server = Server::new(AckThenRespondHandler).expect("construct server");
-    let _task = tokio::spawn(async move {
+    let accept_loop = tokio::spawn(async move {
         let _ = server.run_server_with_listener(listener).await;
     });
 
@@ -1130,6 +1135,9 @@ async fn server_keeps_accepting_after_clients_disconnect_abruptly() {
         activation.payload,
         OwnedPayload::RoutingActivationResponse(_)
     ));
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
 }
 
 /// A handler that emits two NRC `0x78` "response pending" messages with a real delay
