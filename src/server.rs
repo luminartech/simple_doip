@@ -9,9 +9,9 @@ use crate::{
     logical_address::LogicalAddress,
     message_codec::MessageCodec,
     messages::{
-        DiagnosticMessage, DiagnosticPowerModeCode, FurtherActionRequired, OwnedMessage,
-        OwnedPayload, ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse,
-        VinGidSyncStatus,
+        Decode, DiagnosticMessage, DiagnosticPowerModeCode, Encode, FurtherActionRequired, Message,
+        OwnedMessage, OwnedPayload, Payload, ProtocolVersion, RoutingActivationRequest,
+        VehicleIdentificationResponse, VinGidSyncStatus,
     },
 };
 use async_trait::async_trait;
@@ -24,7 +24,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
 };
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{error, warn};
 
@@ -280,7 +280,9 @@ where
     /// # Errors
     /// Returns an [`Error`] if the TCP listener cannot be bound.
     pub async fn run_server(&self) -> Result<(), Error> {
-        // TODO: Vehicle Announcement over UDP
+        // TODO: unsolicited Vehicle Announcement over UDP at power-on. Answering
+        // vehicle identification requests already exists as
+        // `run_udp_responder`, which the caller drives with its own socket.
 
         let tcp_listener = TcpListener::bind(("0.0.0.0", TCP_PORT)).await?;
         self.run_server_with_listener(tcp_listener).await
@@ -318,6 +320,83 @@ where
                     error!("Failed to accept TCP client, continuing: {accept_error}");
                 }
             }
+        }
+    }
+
+    /// Answer UDP vehicle-identification probes on a caller-bound socket.
+    ///
+    /// ISO 13400-2 puts vehicle identification on UDP
+    /// [`crate::UDP_DISCOVERY_PORT`]: a tester broadcasts a
+    /// `VehicleIdentificationRequest` and every entity that matches answers with
+    /// its identity, which is how a tester discovers entities it has no address
+    /// for. Without this an entity is reachable only by a tester that already
+    /// knows its IP.
+    ///
+    /// The socket is bound by the caller, not here, so an entity can sit on one
+    /// specific interface (several simulated entities coexisting on loopback
+    /// aliases, say) or on an ephemeral port under test. The response content
+    /// comes from
+    /// [`ServerConnectionHandler::received_vehicle_identification_request`], so an
+    /// implementation customizes what it announces without reimplementing the
+    /// datagram loop.
+    ///
+    /// Runs until the socket read fails. Datagrams that cannot be decoded, and
+    /// decodable ones carrying anything other than a vehicle-identification
+    /// request, are logged and skipped: a UDP socket is reachable by every host
+    /// on the network, so one stray or hostile packet must not stop the entity
+    /// answering good probes.
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if reading from or writing to the socket fails, or if
+    /// the handler fails to build an identification response.
+    pub async fn run_udp_responder(&self, socket: UdpSocket) -> Result<(), Error> {
+        // A vehicle identification request is 8 bytes and its response 41, so
+        // this is generous. Anything longer is not a message this loop answers,
+        // and arrives truncated - which the decode below then rejects.
+        let mut buf = [0u8; 1024];
+        loop {
+            let (len, peer) = socket.recv_from(&mut buf).await?;
+
+            // `Decode` is implemented for the borrowed `Message<'a>` and yields
+            // (message, remaining_bytes). The borrow of `buf` ends with this
+            // iteration, before the next `recv_from` overwrites it.
+            let (message, _rest) = match Message::decode(&buf[..len]) {
+                Ok(decoded) => decoded,
+                Err(decode_error) => {
+                    warn!("Undecodable UDP datagram from {peer}, ignoring: {decode_error}");
+                    continue;
+                }
+            };
+
+            if !matches!(message.payload, Payload::VehicleIdentificationRequest) {
+                warn!(
+                    "Unsupported UDP payload type {:?} from {peer}, ignoring",
+                    message.header.payload_type
+                );
+                continue;
+            }
+
+            // UDP carries no connection, so there is no routing activation to
+            // have learned a tester logical address from; `0x0000` matches what
+            // the TCP path currently supplies.
+            let client_info = ClientConnectionInfo {
+                ip_address: peer.ip(),
+                logical_address: LogicalAddress(0x0000),
+            };
+            let response = self
+                .connection_handler
+                .received_vehicle_identification_request(&client_info)?;
+            let reply = OwnedMessage::vehicle_identification_response(
+                self.connection_handler.protocol_version(),
+                response,
+            );
+
+            // Mirrors `MessageCodec`'s `Encoder` impl: size the message, encode
+            // into a `Vec`, then write it. There is no framing to do - a
+            // datagram is already one message.
+            let mut encoded = std::vec::Vec::with_capacity(reply.encoded_size()?);
+            reply.encode(&mut encoded)?;
+            socket.send_to(&encoded, peer).await?;
         }
     }
 

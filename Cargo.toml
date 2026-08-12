@@ -49,6 +49,10 @@ name = "golden_vectors"
 name = "integration_test"
 required-features = ["client", "server"]
 
+[[test]]
+name = "udp_identification"
+required-features = ["server"]
+
 [[example]]
 name = "simple_client"
 required-features = ["client"]
