@@ -215,6 +215,16 @@ where
             let Ok((stream, peer_addr)) = listener.accept().await else {
                 break;
             };
+            // Disable Nagle on the server side. `ConnectorSocket` already does this for
+            // the client (`src/connection.rs`), but nothing does it for an accepted
+            // connection, so consecutive small responses stall on the tester's delayed
+            // ACK - measured at ~40ms between two 5-byte writes on loopback. That is a
+            // transport artifact with nothing to say about handler behavior, and it
+            // would otherwise swamp the sub-50ms timings
+            // `handler_holds_pending_wait_open_between_sends` asserts on. Setting it here
+            // rather than in `src/` keeps this a test-only change; whether `run_server`
+            // itself should set it is a separate question about live P2 timing.
+            let _ = stream.set_nodelay(true);
             // Await the connection inline, sequentially, matching `run_server`'s
             // control flow. `run_server` logs a handler error and keeps accepting;
             // mirror that by discarding the error here.
@@ -1130,18 +1140,34 @@ impl ServerConnectionHandler for HeldPendingHandler {
     }
 }
 
+/// Margin for the interleaving bounds below. The handler sleeps 50ms between sends;
+/// 40ms leaves 10ms of slack for scheduling and socket jitter on a loaded CI box while
+/// staying far away from the ~100ms a batched implementation would produce.
+///
+/// If [`INTERLEAVING_MARGIN`] ever proves too tight under load, raise it - never delete
+/// the assertions that use it, since they are the only thing distinguishing a streamed
+/// response sequence from a batched one.
+const INTERLEAVING_MARGIN: Duration = Duration::from_millis(40);
+
 /// A handler must be able to hold a pending wait open: emit an NRC `0x78`, await real
-/// work, then emit more, with the tester observing the delay on the wire.
+/// work, then emit more, with the tester observing each message as it is produced rather
+/// than all of them at the end.
 ///
 /// This is the requirement that ruled out returning a `Vec<OwnedMessage>` from
-/// `diagnostic_message`: a batch return drains back-to-back once the handler has already
-/// finished, so the elapsed-time assertion below would be unsatisfiable. The test is
-/// therefore an executable guard on the [`ResponseWriter`] sink design, not a red-green
-/// cycle - it is expected to pass as written, and to fail loudly if the sink is ever
-/// replaced by a batched return.
+/// `diagnostic_message`, so the test is an executable guard on the [`ResponseWriter`]
+/// sink design, not a red-green cycle - it is expected to pass as written, and to fail
+/// loudly if the sink is ever replaced by a batched return.
+///
+/// The property that discriminates the two designs is INTERLEAVING, not total duration.
+/// A batched rewrite would keep this fixture's sleeps (they are handler logic, not sink
+/// logic), push four messages into a `Vec` over the same ~100ms, and only then let the
+/// server write them - so the *last* message still arrives at ~100ms either way. What
+/// changes is when the *earlier* messages arrive: streamed, the ack is on the wire before
+/// the handler's first sleep and the two pendings are 50ms apart; batched, all four land
+/// together once the handler returns. Hence the two bounds below.
 #[tokio::test]
 async fn handler_holds_pending_wait_open_between_sends() {
-    let (server_addr, _accept_loop) = start_server_with(HeldPendingHandler).await;
+    let (server_addr, accept_loop) = start_server_with(HeldPendingHandler).await;
     let mut stream = with_timeout("connect", TcpStream::connect(server_addr))
         .await
         .expect("connect to test server");
@@ -1150,16 +1176,28 @@ async fn handler_holds_pending_wait_open_between_sends() {
     let mut writer = FramedWrite::new(tx, MessageCodec::new());
 
     send_routing_activation(&mut writer, CLIENT_LOGICAL_ADDRESS).await;
-    let _activation = read_message(&mut reader).await;
+    let activation = read_message(&mut reader).await;
+    assert!(
+        matches!(
+            activation.payload,
+            OwnedPayload::RoutingActivationResponse(_)
+        ),
+        "routing activation must succeed before any diagnostic message is sent, otherwise \
+         the failures below describe the wrong cause; got {:?}",
+        activation.payload
+    );
 
     let started = std::time::Instant::now();
     send_diagnostic_message(&mut writer, CLIENT_LOGICAL_ADDRESS, &[0x22, 0xFD, 0x69]).await;
 
     let ack = read_message(&mut reader).await;
+    let ack_at = started.elapsed();
     assert!(matches!(ack.payload, OwnedPayload::DiagnosticMessageAck(_)));
 
+    let mut pending_at = Vec::new();
     for index in 0..2 {
         let pending = read_message(&mut reader).await;
+        pending_at.push(started.elapsed());
         match pending.payload {
             OwnedPayload::DiagnosticMessage(ref diag) => {
                 assert_eq!(
@@ -1180,12 +1218,39 @@ async fn handler_holds_pending_wait_open_between_sends() {
         other => panic!("expected final DiagnosticMessage, got {other:?}"),
     }
 
-    // Two 50ms sleeps must actually have elapsed on the wire. If the sink buffered
-    // everything and flushed at the end, this is near-zero and the held-pending property
-    // does not hold.
+    // Bound 1, and the one that actually catches the regression: the ack is written
+    // before the handler's first sleep, so it must arrive almost immediately. A batched
+    // return puts nothing on the socket until the handler returns ~100ms later, and this
+    // assertion goes red.
+    assert!(
+        ack_at < INTERLEAVING_MARGIN,
+        "the ack arrived {ack_at:?} after the request; a streamed sink delivers it before \
+         the handler's first sleep, so anything near the handler's total runtime means \
+         responses are being batched and flushed at the end"
+    );
+
+    // Bound 2: the two pendings are separated by the handler's 50ms sleep. Batched, they
+    // arrive in the same flush and the gap collapses to microseconds.
+    let pending_gap = pending_at[1] - pending_at[0];
+    assert!(
+        pending_gap >= INTERLEAVING_MARGIN,
+        "the two pending responses arrived {pending_gap:?} apart (at {:?} and {:?}); the \
+         handler sleeps 50ms between them, so a smaller gap means they were flushed \
+         together rather than as the handler produced them",
+        pending_at[0],
+        pending_at[1]
+    );
+
+    // Secondary check: the handler's two 50ms waits really happened. This does NOT
+    // discriminate streaming from batching - a batched implementation takes just as long
+    // overall, because the sleeps are in the handler either way. It only guards against a
+    // fixture that quietly stops sleeping, which would make the two bounds above vacuous.
     assert!(
         started.elapsed() >= Duration::from_millis(100),
         "responses arrived in {:?}; expected >=100ms of held pending waits",
         started.elapsed()
     );
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
 }
