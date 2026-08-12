@@ -309,9 +309,14 @@ where
     /// socket the caller binds. Both methods take `&self` and neither returns,
     /// so compose them on one `Server`:
     ///
-    /// ```ignore
+    /// ```
+    /// # use simple_doip::{Error, UDP_DISCOVERY_PORT, server::{Server, ServerConnectionHandler}};
+    /// # use tokio::net::UdpSocket;
+    /// # async fn serve<T: ServerConnectionHandler + Sync>(server: &Server<T>) -> Result<(), Error> {
     /// let socket = UdpSocket::bind(("0.0.0.0", UDP_DISCOVERY_PORT)).await?;
     /// tokio::try_join!(server.run_server(), server.run_udp_responder(socket))?;
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// Unsolicited vehicle announcement at power-on is a separate thing again,
