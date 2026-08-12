@@ -1044,11 +1044,16 @@ async fn handler_can_emit_ack_then_response() {
     send_diagnostic_message(&mut writer, CLIENT_LOGICAL_ADDRESS, &[0x22, 0xFD, 0x69]).await;
 
     let first = read_message(&mut reader).await;
-    assert!(
-        matches!(first.payload, OwnedPayload::DiagnosticMessageAck(_)),
-        "expected DiagnosticMessageAck first, got {:?}",
-        first.payload
-    );
+    match first.payload {
+        OwnedPayload::DiagnosticMessageAck(ref ack) => {
+            // Assert the code, not just the variant: the ack payload type is
+            // hardcoded positive regardless of the code (ARCHITECTURE §7.2), so
+            // a variant-only check would pass on a negative ack too and would
+            // depend on that bug staying exactly as it is.
+            assert_eq!(ack.ack_code, DiagnosticAckCode::RoutingConfirmationAck);
+        }
+        other => panic!("expected DiagnosticMessageAck first, got {other:?}"),
+    }
 
     let second = read_message(&mut reader).await;
     match second.payload {
@@ -1262,7 +1267,13 @@ async fn handler_holds_pending_wait_open_between_sends() {
 
     let ack = read_message(&mut reader).await;
     let ack_at = started.elapsed();
-    assert!(matches!(ack.payload, OwnedPayload::DiagnosticMessageAck(_)));
+    match ack.payload {
+        // As above: the code, not just the variant.
+        OwnedPayload::DiagnosticMessageAck(ref ack) => {
+            assert_eq!(ack.ack_code, DiagnosticAckCode::RoutingConfirmationAck);
+        }
+        ref other => panic!("expected DiagnosticMessageAck first, got {other:?}"),
+    }
 
     let mut pending_at = Vec::new();
     for index in 0..2 {
