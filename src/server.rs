@@ -346,6 +346,17 @@ where
     /// on the network, so one stray or hostile packet must not stop the entity
     /// answering good probes.
     ///
+    /// # Known limitation
+    /// [`Payload::decode`] collapses all three request forms - plain (0x0001),
+    /// with-EID (0x0002), and with-VIN (0x0003) - into
+    /// [`Payload::VehicleIdentificationRequest`], discarding the EID or VIN the
+    /// latter two carry. This responder therefore answers a directed request even
+    /// when it named a different entity, and the
+    /// [`ServerConnectionHandler::vehicle_identification_with_eid`] and
+    /// [`ServerConnectionHandler::vehicle_identification_with_vin`] hooks are
+    /// never consulted. Filtering them correctly needs the payload preserved
+    /// through decoding, which is a change to [`Payload`].
+    ///
     /// # Errors
     /// Returns an [`Error`] if reading from or writing to the socket fails, or if
     /// the handler fails to build an identification response.
