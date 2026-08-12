@@ -65,6 +65,43 @@ impl Drop for ActiveConnectionGuard<'_> {
         self.active_connections.fetch_sub(1, Ordering::Relaxed);
     }
 }
+
+/// Sink a [`ServerConnectionHandler`] writes its responses into.
+///
+/// Exists so one request can produce several messages - the
+/// `DiagnosticMessageAck` that ISO 13400 requires before a UDS response, and any
+/// number of NRC `0x78` "response pending" messages before the final answer.
+/// Each `send` goes straight to the socket, so a handler may await arbitrary work
+/// between calls and the tester observes a genuinely *held* pending wait rather
+/// than a burst delivered all at once.
+#[async_trait]
+pub trait ResponseWriter: Send {
+    /// Write one message to the tester, in call order.
+    ///
+    /// # Errors
+    /// Returns an [`Error`] if the message cannot be encoded or the socket write
+    /// fails.
+    async fn send(&mut self, message: OwnedMessage) -> Result<(), Error>;
+}
+
+/// [`ResponseWriter`] over the connection's framed write half.
+struct FramedResponseWriter<'a, W> {
+    sink: &'a mut FramedWrite<W, MessageCodec>,
+}
+
+#[async_trait]
+impl<W> ResponseWriter for FramedResponseWriter<'_, W>
+where
+    W: tokio::io::AsyncWrite + Unpin + Send,
+{
+    async fn send(&mut self, message: OwnedMessage) -> Result<(), Error> {
+        // The codec reports encode failures as `MessageError`; `?` widens it to the
+        // crate's `Error` so handlers only ever deal with one error type.
+        self.sink.send(&message).await?;
+        Ok(())
+    }
+}
+
 /// Trait for handling `DoIP` connections as a server.
 /// Implement this trait to create a custom `DoIP` server.
 /// Most protocol functions have a simple, default implementation
@@ -98,16 +135,20 @@ pub trait ServerConnectionHandler {
         request: &RoutingActivationRequest,
     ) -> Result<OwnedMessage, Error>;
 
-    /// Handle a diagnostic message addressed to this entity
-    /// and build the acknowledgement/response message to send back.
+    /// Handle a diagnostic message addressed to this entity, writing zero or more
+    /// responses into `responses`.
+    ///
+    /// A UDS tester expects a `DiagnosticMessageAck` before any response, so a
+    /// typical implementation sends the ack first and the UDS payload second.
     ///
     /// # Errors
-    /// Returns an [`Error`] if the message cannot be processed or the response
-    /// cannot be constructed.
+    /// Returns an [`Error`] if the message cannot be processed or a response
+    /// cannot be written.
     async fn diagnostic_message(
         &self,
         message: &DiagnosticMessage<'_>,
-    ) -> Result<OwnedMessage, Error>;
+        responses: &mut dyn ResponseWriter,
+    ) -> Result<(), Error>;
 
     // Optional Functions
     // These functions *may* be overridden to provide custom behavior
@@ -280,7 +321,7 @@ where
             match read_stream.next().await {
                 Some(Ok(message)) => {
                     if let Some(response) = self
-                        .handle_client_message(client_socket_addr, message)
+                        .handle_client_message(client_socket_addr, message, &mut write_sink)
                         .await?
                     {
                         write_sink.send(&response).await?;
@@ -302,11 +343,21 @@ where
         }
     }
 
-    async fn handle_client_message(
+    /// Dispatch one decoded request to the handler.
+    ///
+    /// Returns the single response the caller must write, or `None` when there is
+    /// nothing left to send - either because the message needs no answer, or
+    /// because the handler already wrote its responses into `write_sink` itself
+    /// (the diagnostic-message path, which may emit several messages).
+    async fn handle_client_message<W>(
         &self,
         client_socket_addr: SocketAddr,
         request_message: OwnedMessage,
-    ) -> Result<Option<OwnedMessage>, Error> {
+        write_sink: &mut FramedWrite<W, MessageCodec>,
+    ) -> Result<Option<OwnedMessage>, Error>
+    where
+        W: tokio::io::AsyncWrite + Unpin + Send,
+    {
         // TODO: Need to handle active sockets by adding clients to a map
         // client count should come from that map, as well as the logical address missing below
         let connection_info = ClientConnectionInfo {
@@ -320,11 +371,13 @@ where
                 .alive_check(&connection_info)
                 .await
                 .map(Some),
-            OwnedPayload::DiagnosticMessage(diagnostic_message) => self
-                .connection_handler
-                .diagnostic_message(&diagnostic_message.as_ref())
-                .await
-                .map(Some),
+            OwnedPayload::DiagnosticMessage(diagnostic_message) => {
+                let mut responses = FramedResponseWriter { sink: write_sink };
+                self.connection_handler
+                    .diagnostic_message(&diagnostic_message.as_ref(), &mut responses)
+                    .await?;
+                Ok(None)
+            }
             OwnedPayload::EntityStatusRequest => {
                 warn!(
                     "Entity Status Request is not yet supported, ignoring. source: {client_socket_addr}"

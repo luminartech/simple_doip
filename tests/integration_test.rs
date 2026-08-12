@@ -15,15 +15,17 @@
 //! Implementation" example in `src/connection.rs`) and requires no changes to `src/`.
 
 use async_trait::async_trait;
+use futures::{SinkExt, StreamExt};
 use simple_doip::{
     Error, LogicalAddress,
     client::{AddressType, Client, ClientOptions, RoutingActivationOptions},
     connection::Connector,
+    message_codec::MessageCodec,
     messages::{
         ActivationTypeCode, DiagnosticAckCode, DiagnosticMessage, Encode, OwnedMessage,
-        ProtocolVersion, RoutingActivationRequest, RoutingActivationResponseCode,
+        OwnedPayload, ProtocolVersion, RoutingActivationRequest, RoutingActivationResponseCode,
     },
-    server::{Server, ServerConnectionHandler},
+    server::{ResponseWriter, Server, ServerConnectionHandler},
 };
 use std::{
     net::{IpAddr, SocketAddr},
@@ -34,13 +36,14 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{
         TcpListener, TcpStream,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
     task::JoinHandle,
 };
+use tokio_util::codec::{FramedRead, FramedWrite};
 
 /// Generous but finite bound for every await in these tests, so a regression that hangs
 /// the client or server fails the test quickly instead of hanging CI.
@@ -105,15 +108,18 @@ impl ServerConnectionHandler for TestHandler {
     async fn diagnostic_message(
         &self,
         message: &DiagnosticMessage<'_>,
-    ) -> Result<OwnedMessage, Error> {
+        responses: &mut dyn ResponseWriter,
+    ) -> Result<(), Error> {
         *self.last_diagnostic_payload.lock().unwrap() = Some(message.user_data.to_vec());
-        Ok(OwnedMessage::diagnostic_message_ack(
-            self.protocol_version(),
-            message.source_address,
-            message.target_address,
-            DiagnosticAckCode::RoutingConfirmationAck,
-            message.user_data.to_vec(),
-        ))
+        responses
+            .send(OwnedMessage::diagnostic_message_ack(
+                self.protocol_version(),
+                message.source_address,
+                message.target_address,
+                DiagnosticAckCode::RoutingConfirmationAck,
+                message.user_data.to_vec(),
+            ))
+            .await
     }
 }
 
@@ -160,8 +166,29 @@ async fn start_server() -> TestServer {
         last_diagnostic_payload: Arc::clone(&last_diagnostic_payload),
         routing_activation_requests: Arc::clone(&routing_activation_requests),
     };
-    let server = Server::new(handler).expect("server should construct");
 
+    let (addr, accept_loop) = start_server_with(handler).await;
+
+    TestServer {
+        addr,
+        last_diagnostic_payload,
+        routing_activation_requests,
+        accept_loop,
+    }
+}
+
+/// Start a [`Server`] with a caller-supplied handler on an OS-assigned localhost port.
+/// [`start_server`] delegates here; tests needing a handler other than [`TestHandler`]
+/// call this directly.
+///
+/// The accept loop awaits each connection INLINE, mirroring `run_server`, so a panic
+/// escaping a handler kills the loop here exactly as it would in production - which is
+/// what [`TestServer::shutdown`] asserts against.
+async fn start_server_with<H>(handler: H) -> (SocketAddr, JoinHandle<()>)
+where
+    H: ServerConnectionHandler + Send + Sync + 'static,
+{
+    let server = Server::new(handler).expect("server should construct");
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await
         .expect("failed to bind test server to an ephemeral port");
@@ -181,12 +208,64 @@ async fn start_server() -> TestServer {
         }
     });
 
-    TestServer {
-        addr,
-        last_diagnostic_payload,
-        routing_activation_requests,
-        accept_loop,
-    }
+    (addr, accept_loop)
+}
+
+/// Read one framed message off a raw socket, as an [`OwnedMessage`].
+///
+/// Raw rather than through [`Client`], because the `Client` facade consumes the
+/// `DiagnosticMessageAck` internally and never surfaces it - and the ack is exactly what
+/// the multi-response tests assert on.
+///
+/// This and the two send helpers below take an already-split [`FramedRead`]/
+/// [`FramedWrite`] half rather than a bare [`TcpStream`], because a codec must not be
+/// reconstructed per call: a fresh `FramedRead` drops whatever the previous one
+/// buffered, which silently loses a message when two arrive in one TCP segment.
+async fn read_message<R>(framed: &mut FramedRead<R, MessageCodec>) -> OwnedMessage
+where
+    R: AsyncRead + Unpin,
+{
+    with_timeout("read message", framed.next())
+        .await
+        .expect("stream closed before a message arrived")
+        .expect("decode message")
+}
+
+/// Send a routing activation request over a raw socket.
+async fn send_routing_activation<W>(
+    framed: &mut FramedWrite<W, MessageCodec>,
+    source_address: LogicalAddress,
+) where
+    W: AsyncWrite + Unpin,
+{
+    let request = OwnedMessage::routing_activation_request(
+        ProtocolVersion::V2012,
+        source_address,
+        ActivationTypeCode::Default,
+        None,
+    );
+    with_timeout("send routing activation", framed.send(&request))
+        .await
+        .expect("send routing activation");
+}
+
+/// Send a diagnostic message carrying `user_data` over a raw socket.
+async fn send_diagnostic_message<W>(
+    framed: &mut FramedWrite<W, MessageCodec>,
+    source_address: LogicalAddress,
+    user_data: &[u8],
+) where
+    W: AsyncWrite + Unpin,
+{
+    let request = OwnedMessage::diagnostic_message(
+        ProtocolVersion::V2012,
+        source_address,
+        SERVER_LOGICAL_ADDRESS,
+        user_data.to_vec(),
+    );
+    with_timeout("send diagnostic message", framed.send(&request))
+        .await
+        .expect("send diagnostic message");
 }
 
 /// Test-only [`Connector`] that dials whatever address it's given, unlike
@@ -464,14 +543,17 @@ impl ServerConnectionHandler for MisbehavingHandler {
     async fn diagnostic_message(
         &self,
         message: &DiagnosticMessage<'_>,
-    ) -> Result<OwnedMessage, Error> {
-        Ok(OwnedMessage::diagnostic_message_ack(
-            self.protocol_version(),
-            message.source_address,
-            message.target_address,
-            DiagnosticAckCode::RoutingConfirmationAck,
-            message.user_data.to_vec(),
-        ))
+        responses: &mut dyn ResponseWriter,
+    ) -> Result<(), Error> {
+        responses
+            .send(OwnedMessage::diagnostic_message_ack(
+                self.protocol_version(),
+                message.source_address,
+                message.target_address,
+                DiagnosticAckCode::RoutingConfirmationAck,
+                message.user_data.to_vec(),
+            ))
+            .await
     }
 }
 
@@ -565,14 +647,17 @@ impl ServerConnectionHandler for DenyingRoutingHandler {
     async fn diagnostic_message(
         &self,
         message: &DiagnosticMessage<'_>,
-    ) -> Result<OwnedMessage, Error> {
-        Ok(OwnedMessage::diagnostic_message_ack(
-            self.protocol_version(),
-            message.source_address,
-            message.target_address,
-            DiagnosticAckCode::RoutingConfirmationAck,
-            message.user_data.to_vec(),
-        ))
+        responses: &mut dyn ResponseWriter,
+    ) -> Result<(), Error> {
+        responses
+            .send(OwnedMessage::diagnostic_message_ack(
+                self.protocol_version(),
+                message.source_address,
+                message.target_address,
+                DiagnosticAckCode::RoutingConfirmationAck,
+                message.user_data.to_vec(),
+            ))
+            .await
     }
 }
 
@@ -666,14 +751,17 @@ impl ServerConnectionHandler for NackingRoutingHandler {
     async fn diagnostic_message(
         &self,
         message: &DiagnosticMessage<'_>,
-    ) -> Result<OwnedMessage, Error> {
-        Ok(OwnedMessage::diagnostic_message_ack(
-            self.protocol_version(),
-            message.source_address,
-            message.target_address,
-            DiagnosticAckCode::RoutingConfirmationAck,
-            message.user_data.to_vec(),
-        ))
+        responses: &mut dyn ResponseWriter,
+    ) -> Result<(), Error> {
+        responses
+            .send(OwnedMessage::diagnostic_message_ack(
+                self.protocol_version(),
+                message.source_address,
+                message.target_address,
+                DiagnosticAckCode::RoutingConfirmationAck,
+                message.user_data.to_vec(),
+            ))
+            .await
     }
 }
 
@@ -819,7 +907,8 @@ impl ServerConnectionHandler for SilentOnDiagnosticHandler {
     async fn diagnostic_message(
         &self,
         _message: &DiagnosticMessage<'_>,
-    ) -> Result<OwnedMessage, Error> {
+        _responses: &mut dyn ResponseWriter,
+    ) -> Result<(), Error> {
         // Never resolves: the server received the message but never acknowledges it,
         // so the client must hit its own internal deadline rather than any
         // server-driven signal.
@@ -883,6 +972,107 @@ async fn timed_out_diagnostic_message_ack_surfaces_timeout_not_connection_closed
         "a diagnostic message that the server never acks must surface \
          ResponseTimeoutExceeded, not ConnectionClosed or any other error; got: {result:?}"
     );
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
+}
+
+/// A handler that answers every diagnostic message with a positive
+/// `DiagnosticMessageAck` followed by a separate diagnostic-message response.
+/// This is the shape `uds_on_ip` requires - it waits for the ack before it reads a
+/// response, so a single-message server deadlocks it.
+struct AckThenRespondHandler;
+
+#[async_trait]
+impl ServerConnectionHandler for AckThenRespondHandler {
+    fn get_vin(&self) -> [u8; 17] {
+        [0x00; 17]
+    }
+
+    fn get_logical_address(&self) -> LogicalAddress {
+        SERVER_LOGICAL_ADDRESS
+    }
+
+    fn get_entity_id(&self) -> [u8; 6] {
+        [0x00; 6]
+    }
+
+    fn get_group_id(&self) -> Option<[u8; 6]> {
+        None
+    }
+
+    async fn routing_activation(
+        &self,
+        request: &RoutingActivationRequest,
+    ) -> Result<OwnedMessage, Error> {
+        Ok(OwnedMessage::routing_activation_response(
+            self.protocol_version(),
+            request.source_address,
+            self.get_logical_address(),
+            RoutingActivationResponseCode::RoutingSuccessfullyActivated,
+            [0; 4],
+            None,
+        ))
+    }
+
+    async fn diagnostic_message(
+        &self,
+        message: &DiagnosticMessage<'_>,
+        responses: &mut dyn ResponseWriter,
+    ) -> Result<(), Error> {
+        responses
+            .send(OwnedMessage::diagnostic_message_ack(
+                self.protocol_version(),
+                self.get_logical_address(),
+                message.source_address,
+                DiagnosticAckCode::RoutingConfirmationAck,
+                Vec::new(),
+            ))
+            .await?;
+        responses
+            .send(OwnedMessage::diagnostic_message(
+                self.protocol_version(),
+                self.get_logical_address(),
+                message.source_address,
+                vec![0x62, 0xFD, 0x69, 0xAA],
+            ))
+            .await?;
+        Ok(())
+    }
+}
+
+/// A single diagnostic request must be answerable with two messages on the wire: the
+/// `DiagnosticMessageAck` ISO 13400 requires, then the UDS response itself.
+#[tokio::test]
+async fn handler_can_emit_ack_then_response() {
+    let (server_addr, accept_loop) = start_server_with(AckThenRespondHandler).await;
+    let mut stream = with_timeout("connect", TcpStream::connect(server_addr))
+        .await
+        .expect("connect to test server");
+    let (rx, tx) = stream.split();
+    let mut reader = FramedRead::new(rx, MessageCodec::new());
+    let mut writer = FramedWrite::new(tx, MessageCodec::new());
+
+    // Routing activation first, so the server accepts diagnostic messages.
+    send_routing_activation(&mut writer, CLIENT_LOGICAL_ADDRESS).await;
+    let _activation = read_message(&mut reader).await;
+
+    send_diagnostic_message(&mut writer, CLIENT_LOGICAL_ADDRESS, &[0x22, 0xFD, 0x69]).await;
+
+    let first = read_message(&mut reader).await;
+    assert!(
+        matches!(first.payload, OwnedPayload::DiagnosticMessageAck(_)),
+        "expected DiagnosticMessageAck first, got {:?}",
+        first.payload
+    );
+
+    let second = read_message(&mut reader).await;
+    match second.payload {
+        OwnedPayload::DiagnosticMessage(ref diag) => {
+            assert_eq!(diag.user_data, vec![0x62, 0xFD, 0x69, 0xAA]);
+        }
+        other => panic!("expected DiagnosticMessage second, got {other:?}"),
+    }
 
     accept_loop.abort();
     let _ = accept_loop.await;
