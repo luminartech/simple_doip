@@ -23,10 +23,23 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
+    time::Duration,
 };
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::{
+    net::{TcpListener, TcpStream, UdpSocket},
+    time::sleep,
+};
 use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{error, warn};
+
+/// How long a socket loop waits before retrying after a non-fatal error.
+///
+/// Neither the TCP accept loop nor the UDP responder gives up on an error, so
+/// each needs a floor on its retry rate: a condition that does not clear on its
+/// own — descriptor exhaustion is the usual one — makes the failing call return
+/// immediately, and retrying it without a delay pegs a core and floods the log.
+/// Short enough that a genuinely transient error costs one interval and no more.
+const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(100);
 
 /// Identifies the tester on the other end of a `DoIP` TCP connection, passed to
 /// [`ServerConnectionHandler`] methods so an implementation can tell which peer
@@ -313,11 +326,20 @@ where
                     }
                 }
                 Err(accept_error) => {
-                    // Transient conditions (EMFILE, a peer resetting between
-                    // the SYN and our accept) must not take the entity down —
-                    // a simulator that aborts here turns a client bug into an
-                    // opaque transport failure.
+                    // An accept error must not take the entity down — a
+                    // simulator that aborts on a peer resetting between the SYN
+                    // and our accept turns a client bug into an opaque
+                    // transport failure.
                     error!("Failed to accept TCP client, continuing: {accept_error}");
+                    // Not every accept error is transient. Descriptor
+                    // exhaustion (EMFILE/ENFILE) persists until something else
+                    // in the process releases an fd, and until then `accept`
+                    // fails immediately on every iteration — an unbounded retry
+                    // would spin a core and flood the log, which is harder to
+                    // diagnose in an unattended simulator than the panic this
+                    // replaced. The delay bounds that to ten retries a second
+                    // and costs a genuinely transient error only one interval.
+                    sleep(ACCEPT_ERROR_BACKOFF).await;
                 }
             }
         }
@@ -381,6 +403,13 @@ where
                 Ok(received) => received,
                 Err(recv_error) => {
                     warn!("UDP receive failed, continuing: {recv_error}");
+                    // As in the accept loop: a socket error that persists (the
+                    // interface going away under a bound socket, say) would
+                    // otherwise return immediately on every iteration and spin
+                    // this loop at full speed. Only the socket-error path needs
+                    // the delay — the decode and handler paths below consumed a
+                    // datagram, so they are already paced by the peer.
+                    sleep(ACCEPT_ERROR_BACKOFF).await;
                     continue;
                 }
             };
