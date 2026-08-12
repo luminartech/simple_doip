@@ -29,11 +29,6 @@ gaps a new integrator should know about before relying on them:
   silently dropped.** `Server::handle_client_message` logs a warning and sends
   no reply for either, so a tester that asks gets silence rather than an error
   or a negative response.
-- **A connection handler can only answer a diagnostic message with a single
-  message.** `ServerConnectionHandler::diagnostic_message` returns one
-  `OwnedMessage`, so a handler can send the required acknowledgement *or* a
-  functional response, not the acknowledgement followed by a separate
-  response as DoIP prescribes.
 - **A `DiagnosticMessage` arriving while the client is waiting for an ACK is
   silently discarded.** After `Client::send_diagnostic_message`, the inner
   client is in its `AwaitAck` state; a `DiagnosticMessage` that arrives before

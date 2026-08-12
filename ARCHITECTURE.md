@@ -380,39 +380,33 @@ Everything in this section was found by review during the handoff cleanup. It is
 recorded here so the analysis does not have to be re-derived. None of it is
 scheduled; all of it is a decision for the crate's next owner.
 
-### 7.1 `ServerConnectionHandler::diagnostic_message` cannot express correct DoIP behavior
-
-This is the one place where the API shape prevents a correct implementation.
-
-```rust
-async fn diagnostic_message(
-    &self,
-    message: &DiagnosticMessage<'_>,
-) -> Result<OwnedMessage, Error>;
-```
-(`ServerConnectionHandler::diagnostic_message` in `src/server.rs`)
+### 7.1 `ServerConnectionHandler::diagnostic_message` — RESOLVED
 
 DoIP prescribes that a DoIP entity receiving a diagnostic message first sends a
 `DiagnosticMessageAck`, and then — separately and later — sends any functional
 (e.g. UDS) response as its own `DiagnosticMessage`. Two messages, in order.
 
-The trait returns a **single** `OwnedMessage`, and the dispatch site
-(the `OwnedPayload::DiagnosticMessage` arm of `Server::handle_client_message`)
-maps that one value through `Some(..)` into `Server::handle_client_connection`,
-whose read loop writes at most one message per received message. There is no
-path by which a handler can emit both.
+The trait used to return a **single** `OwnedMessage`, so an implementer had to
+choose one of the two and no handler could drive a real UDS tester.
 
-So an implementer must choose: send the required acknowledgement, or send the
-functional response. `examples/echo_server.rs` picks the acknowledgement and
-smuggles the request bytes back inside the ack's `previous_message_data` field —
-which is an echo demo, not protocol-correct behavior, and the example says so in
-a comment (in its `diagnostic_message` implementation, `examples/echo_server.rs`).
+It now takes a sink instead:
 
-**Recommendation:** revisit the trait signature. Plausible shapes are returning a
-collection, taking a sink/writer the handler can push to, or splitting the ack
-decision (which the server could synthesize itself) from the response.
+```rust
+async fn diagnostic_message(
+    &self,
+    message: &DiagnosticMessage<'_>,
+    responses: &mut dyn ResponseWriter,
+) -> Result<(), Error>;
+```
+(`ServerConnectionHandler::diagnostic_message` in `src/server.rs`)
 
-Note that `routing_activation` has the same single-`OwnedMessage` return shape,
+Each `ResponseWriter::send` writes straight to the connection's framed write
+half, so a handler emits as many messages as the exchange needs — ack, any
+number of NRC `0x78` "response pending" messages, then the final answer — and
+may await arbitrary work between them. `examples/echo_server.rs` shows the
+two-message shape.
+
+Note that `routing_activation` still has the single-`OwnedMessage` return shape,
 but that is fine — routing activation genuinely is one request, one response.
 
 ### 7.2 `diagnostic_message_ack` hardcodes the positive acknowledgement payload type
