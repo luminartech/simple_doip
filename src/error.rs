@@ -1,6 +1,8 @@
 use crate::{
     LogicalAddress,
-    messages::{DiagnosticAckCode, MessageError, NackCode, PayloadType},
+    messages::{
+        DiagnosticAckCode, MessageError, NackCode, PayloadType, RoutingActivationResponseCode,
+    },
 };
 use std::string::String;
 use thiserror::Error;
@@ -88,6 +90,16 @@ pub enum Error {
     /// so diagnostic messages cannot yet be exchanged on this connection.
     #[error("Failed route activation")]
     RoutingActivationFailed,
+    /// The `DoIP` entity answered the routing activation request with a
+    /// denial (any [`RoutingActivationResponseCode`] other than
+    /// `RoutingSuccessfullyActivated` / `RoutingSuccessfullyActivatedConfirmationRequired`).
+    /// The contained code identifies why — notably
+    /// `DeniedSourceAddressAlreadyRegistered` (0x03), meaning another tester
+    /// already holds this tester's source address. This is not transient:
+    /// retrying the connection cannot resolve it until the other tester
+    /// disconnects, so callers must surface it rather than reconnect.
+    #[error("Routing activation denied: {0:?}")]
+    RoutingActivationDenied(RoutingActivationResponseCode),
     /// No response arrived within `A_DoIP_Diagnostic_Message`.
     /// The request may simply have been suppressed by the target ECU per the
     /// diagnostic addressing rules, so this is treated as non-fatal rather than a

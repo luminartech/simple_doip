@@ -525,6 +525,101 @@ async fn wrong_routing_activation_response_type_errors_without_panicking() {
     let _ = accept_loop.await;
 }
 
+/// A [`ServerConnectionHandler`] that *denies* routing activation, mimicking a
+/// `DoIP` entity whose single `TCP_DATA` slot is already held by another tester
+/// (for example EnVision polling the same sensor).
+struct DenyingRoutingHandler;
+
+#[async_trait]
+impl ServerConnectionHandler for DenyingRoutingHandler {
+    fn get_vin(&self) -> [u8; 17] {
+        [0x00; 17]
+    }
+
+    fn get_logical_address(&self) -> LogicalAddress {
+        SERVER_LOGICAL_ADDRESS
+    }
+
+    fn get_entity_id(&self) -> [u8; 6] {
+        [0x00; 6]
+    }
+
+    fn get_group_id(&self) -> Option<[u8; 6]> {
+        None
+    }
+
+    async fn routing_activation(
+        &self,
+        request: &RoutingActivationRequest,
+    ) -> Result<OwnedMessage, Error> {
+        Ok(OwnedMessage::routing_activation_response(
+            self.protocol_version(),
+            request.source_address,
+            self.get_logical_address(),
+            RoutingActivationResponseCode::DeniedSourceAddressAlreadyRegistered,
+            [0; 4],
+            None,
+        ))
+    }
+
+    async fn diagnostic_message(
+        &self,
+        message: &DiagnosticMessage<'_>,
+    ) -> Result<OwnedMessage, Error> {
+        Ok(OwnedMessage::diagnostic_message_ack(
+            self.protocol_version(),
+            message.source_address,
+            message.target_address,
+            DiagnosticAckCode::RoutingConfirmationAck,
+            message.user_data.to_vec(),
+        ))
+    }
+}
+
+/// A denied routing activation must fail `connect()` with
+/// `Error::RoutingActivationDenied(code)` carrying the entity's response code —
+/// not return `Ok` (which previously left the denial invisible and drove an
+/// eternal reconnect loop once the entity closed the socket).
+#[tokio::test]
+async fn routing_activation_denial_surfaces_as_error() {
+    let server = Server::new(DenyingRoutingHandler).expect("server should construct");
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("failed to bind test server to an ephemeral port");
+    let addr = listener
+        .local_addr()
+        .expect("bound listener has a local address");
+
+    let accept_loop = tokio::spawn(async move {
+        loop {
+            let Ok((stream, peer_addr)) = listener.accept().await else {
+                break;
+            };
+            let _ = server.handle_client_connection(peer_addr, stream).await;
+        }
+    });
+
+    let result = with_timeout(
+        "client connect against a denying server",
+        Client::<TestConnector>::connect(client_options(addr)),
+    )
+    .await;
+
+    assert!(
+        matches!(
+            result,
+            Err(Error::RoutingActivationDenied(
+                RoutingActivationResponseCode::DeniedSourceAddressAlreadyRegistered
+            ))
+        ),
+        "a routing activation denial must surface as RoutingActivationDenied with the \
+         reported code; got: {result:?}"
+    );
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
+}
+
 /// A [`ServerConnectionHandler`] that answers a routing activation request with a
 /// *negative* diagnostic message ack.
 ///

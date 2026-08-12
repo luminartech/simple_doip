@@ -7,6 +7,7 @@ use crate::{
     connection,
     messages::{
         ActivationTypeCode, MessageError, OwnedMessage, ProtocolVersion, RoutingActivationResponse,
+        RoutingActivationResponseCode,
     },
 };
 use std::{
@@ -186,6 +187,23 @@ where
                         info!("  Reserved OEM: {:02X?}", reserved_oem);
                         if let Some(oem) = oem_specific {
                             info!("  OEM Specific: {:02X?}", oem);
+                        }
+
+                        // Only the two success codes may proceed; every other
+                        // code is a denial (or reserved) and must surface as an
+                        // error. Previously the code was merely logged and
+                        // `bind_socket` returned `Ok`, so a denial such as
+                        // `DeniedSourceAddressAlreadyRegistered` (another tester
+                        // already holds our source address) was invisible: the
+                        // entity then closed the socket and the caller treated
+                        // the reset as transient, reconnecting forever.
+                        match routing_activation_response_code {
+                            RoutingActivationResponseCode::RoutingSuccessfullyActivated
+                            | RoutingActivationResponseCode::RoutingSuccessfullyActivatedConfirmationRequired => {
+                            }
+                            denied => {
+                                return Err(Error::RoutingActivationDenied(denied));
+                            }
                         }
                     }
                     Err(e) => {
