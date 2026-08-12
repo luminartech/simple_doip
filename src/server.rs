@@ -264,7 +264,12 @@ pub trait ServerConnectionHandler {
 }
 
 /// A running `DoIP` entity: accepts TCP connections and dispatches incoming
-/// messages to a [`ServerConnectionHandler`] implementation.
+/// messages to a [`ServerConnectionHandler`] implementation, and — on a socket
+/// the caller supplies to [`run_udp_responder`](Self::run_udp_responder) —
+/// answers UDP vehicle-identification probes from the same handler.
+///
+/// The two halves are independent futures, so an entity that wants both must
+/// drive both; see [`run_server`](Self::run_server).
 #[derive(Debug)]
 pub struct Server<T> {
     connection_handler: Arc<T>,
@@ -290,6 +295,28 @@ where
     /// Start listening for incoming `DoIP` TCP connections on the standard
     /// [`TCP_PORT`] across all interfaces.
     ///
+    /// Connections are served one at a time, as described on
+    /// [`run_server_with_listener`](Self::run_server_with_listener), which this
+    /// delegates to after binding.
+    ///
+    /// # Discovery
+    /// This binds **TCP only**. An entity started through this method and
+    /// nothing else answers no UDP vehicle-identification probe, so a tester
+    /// that does not already know its IP address will never find it — and
+    /// nothing logs that fact, because no datagram is ever received.
+    ///
+    /// Discovery lives in [`run_udp_responder`](Self::run_udp_responder), on a
+    /// socket the caller binds. Both methods take `&self` and neither returns,
+    /// so compose them on one `Server`:
+    ///
+    /// ```ignore
+    /// let socket = UdpSocket::bind(("0.0.0.0", UDP_DISCOVERY_PORT)).await?;
+    /// tokio::try_join!(server.run_server(), server.run_udp_responder(socket))?;
+    /// ```
+    ///
+    /// Unsolicited vehicle announcement at power-on is a separate thing again,
+    /// and this crate does not implement it in any form.
+    ///
     /// # Errors
     /// Returns an [`Error`] if the TCP listener cannot be bound.
     pub async fn run_server(&self) -> Result<(), Error> {
@@ -307,6 +334,14 @@ where
     /// `127.0.0.2:13400` so several entities coexist on one host, or port `0`
     /// for an OS-assigned port the caller reads back with
     /// [`TcpListener::local_addr`] before calling this.
+    ///
+    /// **One connection at a time.** The loop awaits each accepted connection's
+    /// handling to completion before calling `accept()` again, so a tester that
+    /// connects and then stalls wedges this entity until it disconnects; a
+    /// second tester is not even accepted meanwhile. That matters most for the
+    /// multi-entity topology above, where each entity gets its own listener but
+    /// each also gets its own single-connection bottleneck. See the **Status**
+    /// section of `README.md` for the full account.
     ///
     /// # Errors
     /// This method does not currently return. Both accept errors and handler
@@ -356,7 +391,13 @@ where
     ///
     /// The socket is bound by the caller, not here, so an entity can sit on one
     /// specific interface (several simulated entities coexisting on loopback
-    /// aliases, say) or on an ephemeral port under test. The response content
+    /// aliases, say) or on an ephemeral port under test. The flip side is that
+    /// the caller owns whether real discovery works at all: a tester broadcasts
+    /// its request, and a socket bound to a specific unicast address does not
+    /// receive broadcast datagrams, so answering real probes means binding
+    /// `0.0.0.0` on [`crate::UDP_DISCOVERY_PORT`] — a narrower bind serves only
+    /// testers that already know the address, which is the case discovery
+    /// exists to solve. The response content
     /// comes from
     /// [`ServerConnectionHandler::received_vehicle_identification_request`], so an
     /// implementation customizes what it announces without reimplementing the
