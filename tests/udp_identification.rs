@@ -75,6 +75,29 @@ const VEHICLE_IDENTIFICATION_REQUEST: [u8; 8] = [0x02, 0xFD, 0x00, 0x01, 0x00, 0
 /// host on the network can send this, so the responder must log and carry on.
 const TRUNCATED_DATAGRAM: [u8; 3] = [0x02, 0xFD, 0x00];
 
+/// A well-formed `AliveCheckRequest` (payload type 0x0007, length 0). Decodes
+/// cleanly but is not something this responder answers, exercising the
+/// wrong-payload-type skip rather than the decode-failure one.
+const ALIVE_CHECK_REQUEST: [u8; 8] = [0x02, 0xFD, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00];
+
+/// `VehicleIdentificationRequestWithEID` (0x0002), naming an entity that is not
+/// this one: 8-byte header plus a 6-byte EID.
+const IDENTIFICATION_REQUEST_WITH_EID: [u8; 14] = [
+    0x02, 0xFD, 0x00, 0x02, 0x00, 0x00, 0x00, 0x06, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+];
+
+/// `VehicleIdentificationRequestWithVIN` (0x0003), naming a VIN that is not this
+/// entity's: 8-byte header plus a 17-byte VIN.
+const IDENTIFICATION_REQUEST_WITH_VIN: [u8; 25] = [
+    0x02, 0xFD, 0x00, 0x03, 0x00, 0x00, 0x00, 0x11, b'O', b'T', b'H', b'E', b'R', b'0', b'0', b'0',
+    b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'1',
+];
+
+/// How long to wait before concluding the responder deliberately sent nothing.
+/// A reply travels loopback in microseconds, so this is generous while keeping a
+/// negative assertion cheap.
+const SILENCE_WINDOW: Duration = Duration::from_millis(250);
+
 /// Bind an ephemeral responder socket, start [`Server::run_udp_responder`] on it,
 /// and return the address a probing client should send to.
 async fn start_udp_responder() -> std::net::SocketAddr {
@@ -128,11 +151,12 @@ async fn udp_responder_answers_a_vehicle_identification_request() {
     expect_identification_response(&client).await;
 }
 
-/// A malformed datagram must not take the responder down. Anyone on the network
-/// can reach a UDP responder, so a single bad probe killing the loop would let a
+/// Datagrams the responder cannot answer - undecodable ones and well-formed ones
+/// of the wrong payload type - must not take it down. Anyone on the network can
+/// reach a UDP responder, so a single bad probe killing the loop would let a
 /// stray packet make the entity permanently undiscoverable.
 #[tokio::test]
-async fn udp_responder_survives_a_malformed_datagram() {
+async fn udp_responder_keeps_serving_after_datagrams_it_cannot_answer() {
     let server_addr = start_udp_responder().await;
 
     let client = UdpSocket::bind("127.0.0.1:0").await.expect("bind client");
@@ -141,12 +165,51 @@ async fn udp_responder_survives_a_malformed_datagram() {
         .await
         .expect("send truncated datagram");
     client
+        .send_to(&ALIVE_CHECK_REQUEST, server_addr)
+        .await
+        .expect("send alive check request");
+    client
         .send_to(&VEHICLE_IDENTIFICATION_REQUEST, server_addr)
         .await
         .expect("send identification request");
 
-    // The good probe still gets answered, so the bad one was skipped rather than
-    // fatal. It also proves the responder sent nothing for the bad datagram: this
-    // read would otherwise pick up that spurious reply and fail to decode it.
+    // The good probe still gets answered, so the bad ones were skipped rather than
+    // fatal. This also proves the responder sent nothing for either: the read below
+    // takes the *next* datagram on the socket, so a spurious reply would arrive
+    // first and fail its assertions.
+    expect_identification_response(&client).await;
+}
+
+/// The directed request forms name an entity by EID or VIN, and `Payload::decode`
+/// discards those bytes, so the responder cannot tell whether it is the addressee.
+/// It must stay silent rather than claim an identity that may have been meant for
+/// someone else - a wrong answer misleads a tester, while silence degrades to a
+/// discovery timeout testers already handle.
+#[tokio::test]
+async fn udp_responder_stays_silent_for_directed_eid_and_vin_requests() {
+    let server_addr = start_udp_responder().await;
+
+    let client = UdpSocket::bind("127.0.0.1:0").await.expect("bind client");
+    client
+        .send_to(&IDENTIFICATION_REQUEST_WITH_EID, server_addr)
+        .await
+        .expect("send identification request with EID");
+    client
+        .send_to(&IDENTIFICATION_REQUEST_WITH_VIN, server_addr)
+        .await
+        .expect("send identification request with VIN");
+
+    let mut buf = [0u8; 256];
+    let unexpected = tokio::time::timeout(SILENCE_WINDOW, client.recv_from(&mut buf)).await;
+    assert!(
+        unexpected.is_err(),
+        "responder answered a directed request it cannot match: {unexpected:?}"
+    );
+
+    // Silence must mean "declined", not "died", so a plain probe still works.
+    client
+        .send_to(&VEHICLE_IDENTIFICATION_REQUEST, server_addr)
+        .await
+        .expect("send identification request");
     expect_identification_response(&client).await;
 }

@@ -10,8 +10,8 @@ use crate::{
     message_codec::MessageCodec,
     messages::{
         Decode, DiagnosticMessage, DiagnosticPowerModeCode, Encode, FurtherActionRequired, Message,
-        OwnedMessage, OwnedPayload, Payload, ProtocolVersion, RoutingActivationRequest,
-        VehicleIdentificationResponse, VinGidSyncStatus,
+        OwnedMessage, OwnedPayload, Payload, PayloadType, ProtocolVersion,
+        RoutingActivationRequest, VehicleIdentificationResponse, VinGidSyncStatus,
     },
 };
 use async_trait::async_trait;
@@ -340,33 +340,50 @@ where
     /// implementation customizes what it announces without reimplementing the
     /// datagram loop.
     ///
-    /// Runs until the socket read fails. Datagrams that cannot be decoded, and
-    /// decodable ones carrying anything other than a vehicle-identification
-    /// request, are logged and skipped: a UDP socket is reachable by every host
-    /// on the network, so one stray or hostile packet must not stop the entity
-    /// answering good probes.
+    /// Every failure inside the loop - a socket error, an undecodable datagram, a
+    /// payload this responder does not answer, or a handler that declines to
+    /// produce an identity - is logged and skipped rather than returned. A UDP
+    /// socket is reachable by every host on the network, so any fatal path here
+    /// would hand an arbitrary host a way to end discovery for the life of the
+    /// process. This matches the reasoning behind the TCP accept loop in
+    /// [`run_server_with_listener`](Self::run_server_with_listener).
     ///
     /// # Known limitation
-    /// [`Payload::decode`] collapses all three request forms - plain (0x0001),
-    /// with-EID (0x0002), and with-VIN (0x0003) - into
-    /// [`Payload::VehicleIdentificationRequest`], discarding the EID or VIN the
-    /// latter two carry. This responder therefore answers a directed request even
-    /// when it named a different entity, and the
+    /// Only the plain request form (0x0001) is answered. The with-EID (0x0002)
+    /// and with-VIN (0x0003) forms name a specific entity, but [`Payload::decode`]
+    /// collapses all three into [`Payload::VehicleIdentificationRequest`] and
+    /// discards the EID or VIN bytes, so this responder cannot tell whether it is
+    /// the addressee. It stays silent rather than answering a probe that may have
+    /// been meant for a different entity: a wrong answer actively misleads a
+    /// tester, whereas silence degrades to a discovery timeout that testers
+    /// already handle. Consequently the
     /// [`ServerConnectionHandler::vehicle_identification_with_eid`] and
     /// [`ServerConnectionHandler::vehicle_identification_with_vin`] hooks are
-    /// never consulted. Filtering them correctly needs the payload preserved
-    /// through decoding, which is a change to [`Payload`].
+    /// never consulted. Answering the directed forms requires [`Payload`] to
+    /// preserve the EID/VIN through decoding.
     ///
     /// # Errors
-    /// Returns an [`Error`] if reading from or writing to the socket fails, or if
-    /// the handler fails to build an identification response.
+    /// This method does not currently return. Socket, decode, and handler errors
+    /// are all logged and the loop continues, so the future never resolves. The
+    /// `Result` is retained so a caller can compose this with the equally
+    /// non-returning [`run_server_with_listener`](Self::run_server_with_listener),
+    /// and so a future shutdown path has somewhere to report one.
     pub async fn run_udp_responder(&self, socket: UdpSocket) -> Result<(), Error> {
         // A vehicle identification request is 8 bytes and its response 41, so
-        // this is generous. Anything longer is not a message this loop answers,
-        // and arrives truncated - which the decode below then rejects.
+        // this is generous. Anything longer is not a message this loop answers.
         let mut buf = [0u8; 1024];
         loop {
-            let (len, peer) = socket.recv_from(&mut buf).await?;
+            // A receive error must not be fatal. On Windows an oversized datagram
+            // fails `recvfrom` with `WSAEMSGSIZE` instead of truncating the way
+            // Linux does, so a single 2 KB packet from anyone on the network
+            // would otherwise kill discovery permanently.
+            let (len, peer) = match socket.recv_from(&mut buf).await {
+                Ok(received) => received,
+                Err(recv_error) => {
+                    warn!("UDP receive failed, continuing: {recv_error}");
+                    continue;
+                }
+            };
 
             // `Decode` is implemented for the borrowed `Message<'a>` and yields
             // (message, remaining_bytes). The borrow of `buf` ends with this
@@ -387,6 +404,23 @@ where
                 continue;
             }
 
+            // 0x0002/0x0003 name a specific entity by EID/VIN, but `Payload::decode`
+            // drops those bytes, so we cannot tell whether we are the addressee.
+            // Answering regardless would actively mislead a tester; staying quiet
+            // degrades to a timeout, which testers already handle. See the method's
+            // known-limitation note.
+            if !matches!(
+                message.header.payload_type,
+                PayloadType::VehicleIdentificationRequest
+            ) {
+                warn!(
+                    "Ignoring directed identification request {:?} from {peer}: this crate \
+                     cannot match the EID/VIN it names",
+                    message.header.payload_type
+                );
+                continue;
+            }
+
             // UDP carries no connection, so there is no routing activation to
             // have learned a tester logical address from; `0x0000` matches what
             // the TCP path currently supplies.
@@ -394,9 +428,19 @@ where
                 ip_address: peer.ip(),
                 logical_address: LogicalAddress(0x0000),
             };
-            let response = self
+            // An implementation is entitled to fail transiently - identity not yet
+            // read out of NVM at power-on, say - so one refusal must cost this
+            // probe only, not every future one.
+            let response = match self
                 .connection_handler
-                .received_vehicle_identification_request(&client_info)?;
+                .received_vehicle_identification_request(&client_info)
+            {
+                Ok(response) => response,
+                Err(handler_error) => {
+                    warn!("Identification handler failed for {peer}, skipping: {handler_error}");
+                    continue;
+                }
+            };
             let reply = OwnedMessage::vehicle_identification_response(
                 self.connection_handler.protocol_version(),
                 response,
@@ -405,9 +449,22 @@ where
             // Mirrors `MessageCodec`'s `Encoder` impl: size the message, encode
             // into a `Vec`, then write it. There is no framing to do - a
             // datagram is already one message.
-            let mut encoded = std::vec::Vec::with_capacity(reply.encoded_size()?);
-            reply.encode(&mut encoded)?;
-            socket.send_to(&encoded, peer).await?;
+            let mut encoded = match reply.encoded_size() {
+                Ok(size) => std::vec::Vec::with_capacity(size),
+                Err(size_error) => {
+                    warn!("Failed to size identification response for {peer}: {size_error}");
+                    continue;
+                }
+            };
+            if let Err(encode_error) = reply.encode(&mut encoded) {
+                warn!("Failed to encode identification response for {peer}: {encode_error}");
+                continue;
+            }
+
+            if let Err(send_error) = socket.send_to(&encoded, peer).await {
+                // ENETUNREACH, a firewall EPERM - transient and peer-specific.
+                warn!("Failed to answer identification probe from {peer}: {send_error}");
+            }
         }
     }
 
