@@ -464,6 +464,37 @@ impl OwnedMessage {
             payload: OwnedPayload::DiagnosticMessageAck(ack),
         }
     }
+
+    /// Construct a directed reply to a vehicle identification request.
+    ///
+    /// The header is stamped with [`PayloadType::VehicleAnnouncement`] (0x0004)
+    /// because ISO 13400-2 defines exactly one wire payload type for both the
+    /// unsolicited announcement and the directed reply. The payload nonetheless
+    /// uses [`OwnedPayload::VehicleIdentificationResponse`], which encodes
+    /// identically but records at construction time that this is an answer to a
+    /// request rather than a spontaneous announcement. A peer decoding these
+    /// bytes gets [`Payload::VehicleAnnouncement`] either way.
+    ///
+    /// # Panics
+    /// Panics if the payload's `encoded_size` errors, or if the resulting size
+    /// does not fit in a `u32`. Neither is reachable here: the payload is fixed
+    /// size (33 bytes) and `encoded_size` is pure arithmetic over the struct's
+    /// own fields, with no I/O to fail.
+    #[must_use]
+    pub fn vehicle_identification_response(
+        protocol_version: ProtocolVersion,
+        response: VehicleIdentificationResponse,
+    ) -> OwnedMessage {
+        let payload_size = payload_len(&Payload::VehicleIdentificationResponse(response));
+        OwnedMessage {
+            header: Header::new(
+                protocol_version,
+                PayloadType::VehicleAnnouncement,
+                payload_size,
+            ),
+            payload: OwnedPayload::VehicleIdentificationResponse(response),
+        }
+    }
 }
 
 /// Encode delegates through the borrowed view so there is exactly one wire

@@ -311,7 +311,7 @@ seam described above (section 3) usable.
 | `src/socket_manager.rs` | Owns the spawned socket task; bridges `FramedRead`/`FramedWrite` to two mpsc channels; enforces the general inactivity timeout |
 | `src/client_inner.rs` | The client state machine: a `ControlMessage` enum plus a select loop matching responses to pending requests |
 | `src/client.rs` | Public `Client<Conn>` — connect, routing activation, send/receive diagnostic messages |
-| `src/server.rs` | `Server<T>`, `ServerConnectionHandler`, `ClientConnectionInfo` |
+| `src/server.rs` | `Server<T>`, `ServerConnectionHandler`, `ResponseWriter`, `ClientConnectionInfo` |
 
 The client is a channel sandwich, described in one comment at the top of
 `src/client_inner.rs`:
@@ -366,6 +366,9 @@ future change can silently reintroduce a dropped-`Sender` bug.
   regenerate them**. Note they cover *bodies*, encoded via `Encode`; they do not
   independently pin header payload types (see section 7.2).
 - `tests/integration_test.rs` — real client-against-real-server over loopback TCP.
+- `tests/udp_identification.rs` — drives `Server::run_udp_responder` on a loopback
+  `UdpSocket`: an answered broadcast probe, silence for the directed EID/VIN
+  forms, and a responder that keeps serving after datagrams it cannot answer.
 - `tests/nested_encode.rs` — a permanent regression test for the encode hot path.
 - `examples/bare_metal_codec.rs` — encode into a `[u8; N]`, frame, decode; builds
   and runs with `--no-default-features`. This is the executable proof that the
@@ -377,42 +380,38 @@ future change can silently reintroduce a dropped-`Sender` bug.
 ## 7. Known issues and deferred work
 
 Everything in this section was found by review during the handoff cleanup. It is
-recorded here so the analysis does not have to be re-derived. None of it is
-scheduled; all of it is a decision for the crate's next owner.
+recorded here so the analysis does not have to be re-derived. Except where an
+entry is marked RESOLVED, none of it is scheduled; it is a decision for the
+crate's next owner. Resolved entries are kept because the analysis that led to
+the fix is still the fastest way to understand the shape the API ended up with.
 
-### 7.1 `ServerConnectionHandler::diagnostic_message` cannot express correct DoIP behavior
-
-This is the one place where the API shape prevents a correct implementation.
-
-```rust
-async fn diagnostic_message(
-    &self,
-    message: &DiagnosticMessage<'_>,
-) -> Result<OwnedMessage, Error>;
-```
-(`ServerConnectionHandler::diagnostic_message` in `src/server.rs`)
+### 7.1 `ServerConnectionHandler::diagnostic_message` — RESOLVED in 0.4.0
 
 DoIP prescribes that a DoIP entity receiving a diagnostic message first sends a
 `DiagnosticMessageAck`, and then — separately and later — sends any functional
 (e.g. UDS) response as its own `DiagnosticMessage`. Two messages, in order.
 
-The trait returns a **single** `OwnedMessage`, and the dispatch site
-(the `OwnedPayload::DiagnosticMessage` arm of `Server::handle_client_message`)
-maps that one value through `Some(..)` into `Server::handle_client_connection`,
-whose read loop writes at most one message per received message. There is no
-path by which a handler can emit both.
+The trait used to return a **single** `OwnedMessage`, so an implementer had to
+choose one of the two and no handler could drive a real UDS tester.
 
-So an implementer must choose: send the required acknowledgement, or send the
-functional response. `examples/echo_server.rs` picks the acknowledgement and
-smuggles the request bytes back inside the ack's `previous_message_data` field —
-which is an echo demo, not protocol-correct behavior, and the example says so in
-a comment (in its `diagnostic_message` implementation, `examples/echo_server.rs`).
+It now takes a sink instead:
 
-**Recommendation:** revisit the trait signature. Plausible shapes are returning a
-collection, taking a sink/writer the handler can push to, or splitting the ack
-decision (which the server could synthesize itself) from the response.
+```rust
+async fn diagnostic_message(
+    &self,
+    message: &DiagnosticMessage<'_>,
+    responses: &mut dyn ResponseWriter,
+) -> Result<(), Error>;
+```
+(`ServerConnectionHandler::diagnostic_message` in `src/server.rs`)
 
-Note that `routing_activation` has the same single-`OwnedMessage` return shape,
+Each `ResponseWriter::send` writes straight to the connection's framed write
+half, so a handler emits as many messages as the exchange needs — ack, any
+number of NRC `0x78` "response pending" messages, then the final answer — and
+may await arbitrary work between them. `examples/echo_server.rs` shows the
+two-message shape.
+
+Note that `routing_activation` still has the single-`OwnedMessage` return shape,
 but that is fine — routing activation genuinely is one request, one response.
 
 ### 7.2 `diagnostic_message_ack` hardcodes the positive acknowledgement payload type
@@ -568,11 +567,20 @@ returning `true` breaks it. Either delete the field or make the loop honor it.
 ### 7.6 Other rough edges
 
 These are documented in `README.md` under **Status** and are repeated here only
-as a pointer: no TLS; no UDP vehicle announcement or discovery; the server's
-accept loop serves one TCP connection at a time; entity status and vehicle
-identification requests over TCP are silently dropped;
-`ClientConnectionInfo::logical_address` is hard-coded to `0x0000` because the
-server tracks no per-connection state; a failed `accept()` panics the server task.
+as a pointer: no TLS; no unsolicited UDP vehicle announcement at power-on
+(identification requests over UDP *are* answered, but only by
+`Server::run_udp_responder` on a socket the caller binds and drives — `run_server`
+binds TCP alone — and only the broadcast `0x0001` form, since `Payload::decode`
+discards the EID/VIN the directed forms name); the server's accept loop serves
+one TCP connection at a time; entity status and vehicle identification requests
+over TCP are silently dropped; `ClientConnectionInfo::logical_address` is
+hard-coded to `0x0000` because the server tracks no per-connection state; the
+handler passed to `Server::new` is not validated.
+
+A failed `accept()` no longer panics the server task — as of 0.4.0 both the TCP
+accept loop and the UDP responder log the error, sleep briefly, and continue, so
+neither a transient peer reset nor a persistent condition such as `EMFILE` can
+take the entity down or spin a core.
 
 ---
 
