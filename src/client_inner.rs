@@ -266,28 +266,12 @@ where
                 if send_result.is_ok() {
                     // Wait for the ACK until `A_DoIP_Diagnostic_Message`, the point
                     // at which ISO 13400-2 says a message may be considered lost.
-                    // Configurable via `ClientOptions`, defaulting to the spec
-                    // value, because these are deployment parameters — a
-                    // conformance tester drives them from the diagnostic
-                    // database under test.
+                    // Configurable via `ClientOptions`, defaulting to the spec value.
                     //
-                    // NOT `TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL` (50 ms), which this
-                    // used to be. That parameter is a performance requirement on the
-                    // *entity* — how quickly it must emit the ACK after receiving the
-                    // last byte — not a budget for a tester to give up on. Enforcing
-                    // it here made every ACK that arrived late, for any reason, look
-                    // like an ECU that never answered: it allows nothing for network
-                    // transit, scheduling, or an entity that ACKs after running its
-                    // handler rather than on receipt.
-                    //
-                    // Measured against an Iris sensor on firmware 0.11.1: DID 0xFEF6
-                    // ACKs at ~150 ms because its handler does three chained I2C
-                    // EEPROM reads first. Under the 50 ms deadline that DID was
-                    // unreadable 100% of the time and surfaced as
-                    // `ResponseTimeoutExceeded` — whose own docs say it means
-                    // `A_DoIP_Diagnostic_Message`, so the code contradicted the
-                    // error it was returning. Under the correct 2 s budget it reads
-                    // every time, with 13x margin.
+                    // NOT `TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL` (50 ms): that bounds
+                    // how fast the *entity* must emit the ACK, and leaves a tester
+                    // nothing for transit, scheduling, or a handler that does slow
+                    // I/O before acking.
                     self.await_response_deadline = Some(
                         tokio::time::Instant::now()
                             + self.client_options.diagnostic_message_timeout,

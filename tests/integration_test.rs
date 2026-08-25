@@ -1069,9 +1069,8 @@ impl ServerConnectionHandler for SlowAckThenRespondHandler {
         responses: &mut dyn ResponseWriter,
     ) -> Result<(), Error> {
         // 4x the 50 ms entity-side ack requirement, 1/10th of the 2 s loss
-        // timeout. Deliberately in the gap: a real Iris sensor acks DID 0xFEF6
-        // at ~150 ms because its handler does three chained I2C EEPROM reads
-        // before acking.
+        // timeout — deliberately in the gap where an entity that does slow I/O
+        // before acking lands.
         tokio::time::sleep(Duration::from_millis(200)).await;
         send_positive_ack(self, message, responses).await?;
         responses
