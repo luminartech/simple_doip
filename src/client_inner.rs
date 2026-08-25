@@ -264,9 +264,28 @@ where
                 }
                 let send_result = self.send_to_socket(message).await;
                 if send_result.is_ok() {
-                    // Set up to wait for ACK only
+                    // Wait for the ACK until `A_DoIP_Diagnostic_Message`, the point
+                    // at which ISO 13400-2 says a message may be considered lost.
+                    //
+                    // NOT `TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL` (50 ms), which this
+                    // used to be. That parameter is a performance requirement on the
+                    // *entity* — how quickly it must emit the ACK after receiving the
+                    // last byte — not a budget for a tester to give up on. Enforcing
+                    // it here made every ACK that arrived late, for any reason, look
+                    // like an ECU that never answered: it allows nothing for network
+                    // transit, scheduling, or an entity that ACKs after running its
+                    // handler rather than on receipt.
+                    //
+                    // Measured against an Iris sensor on firmware 0.11.1: DID 0xFEF6
+                    // ACKs at ~150 ms because its handler does three chained I2C
+                    // EEPROM reads first. Under the 50 ms deadline that DID was
+                    // unreadable 100% of the time and surfaced as
+                    // `ResponseTimeoutExceeded` — whose own docs say it means
+                    // `A_DoIP_Diagnostic_Message`, so the code contradicted the
+                    // error it was returning. Under the correct 2 s budget it reads
+                    // every time, with 13x margin.
                     self.await_response_deadline = Some(
-                        tokio::time::Instant::now() + crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL,
+                        tokio::time::Instant::now() + crate::TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE,
                     );
                     self.active_request = Some(ControlMessage::AwaitAck(response));
                 } else if let Err(e) = send_result {

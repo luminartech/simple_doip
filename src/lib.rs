@@ -121,6 +121,13 @@ pub const TCP_TIMEOUT_GENERAL_INACTIVITY: Duration = Duration::from_secs(300);
 pub const TCP_TIMEOUT_ALIVE_CHECK: Duration = Duration::from_secs(5);
 
 /// Time between receipt of the last byte of a `DoIP` Diagnostic Message and transmission of the ACK or NACK.
+///
+/// This is a performance requirement on the **entity emitting the ACK**, not a
+/// deadline for a tester waiting on one. Do not use it to time out a send:
+/// it allows nothing for network transit or for an entity that ACKs after
+/// running its handler, and an entity that is merely slow is not an entity
+/// that failed. [`TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE`] is the parameter that
+/// governs when a message may be considered lost.
 pub const TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL: Duration = Duration::from_millis(50);
 
 /// After the timeout has elapsed, the request or response is considered to be lost and the request may be repeated

@@ -950,9 +950,9 @@ async fn timed_out_diagnostic_message_ack_surfaces_timeout_not_connection_closed
               that behaves normally until the diagnostic message",
     );
 
-    // simple_doip::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL is 50ms; TEST_TIMEOUT (5s) gives
-    // this test comfortable headroom so it observes the client's own deadline rather
-    // than racing it.
+    // The client's ACK deadline is TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE
+    // (`A_DoIP_Diagnostic_Message`, 2s); TEST_TIMEOUT (5s) gives this test headroom
+    // so it observes the client's own deadline rather than racing it.
     let result = with_timeout(
         "send_diagnostic_message against a server that never acks",
         client.send_diagnostic_message(AddressType::Physical, vec![0x10, 0x03]),
@@ -1023,6 +1023,105 @@ impl ServerConnectionHandler for AckThenRespondHandler {
             .await?;
         Ok(())
     }
+}
+
+/// Acks after a delay that exceeds `TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL` (50 ms)
+/// but sits well inside `TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE` (2 s), the way a
+/// real entity does when it runs its handler before acking.
+struct SlowAckThenRespondHandler;
+
+#[async_trait]
+impl ServerConnectionHandler for SlowAckThenRespondHandler {
+    fn get_vin(&self) -> [u8; 17] {
+        [0x00; 17]
+    }
+
+    fn get_logical_address(&self) -> LogicalAddress {
+        SERVER_LOGICAL_ADDRESS
+    }
+
+    fn get_entity_id(&self) -> [u8; 6] {
+        [0x00; 6]
+    }
+
+    fn get_group_id(&self) -> Option<[u8; 6]> {
+        None
+    }
+
+    async fn routing_activation(
+        &self,
+        request: &RoutingActivationRequest,
+    ) -> Result<OwnedMessage, Error> {
+        Ok(OwnedMessage::routing_activation_response(
+            self.protocol_version(),
+            request.source_address,
+            self.get_logical_address(),
+            RoutingActivationResponseCode::RoutingSuccessfullyActivated,
+            [0; 4],
+            None,
+        ))
+    }
+
+    async fn diagnostic_message(
+        &self,
+        message: &DiagnosticMessage<'_>,
+        responses: &mut dyn ResponseWriter,
+    ) -> Result<(), Error> {
+        // 4x the 50 ms entity-side ack requirement, 1/10th of the 2 s loss
+        // timeout. Deliberately in the gap: a real Iris sensor acks DID 0xFEF6
+        // at ~150 ms because its handler does three chained I2C EEPROM reads
+        // before acking.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        send_positive_ack(self, message, responses).await?;
+        responses
+            .send(OwnedMessage::diagnostic_message(
+                self.protocol_version(),
+                self.get_logical_address(),
+                message.source_address,
+                vec![0x62, 0xFD, 0x69, 0xAA],
+            ))
+            .await?;
+        Ok(())
+    }
+}
+
+/// A slow ack is not a lost message.
+///
+/// Regression test for a real bug: the client used to wait
+/// `TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL` (50 ms) for the ack. That constant is a
+/// performance requirement on the entity *emitting* the ack, not a tester's
+/// give-up budget, and enforcing it here made any entity that acks after running
+/// its handler look like one that never answered. It cost real bench time to
+/// diagnose, and it was reported as a firmware defect before being traced here.
+///
+/// Nothing covered this gap: the existing tests use a server that acks
+/// immediately or one that never acks at all, so both pass either way.
+#[tokio::test]
+async fn ack_later_than_the_entity_requirement_but_inside_the_loss_timeout_succeeds() {
+    let (server_addr, accept_loop) = start_server_with(SlowAckThenRespondHandler).await;
+
+    let mut client = with_timeout(
+        "client connect + routing activation",
+        Client::<TestConnector>::connect(client_options(server_addr)),
+    )
+    .await
+    .expect("client should connect and activate routing");
+
+    let result = with_timeout(
+        "send_diagnostic_message against a server that acks after 200ms",
+        client.send_diagnostic_message(AddressType::Physical, vec![0x22, 0xFD, 0x69]),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "an ack arriving 200ms after the request is late by the entity's own 50ms \
+         requirement but far inside A_DoIP_Diagnostic_Message (2s), so the send must \
+         succeed rather than surfacing a timeout; got: {result:?}"
+    );
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
 }
 
 /// A single diagnostic request must be answerable with two messages on the wire: the
