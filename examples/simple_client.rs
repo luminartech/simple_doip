@@ -27,6 +27,7 @@ async fn main() -> anyhow::Result<()> {
         client_address: IpAddr::from([0, 0, 0, 0]),
         client_logical_address: LogicalAddress(0x0E01),
         protocol_version: ProtocolVersion::V2012,
+        diagnostic_message_timeout: simple_doip::TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE,
         routing_activation_options: Some(simple_doip::client::RoutingActivationOptions {
             activation_type: ActivationTypeCode::Default,
             oem_specific: None,

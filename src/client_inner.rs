@@ -266,6 +266,10 @@ where
                 if send_result.is_ok() {
                     // Wait for the ACK until `A_DoIP_Diagnostic_Message`, the point
                     // at which ISO 13400-2 says a message may be considered lost.
+                    // Configurable via `ClientOptions`, defaulting to the spec
+                    // value, because these are deployment parameters — a
+                    // conformance tester drives them from the diagnostic
+                    // database under test.
                     //
                     // NOT `TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL` (50 ms), which this
                     // used to be. That parameter is a performance requirement on the
@@ -285,7 +289,8 @@ where
                     // error it was returning. Under the correct 2 s budget it reads
                     // every time, with 13x margin.
                     self.await_response_deadline = Some(
-                        tokio::time::Instant::now() + crate::TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE,
+                        tokio::time::Instant::now()
+                            + self.client_options.diagnostic_message_timeout,
                     );
                     self.active_request = Some(ControlMessage::AwaitAck(response));
                 } else if let Err(e) = send_result {

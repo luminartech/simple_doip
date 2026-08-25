@@ -317,6 +317,7 @@ fn client_options(server_addr: SocketAddr) -> ClientOptions {
             activation_type: ActivationTypeCode::Default,
             oem_specific: None,
         }),
+        diagnostic_message_timeout: simple_doip::TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE,
     }
 }
 
@@ -1118,6 +1119,76 @@ async fn ack_later_than_the_entity_requirement_but_inside_the_loss_timeout_succe
         "an ack arriving 200ms after the request is late by the entity's own 50ms \
          requirement but far inside A_DoIP_Diagnostic_Message (2s), so the send must \
          succeed rather than surfacing a timeout; got: {result:?}"
+    );
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
+}
+
+/// A configured timeout *below* the entity's ack delay must expire.
+///
+/// This is the half that proves `ClientOptions` is actually consulted: if the
+/// hardcoded 2 s default were still in force, a 200 ms ack would sail through.
+#[tokio::test]
+async fn diagnostic_message_timeout_below_the_ack_delay_expires() {
+    let (server_addr, accept_loop) = start_server_with(SlowAckThenRespondHandler).await;
+
+    let options =
+        client_options(server_addr).with_diagnostic_message_timeout(Duration::from_millis(20));
+    let mut client = with_timeout(
+        "connect with a 20ms diagnostic-message timeout",
+        Client::<TestConnector>::connect(options),
+    )
+    .await
+    .expect("client should connect and activate routing");
+
+    let result = with_timeout(
+        "send with a 20ms timeout against a 200ms ack",
+        client.send_diagnostic_message(AddressType::Physical, vec![0x22, 0xFD, 0x69]),
+    )
+    .await;
+
+    assert!(
+        matches!(result, Err(Error::ResponseTimeoutExceeded)),
+        "a 20ms configured timeout must expire against a 200ms ack — otherwise the \
+         configured value is being ignored; got: {result:?}"
+    );
+
+    accept_loop.abort();
+    let _ = accept_loop.await;
+}
+
+/// A configured timeout *above* the entity's ack delay must succeed.
+///
+/// The counterpart to the test above: together they show the failure there was
+/// the timeout expiring rather than anything incidental to a slow server.
+///
+/// Its own server rather than a second client on the shared one:
+/// `start_server_with`'s accept loop awaits each connection to completion, so a
+/// still-live client from a previous phase blocks the next connection from being
+/// served and the test fails for a reason that has nothing to do with timeouts.
+#[tokio::test]
+async fn diagnostic_message_timeout_above_the_ack_delay_succeeds() {
+    let (server_addr, accept_loop) = start_server_with(SlowAckThenRespondHandler).await;
+
+    let options =
+        client_options(server_addr).with_diagnostic_message_timeout(Duration::from_millis(1500));
+    let mut client = with_timeout(
+        "connect with a 1500ms diagnostic-message timeout",
+        Client::<TestConnector>::connect(options),
+    )
+    .await
+    .expect("client should connect and activate routing");
+
+    let result = with_timeout(
+        "send with a 1500ms timeout against a 200ms ack",
+        client.send_diagnostic_message(AddressType::Physical, vec![0x22, 0xFD, 0x69]),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "a 200ms ack must succeed under a 1500ms configured timeout; got: {result:?}"
     );
 
     accept_loop.abort();
