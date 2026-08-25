@@ -30,6 +30,7 @@
 //!         activation_type: ActivationTypeCode::Default,
 //!         oem_specific: None,
 //!     }),
+//!     diagnostic_message_timeout: simple_doip::TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE,
 //! };
 //! // The turbofish is required even though `Client<Conn>` defaults to `ConnectorSocket`:
 //! // a type parameter's default is not used for inference on an associated-function call,

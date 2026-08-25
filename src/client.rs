@@ -49,6 +49,36 @@ pub struct ClientOptions {
     pub protocol_version: ProtocolVersion,
     /// The activation type to use when sending the routing activation request
     pub routing_activation_options: Option<RoutingActivationOptions>,
+    /// How long to wait for a diagnostic message to be answered before treating
+    /// it as lost — ISO 13400-2's `A_DoIP_Diagnostic_Message`.
+    ///
+    /// Defaults to [`TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE`] (2 s), the spec
+    /// value. It is configurable because these are deployment parameters: a
+    /// conformance tester has to drive the values from the diagnostic database
+    /// it is testing against, not from whatever this crate picked.
+    ///
+    /// Note this is emphatically **not**
+    /// [`TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL`] (50 ms). That constant is a
+    /// performance requirement on the *entity* emitting the ack, and using it as
+    /// a tester's deadline makes every entity that acks after running its
+    /// handler look like one that never answered.
+    ///
+    /// [`TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE`]: crate::TIMEOUT_DIAGNOSTIC_MESSAGE_RESPONSE
+    /// [`TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL`]: crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL
+    pub diagnostic_message_timeout: Duration,
+}
+
+impl ClientOptions {
+    /// Override [`Self::diagnostic_message_timeout`].
+    ///
+    /// A setter rather than only a struct field so a caller that wants the spec
+    /// defaults for everything else does not have to track additions to this
+    /// struct.
+    #[must_use]
+    pub const fn with_diagnostic_message_timeout(mut self, timeout: Duration) -> Self {
+        self.diagnostic_message_timeout = timeout;
+        self
+    }
 }
 
 /// Selects which of the two target addresses configured on [`ClientOptions`] a

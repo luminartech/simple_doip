@@ -264,9 +264,17 @@ where
                 }
                 let send_result = self.send_to_socket(message).await;
                 if send_result.is_ok() {
-                    // Set up to wait for ACK only
+                    // Wait for the ACK until `A_DoIP_Diagnostic_Message`, the point
+                    // at which ISO 13400-2 says a message may be considered lost.
+                    // Configurable via `ClientOptions`, defaulting to the spec value.
+                    //
+                    // NOT `TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL` (50 ms): that bounds
+                    // how fast the *entity* must emit the ACK, and leaves a tester
+                    // nothing for transit, scheduling, or a handler that does slow
+                    // I/O before acking.
                     self.await_response_deadline = Some(
-                        tokio::time::Instant::now() + crate::TIMEOUT_DIAGNOSTIC_MESSAGE_INITIAL,
+                        tokio::time::Instant::now()
+                            + self.client_options.diagnostic_message_timeout,
                     );
                     self.active_request = Some(ControlMessage::AwaitAck(response));
                 } else if let Err(e) = send_result {
