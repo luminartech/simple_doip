@@ -1504,3 +1504,122 @@ async fn handler_holds_pending_wait_open_between_sends() {
     accept_loop.abort();
     let _ = accept_loop.await;
 }
+
+/// A raw DoIP entity that answers exactly one diagnostic request and then hangs up:
+/// routing activation response, positive ack, the response itself, then close.
+///
+/// Written against raw halves rather than [`Server`] because the point of the fixture
+/// is the close arriving immediately behind the response, which a handler cannot
+/// express.
+async fn answer_one_request_then_hang_up(listener: TcpListener) {
+    let (mut stream, _) = listener.accept().await.expect("accept");
+    let (rx, tx) = stream.split();
+    let mut reader = FramedRead::new(rx, MessageCodec::new());
+    let mut writer = FramedWrite::new(tx, MessageCodec::new());
+
+    let activation = read_message(&mut reader).await;
+    let OwnedPayload::RoutingActivationRequest(ref request) = activation.payload else {
+        panic!("expected a routing activation request, got {activation:?}");
+    };
+    writer
+        .send(&OwnedMessage::routing_activation_response(
+            ProtocolVersion::V2012,
+            request.source_address,
+            SERVER_LOGICAL_ADDRESS,
+            RoutingActivationResponseCode::RoutingSuccessfullyActivated,
+            [0; 4],
+            None,
+        ))
+        .await
+        .expect("send routing activation response");
+
+    let request = read_message(&mut reader).await;
+    let OwnedPayload::DiagnosticMessage(ref diagnostic) = request.payload else {
+        panic!("expected a diagnostic message, got {request:?}");
+    };
+    let tester = diagnostic.source_address;
+    writer
+        .send(&OwnedMessage::diagnostic_message_ack(
+            ProtocolVersion::V2012,
+            SERVER_LOGICAL_ADDRESS,
+            tester,
+            DiagnosticAckCode::RoutingConfirmationAck,
+            diagnostic.user_data.clone(),
+        ))
+        .await
+        .expect("send diagnostic message ack");
+    writer
+        .send(&OwnedMessage::diagnostic_message(
+            ProtocolVersion::V2012,
+            SERVER_LOGICAL_ADDRESS,
+            tester,
+            vec![0x62, 0xFD, 0x69, 0xAA],
+        ))
+        .await
+        .expect("send diagnostic response");
+
+    // Returning drops the stream, so the FIN follows the response immediately.
+}
+
+/// A response that has already been received must still be delivered after the
+/// connection closes.
+///
+/// An entity that answers and then hangs up - an ECU reset, a session change that
+/// reboots it, or a server that simply closes once it is done - lands its response in
+/// `pending_diagnostic_response` if no receive was pending at the time, and the FIN
+/// behind it tears the socket down. `ReceiveDiagnosticResponse` used to check the
+/// socket before draining that buffer, so the caller got `SocketNotBound` for a
+/// response the client was already holding: an answered request reported as
+/// unanswered.
+#[tokio::test]
+async fn buffered_response_outlives_the_connection_that_carried_it() {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("failed to bind test entity to an ephemeral port");
+    let server_addr = listener
+        .local_addr()
+        .expect("bound listener has an address");
+    let entity = tokio::spawn(answer_one_request_then_hang_up(listener));
+
+    let mut client = with_timeout(
+        "client connect + routing activation",
+        Client::<TestConnector>::connect(client_options(server_addr)),
+    )
+    .await
+    .expect("client should connect and activate routing");
+
+    with_timeout(
+        "send_diagnostic_message",
+        client.send_diagnostic_message(AddressType::Physical, vec![0x22, 0xFD, 0x69]),
+    )
+    .await
+    .expect("the entity acks immediately, so the send must succeed");
+
+    // The send returns on the ack, so the response and the FIN behind it arrive with no
+    // receive pending. Wait for the entity to finish rather than racing it: the buffer
+    // and the teardown must both have happened before the receive below is issued, or
+    // the test passes without exercising the ordering it exists for.
+    with_timeout("entity finishes and closes", entity)
+        .await
+        .expect("entity task should not panic");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let received = with_timeout(
+        "receive_diagnostic_response after the connection closed",
+        client.receive_diagnostic_response(Duration::from_millis(500)),
+    )
+    .await
+    .expect(
+        "the response was received before the connection closed, so it must be delivered \
+         rather than discarded in favour of a transport error",
+    );
+
+    let OwnedPayload::DiagnosticMessage(ref diagnostic) = received.payload else {
+        panic!("expected a diagnostic message, got {received:?}");
+    };
+    assert_eq!(
+        diagnostic.user_data,
+        vec![0x62, 0xFD, 0x69, 0xAA],
+        "the delivered response must be the one the entity sent"
+    );
+}

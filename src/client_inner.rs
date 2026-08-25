@@ -282,17 +282,22 @@ where
                 }
             }
             ControlMessage::ReceiveDiagnosticResponse(timeout, response) => {
+                // Drain the buffer BEFORE the socket check. A response that has already
+                // been received is owed to the caller whether or not the connection
+                // survived: an entity that answers and then closes (an ECU reset, a
+                // session change that reboots it, or just a server that hangs up once
+                // it is done) would otherwise have its last response discarded in
+                // favour of `SocketNotBound`, which reads as "it never answered".
+                if let Some(buffered) = self.pending_diagnostic_response.take() {
+                    debug!("Returning buffered diagnostic response");
+                    let _ = response.send(Ok(buffered));
+                    return;
+                }
+
                 if self.tcp_data_socket.is_none() {
                     if response.send(Err(Error::SocketNotBound)).is_err() {
                         debug!("Failed to send response: Socket not bound");
                     }
-                    return;
-                }
-
-                // Check if we already have a buffered response from a fast server
-                if let Some(buffered) = self.pending_diagnostic_response.take() {
-                    debug!("Returning buffered diagnostic response");
-                    let _ = response.send(Ok(buffered));
                     return;
                 }
 
