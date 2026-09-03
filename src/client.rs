@@ -146,9 +146,12 @@ where
         control_sender.send(message).await.map_err(|_| {
             Error::BindFailed("Could not send BindSocket message to inner client".into())
         })?;
+        // Inspect the bind result before attempting routing activation below: a
+        // failed bind leaves the inner task alive with no socket, so it would
+        // answer with `SocketNotBound`, masking the real connect error.
         let port = response
             .await
-            .map_err(|_| Error::BindFailed("Connection task terminated unexpectedly".into()))?;
+            .map_err(|_| Error::BindFailed("Connection task terminated unexpectedly".into()))??;
 
         // Automatically send a routing activation request if the client options specify it
         'routing: {
@@ -242,7 +245,7 @@ where
                 }
             }
         }
-        port
+        Ok(port)
     }
 
     /// Unbind the socket from the local address and port
