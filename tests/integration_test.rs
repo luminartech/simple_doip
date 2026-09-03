@@ -1623,3 +1623,46 @@ async fn buffered_response_outlives_the_connection_that_carried_it() {
         "the delivered response must be the one the entity sent"
     );
 }
+
+/// Test-only [`Connector`] whose connection attempt always fails, standing in
+/// for a `DoIP` entity that is not at the address being dialed.
+#[derive(Clone, Copy, Debug)]
+struct UnreachableConnector;
+
+#[async_trait]
+impl Connector for UnreachableConnector {
+    async fn establish_connection(
+        _gateway_address: SocketAddr,
+    ) -> Result<(OwnedReadHalf, OwnedWriteHalf), Error> {
+        Err(Error::NetworkError(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "simulated: nothing is listening at this address",
+        )))
+    }
+}
+
+/// A failed connection must report *why* it failed, not
+/// [`Error::SocketNotBound`].
+///
+/// `bind_socket` deferred checking the `BindSocket` result until after routing
+/// activation, and the inner task answers activation on an unbound socket with
+/// `SocketNotBound` — so that replaced the connect error already in hand.
+#[tokio::test]
+async fn a_failed_connection_reports_the_connect_error_not_socket_not_bound() {
+    // No server is started: the connector refuses regardless of the address.
+    let unused_address: SocketAddr = "127.0.0.1:13400".parse().expect("valid address");
+
+    let error = Client::<UnreachableConnector>::connect(client_options(unused_address))
+        .await
+        .expect_err("connect must fail when the transport cannot be established");
+
+    assert!(
+        !matches!(error, Error::SocketNotBound),
+        "the connect failure must not be masked by the routing activation that \
+         follows it, got: {error:?}"
+    );
+    assert!(
+        matches!(error, Error::NetworkError(_)),
+        "expected the underlying connect error to survive, got: {error:?}"
+    );
+}
