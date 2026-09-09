@@ -1,0 +1,15 @@
+# cargo-release config for the standalone simple_doip repo (single crate).
+#
+# `publish = false` keeps a local `cargo release <bump>` from ever reaching
+# crates.io -- a version bump is a local, reviewable commit. CI publishes with
+# the `cargo release publish` *subcommand*, which overrides this field, so the
+# release workflow still works with it set.
+publish = false
+registry = "crates-io"
+tag-name = "v{{version}}"
+tag-message = "simple_doip v{{version}}"
+pre-release-commit-message = "chore(release): v{{version}}"
+allow-branch = ["main"]
+# `--all-features`, not a bare `cargo test`: `default = []` here, so the
+# default-feature test run exercises almost none of the crate.
+pre-release-hook = ["cargo", "test", "--locked", "--all-features"]

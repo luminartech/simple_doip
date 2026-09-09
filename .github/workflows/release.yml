@@ -1,0 +1,62 @@
+# Tag-driven publish to crates.io. Push `v{version}` on main and this runs;
+# nothing here fires on a normal push or PR merge.
+#
+# Publishing is GATED and inert until someone deliberately turns it on --
+# see the `if:` on the publish job.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    # Two independent gates:
+    #
+    # 1. Repository -- a fork that pushes a `v*` tag must never publish under
+    #    this crate's name, even if it somehow carries a token.
+    # 2. `SIMPLE_DOIP_PUBLISH_ENABLED` -- the deliberate switch. Set the repo
+    #    variable to `true` once `CARGO_REGISTRY_TOKEN` is in secrets and the
+    #    crate has a crates.io owner. Until then this job is skipped, so
+    #    merging this workflow publishes nothing.
+    #
+    # Publishing needs the token and crates.io reachability only. It does not
+    # need the Kellnr proxy -- that fronts crates.io for dft-side *consumption*
+    # of the published crate, which is a separate concern.
+    if: >-
+      github.repository == 'luminartech/simple_doip'
+      && vars.SIMPLE_DOIP_PUBLISH_ENABLED == 'true'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # A crates.io publish cannot be undone -- only yanked -- so confirm the
+      # tag names the version the manifest actually carries before spending it.
+      - name: Verify the tag matches the manifest version
+        run: |
+          manifest=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[0].version')
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$manifest" != "$tag" ]; then
+            echo "::error::tag $GITHUB_REF_NAME wants $tag, Cargo.toml says $manifest"
+            exit 1
+          fi
+          echo "publishing simple_doip $manifest"
+
+      - run: cargo install cargo-release --version '^0.25' --locked
+
+      # `--allow-branch '*'`: a tag-push run is in detached-HEAD state, which
+      # cargo-release's `allow-branch` check would otherwise reject. The gates
+      # above already decide whether this job runs at all.
+      - run: cargo release publish --allow-branch '*' --no-confirm --execute
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
