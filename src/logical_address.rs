@@ -36,6 +36,7 @@ impl LogicalAddress {
 
     /// Verify if the logical address is within the valid range for a client address
     /// of 0x0E00 - 0x0FFF
+    #[must_use]
     pub fn is_valid_client_address(&self) -> bool {
         if *self >= Self::MIN_CLIENT_ADDRESS && *self <= Self::MAX_CLIENT_ADDRESS {
             // Check if the logical address is in the OBD range
@@ -46,7 +47,7 @@ impl LogicalAddress {
                 #[cfg(feature = "std")]
                 info!(
                     "Logical addresses in the 0x0F00-0x0F7F range are intended for internal \
-                data collection/on-board diagnotics only. Ensure that this is the intended use case."
+                data collection/on-board diagnostics only. Ensure that this is the intended use case."
                 );
             }
             true

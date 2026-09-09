@@ -1,0 +1,71 @@
+# Mirrors the checks `luminartech/rust_workflow` runs, so a failure shows up
+# before the push rather than in CI. Install with `pre-commit install`.
+#
+# mdformat is deliberately absent, unlike the sibling protocol repos: it
+# escapes `[` and `]`, and this crate's README and ARCHITECTURE.md are full of
+# intra-doc-style references and tables that the escaping mangles.
+default_language_version:
+  python: python3.12
+default_stages: [pre-commit]
+default_install_hook_types: [pre-commit, prepare-commit-msg, commit-msg]
+repos:
+  # Squash-merge uses the PR title as the commit message, so the same grammar
+  # is checked on the commit locally.
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - --strict
+          - feat
+          - fix
+          - perf
+          - docs
+          - refactor
+          - revert
+          - style
+          - test
+          - chore
+          - ci
+          - build
+  - repo: meta
+    hooks:
+      - id: check-hooks-apply
+      - id: check-useless-excludes
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude_types:
+          - markdown
+      - id: end-of-file-fixer
+        exclude_types:
+          - rust
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+        # VS Code's launch.json is JSONC -- comments are expected there and
+        # strict JSON parsing rejects them.
+        exclude: ^\.vscode/
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        exclude_types:
+          - batch
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.39.1
+    hooks:
+      - id: typos
+        args: ["--config", ".typos.toml"]
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.29.0
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/FeryET/pre-commit-rust
+    rev: v1.2.1
+    hooks:
+      - id: fmt
+      - id: cargo-check

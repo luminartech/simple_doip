@@ -1,0 +1,72 @@
+# Thin caller for the org-wide reusable Rust CI workflow, matching the sibling
+# protocol repos (`uds_protocol`, `automotive_wire_codec`). This file owns the
+# triggers and repo-specific configuration; `luminartech/rust_workflow` owns the
+# jobs: pre-commit, lint, build, no_std canary, unit tests with coverage, miri,
+# MSRV, semver-checks, security audit, docs, and a publish dry run.
+#
+# Publishing is NOT here. `release.yml` publishes on a `v*` tag through
+# crates.io trusted publishing, which needs no stored registry token, so
+# `publish-crate` is off below.
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      enable-comprehensive-tests:
+        description: 'Run comprehensive test suites (longer miri)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: luminartech/rust_workflow/.github/workflows/rust-ci.yml@v1
+    with:
+      # `release.yml` owns publishing, through trusted publishing rather than a
+      # registry token. The dry run stays on: it is the check that the crate
+      # still packages, and it needs no credentials.
+      publish-crate: false
+      run-publish-dry-run: true
+
+      # OFF until the first version is on crates.io. `cargo-semver-checks`
+      # diffs against the published baseline, and there is none yet -- turn
+      # this on in the same change that enables publishing.
+      run-semver-checks: false
+
+      # OFF until the crate has cargo-fuzz targets. `cargo fuzz build` fails
+      # without a `fuzz/` directory; simple_doip#1 adds four targets, and this
+      # flips when that lands.
+      run-fuzz-tests: false
+
+      # OFF because this crate has no `prop_` tests. The filter would select
+      # nothing, and `cargo nextest` exits 4 on an empty selection -- so the
+      # job would fail rather than skip. Unit tests therefore run everything.
+      run-property-tests: false
+      unit-test-filter: 'all()'
+
+      # `thumbv7em-none-eabihf` rather than the workflow's `thumbv6m` default:
+      # it is the target this crate's bare-metal support is written and
+      # documented against, and `examples/bare_metal_codec` is built for it.
+      no-std-target: thumbv7em-none-eabihf
+
+      # `--lib` only: `tests/golden_vectors.rs` reads its `.hex` fixtures off
+      # disk, and miri's isolation refuses `open`. The lib tests are where the
+      # zero-copy decode paths worth checking for UB live -- 21 of them pass
+      # under miri today.
+      miri-args: '--lib'
+
+      # MSRV comes from `rust-version` in Cargo.toml, so it cannot drift from
+      # what the manifest promises.
+
+      comprehensive-tests: ${{ inputs.enable-comprehensive-tests || false }}

@@ -1,0 +1,8 @@
+# Words this crate uses deliberately that `typos` reads as misspellings.
+[default.extend-words]
+# "response pending" is a DoIP/UDS message; a sequence of them is "pendings".
+pendings = "pendings"
+# From "catch-alls" -- the enum variants that absorb unknown wire values.
+alls = "alls"
+# From "mis-mapped".
+mis = "mis"

@@ -129,7 +129,7 @@ impl<Conn> Inner<Conn>
 where
     Conn: crate::connection::Connector + 'static + Send + Sync,
 {
-    /// Spawns the inner client to run in the background and returns the send and recieve channels
+    /// Spawns the inner client to run in the background and returns the send and receive channels
     pub fn spawn(client_options: ClientOptions) -> (ControlSender, UpdateReceiver<MessageError>) {
         trace!("Spawning inner client");
         let (control_sender, control_receiver) = mpsc::channel(16);

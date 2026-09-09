@@ -534,7 +534,10 @@ mod tests {
                 capture().uds_requests.push(request.to_vec());
                 response_out[0] = 0x55;
                 response_out[1..=request.len()].copy_from_slice(request);
-                (request.len() + 1) as i32
+                // The echo fixture is handed requests of a few bytes, so the
+                // conversion cannot fail; a truncating `as` would hide it if
+                // that ever stopped being true.
+                i32::try_from(request.len() + 1).expect("echo response length fits in i32")
             },
         }
     }
@@ -711,7 +714,7 @@ mod tests {
         let msg = Header::new(
             PROTOCOL_VERSION,
             PayloadType::DiagnosticMessage,
-            (MAX_RX_PAYLOAD + 1) as u32,
+            u32::try_from(MAX_RX_PAYLOAD + 1).expect("test payload length fits in u32"),
         );
         let mut writer: &mut [u8] = &mut header;
         msg.encode(&mut writer).unwrap();
