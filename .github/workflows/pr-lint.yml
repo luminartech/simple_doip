@@ -1,0 +1,54 @@
+# PR title linting lives in its own workflow so a title edit re-runs only this
+# check, not the whole verification suite.
+#
+# This matters more here than it looks: the repository merges by squash with
+# `squash_merge_commit_title: PR_TITLE`, so the PR title -- not the commits in
+# the branch -- is the commit subject that lands on `main`. The commit history
+# is the changelog, and this is what keeps its entries conventional.
+name: PR Lint
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+concurrency:
+  group: pr-lint-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title-lint:
+    name: PR Title Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # The action matches types case-sensitively, so both the lowercase
+          # (conventional-commit spec) and capitalized forms are listed.
+          types: |
+            feat
+            Feat
+            fix
+            Fix
+            perf
+            Perf
+            docs
+            Docs
+            refactor
+            Refactor
+            revert
+            Revert
+            style
+            Style
+            test
+            Test
+            chore
+            Chore
+            ci
+            CI
+            build
+            Build
