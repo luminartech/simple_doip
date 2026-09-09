@@ -22,18 +22,18 @@ jobs:
     # Two independent gates:
     #
     # 1. Repository -- a fork that pushes a `v*` tag must never publish under
-    #    this crate's name, even if it somehow carries a token.
+    #    this crate's name.
     # 2. `SIMPLE_DOIP_PUBLISH_ENABLED` -- the deliberate switch. Set the repo
-    #    variable to `true` once `CARGO_REGISTRY_TOKEN` is in secrets and the
-    #    crate has a crates.io owner. Until then this job is skipped, so
+    #    variable to `true` once the crate exists on crates.io and a trusted
+    #    publisher is configured for it. Until then this job is skipped, so
     #    merging this workflow publishes nothing.
-    #
-    # Publishing needs the token and crates.io reachability only. It does not
-    # need the Kellnr proxy -- that fronts crates.io for dft-side *consumption*
-    # of the published crate, which is a separate concern.
     if: >-
       github.repository == 'luminartech/simple_doip'
       && vars.SIMPLE_DOIP_PUBLISH_ENABLED == 'true'
+    permissions:
+      # Mint the OIDC token that crates.io trades for a short-lived publish
+      # token. This is the whole reason no registry secret appears below.
+      id-token: write
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -52,6 +52,19 @@ jobs:
           fi
           echo "publishing simple_doip $manifest"
 
+      # Trusted publishing: crates.io trades this workflow's GitHub OIDC
+      # identity for a token scoped to this crate, which is revoked when the
+      # job ends. Nothing long-lived is stored in this repository.
+      #
+      # It requires a trusted publisher configured on the crate naming this
+      # repository and this workflow file (`release.yml`). That configuration
+      # can only be added to a crate that already exists, so the first version
+      # is published by hand -- which is the intent anyway, since the first
+      # publish claims the name permanently.
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
       - run: cargo install cargo-release --version '^0.25' --locked
 
       # `--allow-branch '*'`: a tag-push run is in detached-HEAD state, which
@@ -59,4 +72,4 @@ jobs:
       # above already decide whether this job runs at all.
       - run: cargo release publish --allow-branch '*' --no-confirm --execute
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
