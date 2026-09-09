@@ -67,15 +67,20 @@ jobs:
       # that kind still have to be marked `!` on the PR title by hand.
       run-semver-checks: false
 
-      # OFF until the crate has cargo-fuzz targets. `cargo fuzz build` fails
-      # without a `fuzz/` directory; simple_doip#1 adds four targets, and this
-      # flips when that lands.
-      run-fuzz-tests: false
-
-      # OFF because this crate has no `prop_` tests. The filter would select
-      # nothing, and `cargo nextest` exits 4 on an empty selection -- so the
-      # job would fail rather than skip. Unit tests therefore run everything.
-      run-property-tests: false
+      # Both on as of the ported suites in `tests/property.rs` and `fuzz/`.
+      #
+      # `unit-test-filter: 'all()'` deliberately overlaps the property job
+      # rather than excluding `prop_`: the unit job is the one that measures
+      # coverage, and coverage should describe the whole suite. The property
+      # job re-runs the same tests under their own name for a readable signal,
+      # which costs a fraction of a second.
+      #
+      # Do not narrow this to a filter that can select nothing --
+      # `cargo nextest` exits 4 on an empty selection, so the job fails
+      # rather than skips.
+      run-fuzz-tests: true
+      run-property-tests: true
+      property-test-filter: 'test(~prop_)'
       unit-test-filter: 'all()'
 
       # `thumbv7em-none-eabihf` rather than the workflow's `thumbv6m` default:
