@@ -15,6 +15,9 @@ changed rather than what was announced at the time.
 
 ### Added
 
+- `MessageError::PayloadTooLarge`, for a payload that cannot be described by
+  the `u32` `payload_length` field. `MessageError` is `#[non_exhaustive]`, so
+  this is not a breaking change.
 - `LICENSE-MIT` and `LICENSE-APACHE`. The manifest had declared
   `MIT OR Apache-2.0` without carrying either text.
 - `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`.
@@ -25,6 +28,17 @@ changed rather than what was announced at the time.
 
 ### Fixed
 
+- `Message::encode` derives the header's `payload_length` from the payload
+  instead of writing the field verbatim. A decoded message keeps whatever
+  length the wire declared, and `Payload::decode` need not consume all of it,
+  so re-encoding a frame that arrived with a mismatched length emitted a frame
+  no decoder would accept. Anything that decodes and re-emits -- a proxy, a
+  replay tool, a logging fake -- was turning a malformed-but-accepted frame
+  into a corrupt one. Consequence to know about: for such a frame,
+  `decode(encode(m)).header.payload_length` is now the payload's real size
+  rather than the length it arrived with.
+- `MessageError::PayloadLengthTooShort`'s message said "does match" where it
+  meant "does not match".
 - `ClientConnectionInfo::logical_address` carries the address the tester
   activated routing with, instead of always being `0x0000`. A handler can now
   tell which tester is asking, and the default `alive_check` answers with the
