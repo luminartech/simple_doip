@@ -145,7 +145,6 @@ impl Encode for RoutingActivationRequest {
     ///
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
-    // TODO: Investigate if we should write the optional vehicle manufacturer specific data if none
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
         write_u16_be(writer, self.source_address.into())?;
         write_u8(writer, self.activation_type.into())?;

@@ -577,6 +577,12 @@ over TCP are silently dropped; `ClientConnectionInfo::logical_address` is
 hard-coded to `0x0000` because the server tracks no per-connection state; the
 handler passed to `Server::new` is not validated.
 
+`RoutingActivationRequest::encode` omits the optional vehicle-manufacturer
+field when it is `None`, writing 7 bytes instead of 11. That is what the
+optionality means, and every golden vector agrees — but no vector exercises a
+peer that requires the long form, so if one turns up, this is the function to
+look at (`src/messages/routing_activation_request.rs`).
+
 A failed `accept()` no longer panics the server task — as of 0.4.0 both the TCP
 accept loop and the UDP responder log the error, sleep briefly, and continue, so
 neither a transient peer reset nor a persistent condition such as `EMFILE` can

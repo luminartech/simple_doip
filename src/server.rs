@@ -11,7 +11,8 @@ use crate::{
     messages::{
         Decode, DiagnosticMessage, DiagnosticPowerModeCode, Encode, FurtherActionRequired, Message,
         OwnedMessage, OwnedPayload, Payload, PayloadType, ProtocolVersion,
-        RoutingActivationRequest, VehicleIdentificationResponse, VinGidSyncStatus,
+        RoutingActivationRequest, RoutingActivationResponseCode, VehicleIdentificationResponse,
+        VinGidSyncStatus,
     },
 };
 use async_trait::async_trait;
@@ -48,14 +49,16 @@ const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(100);
 pub struct ClientConnectionInfo {
     /// IP address of the tester's end of the TCP connection.
     pub ip_address: IpAddr,
-    /// Intended to carry the logical address the tester identified itself with
-    /// during routing activation.
+    /// The logical address the tester identified itself with when it activated
+    /// routing on this connection.
     ///
-    /// **Currently always `0x0000`.** The server does not yet track per-connection
-    /// state, so the tester's routing activation source address is never
-    /// propagated here and this field is hard-coded. As a consequence the default
-    /// [`ServerConnectionHandler::alive_check`] implementation answers with source
-    /// address `0x0000`. Do not treat this field as carrying real data.
+    /// `0x0000` until routing activation succeeds, and after an activation the
+    /// handler denied. That sentinel is unambiguous: ISO 13400-2 reserves
+    /// everything below [`LogicalAddress::MIN_CLIENT_ADDRESS`], so `0x0000` can
+    /// never be a tester's own address.
+    ///
+    /// The UDP identification path has no connection and therefore no routing
+    /// activation to learn an address from, so it always reports `0x0000`.
     pub logical_address: LogicalAddress,
 }
 
@@ -285,7 +288,6 @@ where
     /// # Errors
     /// Returns an [`Error`] if the server cannot be initialized
     pub fn new(connection_handler: T) -> Result<Self, Error> {
-        // TODO: Validate the provided handler
         Ok(Server {
             connection_handler: Arc::new(connection_handler),
             active_connections: AtomicUsize::new(0),
@@ -327,10 +329,6 @@ where
     /// # Errors
     /// Returns an [`Error`] if the TCP listener cannot be bound.
     pub async fn run_server(&self) -> Result<(), Error> {
-        // TODO: unsolicited Vehicle Announcement over UDP at power-on. Answering
-        // vehicle identification requests already exists as
-        // `run_udp_responder`, which the caller drives with its own socket.
-
         let tcp_listener = TcpListener::bind(("0.0.0.0", TCP_PORT)).await?;
         self.run_server_with_listener(tcp_listener).await
     }
@@ -583,11 +581,21 @@ where
         let mut read_stream = FramedRead::new(rx, MessageCodec::new());
         let mut write_sink = FramedWrite::new(tx, MessageCodec::new());
 
+        // Learned from the routing activation this connection carries, and only
+        // once the handler accepts it. Per-connection rather than per-server:
+        // routing activation applies to the socket it arrived on.
+        let mut tester_logical_address: Option<LogicalAddress> = None;
+
         loop {
             match read_stream.next().await {
                 Some(Ok(message)) => {
                     if let Some(response) = self
-                        .handle_client_message(client_socket_addr, message, &mut write_sink)
+                        .handle_client_message(
+                            client_socket_addr,
+                            message,
+                            &mut write_sink,
+                            &mut tester_logical_address,
+                        )
                         .await?
                     {
                         write_sink.send(&response).await?;
@@ -620,15 +628,14 @@ where
         client_socket_addr: SocketAddr,
         request_message: OwnedMessage,
         write_sink: &mut FramedWrite<W, MessageCodec>,
+        tester_logical_address: &mut Option<LogicalAddress>,
     ) -> Result<Option<OwnedMessage>, Error>
     where
         W: tokio::io::AsyncWrite + Unpin + Send,
     {
-        // TODO: Need to handle active sockets by adding clients to a map
-        // client count should come from that map, as well as the logical address missing below
         let connection_info = ClientConnectionInfo {
             ip_address: client_socket_addr.ip(),
-            logical_address: LogicalAddress(0x0000), // TODO fix this constant
+            logical_address: tester_logical_address.unwrap_or(LogicalAddress(0x0000)),
         };
 
         match request_message.payload {
@@ -650,11 +657,24 @@ where
                 );
                 Ok(None)
             }
-            OwnedPayload::RoutingActivationRequest(request) => self
-                .connection_handler
-                .routing_activation(&request)
-                .await
-                .map(Some),
+            OwnedPayload::RoutingActivationRequest(request) => {
+                let response = self.connection_handler.routing_activation(&request).await?;
+                // Record the address only once the handler has accepted the
+                // activation. A denied tester is not activated, so attributing
+                // its claimed address to the connection would report an
+                // identity the entity refused.
+                if let OwnedPayload::RoutingActivationResponse(activation_response) =
+                    &response.payload
+                    && matches!(
+                        activation_response.routing_activation_response_code,
+                        RoutingActivationResponseCode::RoutingSuccessfullyActivated
+                            | RoutingActivationResponseCode::RoutingSuccessfullyActivatedConfirmationRequired
+                    )
+                {
+                    *tester_logical_address = Some(request.source_address);
+                }
+                Ok(Some(response))
+            }
             OwnedPayload::RoutingActivationResponse(_routing_activation_response) => {
                 warn!(
                     "Client sent a server-role RoutingActivationResponse message, source: {client_socket_addr}"
