@@ -23,6 +23,14 @@ changed rather than what was announced at the time.
   org-wide reusable workflow, matching `uds_protocol` and
   `automotive_wire_codec`. There is no release workflow in this repo.
 
+### Fixed
+
+- `ClientConnectionInfo::logical_address` carries the address the tester
+  activated routing with, instead of always being `0x0000`. A handler can now
+  tell which tester is asking, and the default `alive_check` answers with the
+  right source address. It stays `0x0000` before activation and after an
+  activation the handler denied.
+
 ### Changed
 
 - docs.rs now builds with all features, so the `client`, `server` and `codec`

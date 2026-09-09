@@ -573,9 +573,8 @@ choosing the crate; the mechanics are here. No TLS; no unsolicited UDP vehicle a
 binds TCP alone — and only the broadcast `0x0001` form, since `Payload::decode`
 discards the EID/VIN the directed forms name); the server's accept loop serves
 one TCP connection at a time; entity status and vehicle identification requests
-over TCP are silently dropped; `ClientConnectionInfo::logical_address` is
-hard-coded to `0x0000` because the server tracks no per-connection state; the
-handler passed to `Server::new` is not validated.
+over TCP are silently dropped; the handler passed to `Server::new` is not
+validated.
 
 `RoutingActivationRequest::encode` omits the optional vehicle-manufacturer
 field when it is `None`, writing 7 bytes instead of 11. That is what the
