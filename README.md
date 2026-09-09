@@ -8,53 +8,29 @@ the feature-gated layering, the sans-io framing/decode seam, the error taxonomy,
 the relationship to `automotive-wire-codec`, and the known issues and deferred
 refactors a new maintainer should read before changing anything.
 
-## Status
+## Scope and limitations
 
-The protocol core (framing, message encode/decode, golden-vector-tested
-against the on-wire format) is solid and exercised by the test suite. The
-async `client` and `server` layers work for the common case but have known
-gaps a new integrator should know about before relying on them:
+The protocol core — framing, message encode/decode — is golden-vector tested
+against the on-wire format. The async `client` and `server` cover the common
+case, within these bounds:
 
-- **No TLS.** Connections are established in the clear on `TCP_PORT`
-  (`13400`); `TCP_TLS_PORT` (`3496`) is defined per ISO 13400-2 but nothing in
-  this crate uses it.
-- **No unsolicited UDP vehicle announcement.** The server never sends the UDP
-  vehicle-announcement broadcast on startup, so a tester learns of an entity
-  only by asking. Vehicle identification requests over UDP *are* answered, but
-  only by `Server::run_udp_responder`, on a `UdpSocket` the caller bound and
-  drives: `run_server` binds TCP alone, so an entity that starts through it
-  and nothing else is invisible to a discovery probe. `run_udp_responder`
-  answers the broadcast request form (`0x0001`) only; the directed
-  with-EID (`0x0002`) and with-VIN (`0x0003`) forms are declined, because
-  `Payload::decode` discards the EID/VIN bytes and the responder cannot tell
-  whether it is the addressee.
-- **The server accepts one TCP connection at a time.** The accept loop in
-  `Server::run_server_with_listener` (which `Server::run_server` delegates to)
-  awaits each client's connection handling to completion before calling
-  `accept()` again, so a second client cannot connect while the first is still
-  being served — and one tester that connects and then stalls wedges that
-  entity until it disconnects.
-- **Entity status requests and vehicle identification requests over TCP are
-  silently dropped.** `Server::handle_client_message` logs a warning and sends
-  no reply for either, so a tester that asks gets silence rather than an error
-  or a negative response. Identification requests are answered on the UDP path
-  only.
-- **A `DiagnosticMessage` arriving while the client is waiting for an ACK is
-  silently discarded.** After `Client::send_diagnostic_message`, the inner
-  client is in its `AwaitAck` state; a `DiagnosticMessage` that arrives before
-  the acknowledgement is neither buffered nor forwarded to the update channel
-  (only a generic `trace!` of the received message marks its passing) — it is
-  simply dropped. This requires the peer to acknowledge
-  before it responds. A peer that responds first (or that coalesces both into
-  one burst the client reads out of order) will appear to never answer, and the
-  subsequent `receive_diagnostic_response` will time out.
-- **`ClientConnectionInfo::logical_address` is always `0x0000`.** The server
-  does not yet track per-connection logical addresses, so this field is a
-  placeholder rather than the client's real address.
-- The handler passed to `Server::new` is not validated.
+- **No TLS.** Connections are in the clear on `TCP_PORT` (`13400`);
+  `TCP_TLS_PORT` (`3496`) is defined by ISO 13400-2 and unused here.
+- **The server serves one TCP connection at a time.** A second client cannot
+  connect while the first is being served.
+- **No unsolicited UDP vehicle announcement.** A tester learns of an entity only
+  by asking, and identification is answered on the UDP path only, by
+  `Server::run_udp_responder` on a socket the caller binds and drives.
+- **The client requires the peer to acknowledge before it responds.** A
+  `DiagnosticMessage` that arrives while the client is waiting for the
+  acknowledgement is dropped, so a peer that answers first appears never to
+  answer at all.
+- **`ClientConnectionInfo::logical_address` is not yet tracked per connection.**
 
-None of this blocks bare-metal or single-client use; it matters if you need
-concurrent clients, unsolicited announcement, or TLS today.
+[`ARCHITECTURE.md`](ARCHITECTURE.md) §7 has the mechanics behind each of these,
+and the deferred work around them.
+
+None of this constrains bare-metal or single-client use.
 
 ## Quickstart
 
@@ -156,6 +132,13 @@ semver: a breaking change in that crate is a breaking change here too.
 The minimum supported Rust version is **1.88**, bound by let-chain syntax
 used in this crate.
 
+## Contributing
+
+Pull requests, bug reports and questions are welcome — see
+[`CONTRIBUTING.md`](CONTRIBUTING.md). Security reports go through GitHub's
+private vulnerability reporting; see [`SECURITY.md`](SECURITY.md).
+
 ## License
 
-Licensed under either of MIT or Apache-2.0 at your option.
+Licensed under either of [MIT](LICENSE-MIT) or
+[Apache-2.0](LICENSE-APACHE) at your option.
