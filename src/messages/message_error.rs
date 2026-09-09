@@ -43,13 +43,25 @@ pub enum MessageError {
     ///
     /// Currently never produced by this crate.
     #[error(
-        "Payload length in header does match expected payload type length: {value:?}, expected: {expected:?}"
+        "Payload length in header does not match expected payload type length: {value:?}, expected: {expected:?}"
     )]
     PayloadLengthTooShort {
         /// The payload length actually declared in the header.
         value: usize,
         /// The minimum payload length required for the header's `payload_type`.
         expected: u32,
+    },
+    /// The payload encodes to more bytes than the header's `payload_length`
+    /// field can describe. `DoIP` declares that length as a `u32`, so such a
+    /// message has no valid wire form. Recoverable: nothing was written.
+    ///
+    /// Unreachable for a frame that came off the wire, whose length was itself
+    /// a `u32`; it takes a hand-built [`Payload`](crate::messages::Payload)
+    /// borrowing more than `u32::MAX` bytes.
+    #[error("Payload of {size} bytes exceeds the u32 payload_length field")]
+    PayloadTooLarge {
+        /// The payload's encoded size.
+        size: usize,
     },
     /// A structurally valid, supported [`PayloadType`] was received in a context
     /// where it is not a legal response (e.g. a request-only type arriving as a
