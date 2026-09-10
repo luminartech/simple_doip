@@ -1,0 +1,35 @@
+# release-plz owns versioning, the changelog, tags, GitHub releases, and the
+# crates.io publish. The jobs that run it live in the org-wide reusable
+# workflow (`use-release-plz: true` in `.github/workflows/main.yml`), so there
+# is no release workflow in this repository.
+#
+# The values below are byte-identical to `uds_protocol` and
+# `automotive_wire_codec`. Keep them that way: the point of the shared config
+# is that a reader of one protocol repo already knows the others.
+#
+# How a version gets decided: the repo squash-merges with
+# `squash_merge_commit_title: PR_TITLE`, so the PR *title* is the commit
+# subject on `main`, and these parsers read those subjects. `fix:` and `feat:`
+# move the version; `chore`/`ci`/`build`/`test`/`style` are invisible to it.
+# A breaking change needs an explicit `!` (`fix(messages)!: ...`) or a
+# `BREAKING CHANGE:` footer -- see CONTRIBUTING.md.
+[workspace]
+changelog_update = true
+git_release_enable = true
+
+[changelog]
+commit_parsers = [
+    { message = "^feat", group = "Added" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^perf", group = "Performance" },
+    { message = "^docs?", group = "Documentation" },
+    { message = "^refactor", group = "Changed" },
+    { message = "^revert", group = "Reverted" },
+    { message = "^style", skip = true },
+    { message = "^test", skip = true },
+    { message = "^chore\\(release\\)", skip = true },
+    { message = "^chore", skip = true },
+    { message = "^ci", skip = true },
+    { message = "^build", skip = true },
+    { message = ".*", group = "Other" },
+]

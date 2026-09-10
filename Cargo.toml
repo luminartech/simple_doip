@@ -9,7 +9,21 @@ repository = "https://github.com/luminartech/simple_doip"
 readme = "README.md"
 keywords = ["doip", "iso13400", "automotive", "diagnostics", "no-std"]
 categories = ["network-programming", "embedded", "no-std"]
-exclude = ["docs/", ".github/", ".vscode/"]
+exclude = [
+    "docs/",
+    ".github/",
+    ".vscode/",
+    # Repo-local tooling, not part of the library a consumer receives.
+    "release-plz.toml",
+    "rust-toolchain.toml",
+]
+
+# `default = []`, so docs.rs would otherwise build the no_std core alone and
+# publish a reference with no `client`, `server`, `codec`, `alloc` or `std`
+# API in it -- most of what the README points a reader at. Every feature is
+# additive, so all of them can be on at once.
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 automotive-wire-codec = "0.3"

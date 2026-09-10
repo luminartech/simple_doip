@@ -7,16 +7,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'doip'",
+            "name": "Debug unit tests in library 'simple_doip'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=doip"
+                    "--package=simple_doip"
                 ],
                 "filter": {
-                    "name": "doip",
+                    "name": "simple_doip",
                     "kind": "lib"
                 }
             },
@@ -31,7 +31,7 @@
                 "args": [
                     "build",
                     "--example=simple_client",
-                    "--package=doip"
+                    "--package=simple_doip"
                 ],
                 "filter": {
                     "name": "simple_client",
@@ -50,7 +50,7 @@
                     "test",
                     "--no-run",
                     "--example=simple_client",
-                    "--package=doip"
+                    "--package=simple_doip"
                 ],
                 "filter": {
                     "name": "simple_client",
@@ -68,7 +68,7 @@
                 "args": [
                     "build",
                     "--example=echo_server",
-                    "--package=doip"
+                    "--package=simple_doip"
                 ],
                 "filter": {
                     "name": "echo_server",
@@ -87,7 +87,7 @@
                     "test",
                     "--no-run",
                     "--example=echo_server",
-                    "--package=doip"
+                    "--package=simple_doip"
                 ],
                 "filter": {
                     "name": "echo_server",
@@ -106,7 +106,7 @@
                     "test",
                     "--no-run",
                     "--test=integration_test",
-                    "--package=doip"
+                    "--package=simple_doip"
                 ],
                 "filter": {
                     "name": "integration_test",

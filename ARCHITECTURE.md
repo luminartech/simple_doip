@@ -566,8 +566,8 @@ returning `true` breaks it. Either delete the field or make the loop honor it.
 
 ### 7.6 Other rough edges
 
-These are documented in `README.md` under **Status** and are repeated here only
-as a pointer: no TLS; no unsolicited UDP vehicle announcement at power-on
+The README's **Scope and limitations** section names these for an integrator
+choosing the crate; the mechanics are here. No TLS; no unsolicited UDP vehicle announcement at power-on
 (identification requests over UDP *are* answered, but only by
 `Server::run_udp_responder` on a socket the caller binds and drives — `run_server`
 binds TCP alone — and only the broadcast `0x0001` form, since `Payload::decode`
