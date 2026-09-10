@@ -25,7 +25,6 @@ case, within these bounds:
   `DiagnosticMessage` that arrives while the client is waiting for the
   acknowledgement is dropped, so a peer that answers first appears never to
   answer at all.
-- **`ClientConnectionInfo::logical_address` is not yet tracked per connection.**
 
 [`ARCHITECTURE.md`](ARCHITECTURE.md) §7 has the mechanics behind each of these,
 and the deferred work around them.

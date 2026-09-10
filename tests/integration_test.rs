@@ -1666,3 +1666,134 @@ async fn a_failed_connection_reports_the_connect_error_not_socket_not_bound() {
         "expected the underlying connect error to survive, got: {error:?}"
     );
 }
+
+/// Handler whose routing activation either succeeds or is denied, so a test can
+/// pin what the server does with the tester's claimed address in both cases.
+/// Everything else, including `alive_check`, is the trait default.
+struct ActivationOutcomeHandler {
+    accept: bool,
+}
+
+#[async_trait]
+impl ServerConnectionHandler for ActivationOutcomeHandler {
+    fn get_vin(&self) -> [u8; 17] {
+        [0x00; 17]
+    }
+
+    fn get_logical_address(&self) -> LogicalAddress {
+        SERVER_LOGICAL_ADDRESS
+    }
+
+    fn get_entity_id(&self) -> [u8; 6] {
+        [0x00; 6]
+    }
+
+    fn get_group_id(&self) -> Option<[u8; 6]> {
+        None
+    }
+
+    async fn routing_activation(
+        &self,
+        request: &RoutingActivationRequest,
+    ) -> Result<OwnedMessage, Error> {
+        let code = if self.accept {
+            RoutingActivationResponseCode::RoutingSuccessfullyActivated
+        } else {
+            RoutingActivationResponseCode::DeniedUnknownSourceAddress
+        };
+        Ok(OwnedMessage::routing_activation_response(
+            self.protocol_version(),
+            request.source_address,
+            self.get_logical_address(),
+            code,
+            [0; 4],
+            None,
+        ))
+    }
+
+    async fn diagnostic_message(
+        &self,
+        _message: &DiagnosticMessage<'_>,
+        _responses: &mut dyn ResponseWriter,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+/// Read the source address out of an alive check response, which the default
+/// `alive_check` fills from `ClientConnectionInfo::logical_address` — so it is
+/// the observable end of what the server learned about the tester.
+fn alive_check_source_address(message: &OwnedMessage) -> LogicalAddress {
+    match &message.payload {
+        OwnedPayload::AliveCheckResponse(response) => response.source_address,
+        other => panic!("expected an alive check response, got {other:?}"),
+    }
+}
+
+/// The server must carry the logical address a tester activated routing with
+/// into `ClientConnectionInfo`, so a handler can tell which peer is asking.
+/// It reported `0x0000` for every connection before this was tracked.
+#[tokio::test]
+async fn alive_check_reports_the_activated_tester_logical_address() {
+    let (server_addr, accept_loop) =
+        start_server_with(ActivationOutcomeHandler { accept: true }).await;
+    let mut stream = with_timeout("connect", TcpStream::connect(server_addr))
+        .await
+        .expect("connect to test server");
+    let (rx, tx) = stream.split();
+    let mut reader = FramedRead::new(rx, MessageCodec::new());
+    let mut writer = FramedWrite::new(tx, MessageCodec::new());
+
+    send_routing_activation(&mut writer, CLIENT_LOGICAL_ADDRESS).await;
+    let _activation = read_message(&mut reader).await;
+
+    with_timeout(
+        "send alive check",
+        writer.send(&OwnedMessage::alive_check_request(ProtocolVersion::V2012)),
+    )
+    .await
+    .expect("send alive check");
+    let response = read_message(&mut reader).await;
+
+    assert_eq!(
+        alive_check_source_address(&response),
+        CLIENT_LOGICAL_ADDRESS,
+        "the alive check must name the address the tester activated with"
+    );
+
+    accept_loop.abort();
+}
+
+/// A denied activation leaves the tester unactivated, so its claimed address
+/// must not be attributed to the connection — reporting it would name an
+/// identity the entity refused.
+#[tokio::test]
+async fn a_denied_activation_does_not_record_the_testers_address() {
+    let (server_addr, accept_loop) =
+        start_server_with(ActivationOutcomeHandler { accept: false }).await;
+    let mut stream = with_timeout("connect", TcpStream::connect(server_addr))
+        .await
+        .expect("connect to test server");
+    let (rx, tx) = stream.split();
+    let mut reader = FramedRead::new(rx, MessageCodec::new());
+    let mut writer = FramedWrite::new(tx, MessageCodec::new());
+
+    send_routing_activation(&mut writer, CLIENT_LOGICAL_ADDRESS).await;
+    let _denial = read_message(&mut reader).await;
+
+    with_timeout(
+        "send alive check",
+        writer.send(&OwnedMessage::alive_check_request(ProtocolVersion::V2012)),
+    )
+    .await
+    .expect("send alive check");
+    let response = read_message(&mut reader).await;
+
+    assert_eq!(
+        alive_check_source_address(&response),
+        LogicalAddress(0x0000),
+        "a refused tester must not have its claimed address reported back"
+    );
+
+    accept_loop.abort();
+}

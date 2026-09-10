@@ -85,8 +85,11 @@ pub trait Connector {
     ) -> Result<(OwnedReadHalf, OwnedWriteHalf), crate::Error>;
 }
 
-// TODO: Move this to a config file
-/// Buffer size for the TCP socket
+/// Send and receive buffer size requested on the diagnostic TCP socket.
+///
+/// Fixed rather than configurable: `Connector` is the seam for a caller that
+/// needs different socket options, so a `ConnectorSocket` knob would duplicate
+/// it. Implement [`Connector`] to size these yourself.
 const BUFFER_SIZE: u32 = 1024 * 64;
 
 /// ISO 13400-2:2012 Connection to the gateway node via port 13400
