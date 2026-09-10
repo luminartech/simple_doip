@@ -1,0 +1,6 @@
+# cargo-fuzz working state: the corpus and any crash artifacts are generated,
+# machine-specific, and can grow without bound.
+target
+corpus
+artifacts
+coverage
