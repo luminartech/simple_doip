@@ -14,7 +14,7 @@ exclude = [
     ".github/",
     ".vscode/",
     # Repo-local tooling, not part of the library a consumer receives.
-    "release.toml",
+    "release-plz.toml",
     "rust-toolchain.toml",
 ]
 

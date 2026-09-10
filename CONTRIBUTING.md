@@ -47,6 +47,38 @@ Commit subjects follow [Conventional Commits](https://www.conventionalcommits.or
 change), because the changelog is organized around them. Say what changed and
 why in the body.
 
+**The pull request title is the one that counts.** The repository merges by
+squash with `squash_merge_commit_title: PR_TITLE`, so the PR title — not the
+subjects of the commits on the branch — becomes the commit subject on `main`,
+and that is what the changelog and the next version number are computed from.
+A branch whose commits are immaculate still lands as whatever the PR title
+says. CI lints the title for you.
+
+## Releases
+
+[release-plz](https://release-plz.dev) owns versioning, the changelog, tags,
+GitHub releases, and the crates.io publish. There is no release workflow in
+this repository and no version to bump by hand: a push to `main` maintains an
+open release PR, and merging that PR publishes. `release-plz.toml` holds the
+configuration, shared byte-for-byte with `uds_protocol` and
+`automotive_wire_codec`.
+
+The version comes out of the squashed subjects since the last release:
+
+| Subject | Effect while `0.x` |
+|---|---|
+| `feat:` | minor |
+| `fix:`, `perf:`, `refactor:`, `revert:`, `docs:` | patch |
+| `chore:`, `ci:`, `build:`, `test:`, `style:` | nothing on their own |
+| any of the above with `!`, or a `BREAKING CHANGE:` footer | minor |
+
+Pre-1.0 a breaking change is a minor bump, so `!` is what lifts a `fix:` out
+of a patch. Reach for it whenever a caller has to change something to keep
+working — including changes the compiler will not flag. A function that
+starts emitting different bytes breaks a caller as surely as a renamed
+argument does, and `cargo-semver-checks` inspects the API surface, so it will
+not catch that one for you.
+
 ## Licensing
 
 Contributions are dual-licensed under

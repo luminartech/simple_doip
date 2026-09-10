@@ -18,15 +18,18 @@ changed rather than what was announced at the time.
 - `LICENSE-MIT` and `LICENSE-APACHE`. The manifest had declared
   `MIT OR Apache-2.0` without carrying either text.
 - `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`.
-- `release.toml` and a tag-driven release workflow.
+- `release-plz.toml`. Versioning, the changelog, tags, GitHub releases
+  and the crates.io publish are handled by release-plz through the
+  org-wide reusable workflow, matching `uds_protocol` and
+  `automotive_wire_codec`. There is no release workflow in this repo.
 
 ### Changed
 
 - docs.rs now builds with all features, so the `client`, `server` and `codec`
   API appears in the published documentation. `default = []`, so the default
   build documents only the `no_std` core.
-- `release.toml` and `rust-toolchain.toml` are no longer packaged into the
-  published crate.
+- `release-plz.toml` and `rust-toolchain.toml` are no longer packaged into
+  the published crate.
 
 ## [0.5.2] — 2026-09-03
 
