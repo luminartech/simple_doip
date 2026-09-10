@@ -2,11 +2,12 @@
 # protocol repos (`uds_protocol`, `automotive_wire_codec`). This file owns the
 # triggers and repo-specific configuration; `luminartech/rust_workflow` owns the
 # jobs: pre-commit, lint, build, no_std canary, unit tests with coverage, miri,
-# MSRV, semver-checks, security audit, docs, and a publish dry run.
+# MSRV, semver-checks, security audit, docs, a publish dry run, and the
+# release-plz automation.
 #
-# Publishing is NOT here. `release.yml` publishes on a `v*` tag through
-# crates.io trusted publishing, which needs no stored registry token, so
-# `publish-crate` is off below.
+# Releasing is not a separate workflow: `use-release-plz` below turns on the
+# two release-plz jobs in the reusable workflow, which maintain a release PR
+# on every `main` push and publish when it merges.
 name: CI
 
 on:
@@ -32,16 +33,38 @@ concurrency:
 jobs:
   ci:
     uses: luminartech/rust_workflow/.github/workflows/rust-ci.yml@v1
+    # The test jobs downscope themselves to `contents: read`; this grant
+    # exists for the release-plz jobs, which push the release-PR branch and
+    # the release tag.
+    permissions:
+      contents: write
+      pull-requests: write
+    secrets:
+      cargo-registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      release-plz-app-id: ${{ secrets.RELEASE_PLZ_APP_ID }}
+      release-plz-app-private-key: ${{ secrets.RELEASE_PLZ_APP_PRIVATE_KEY }}
     with:
-      # `release.yml` owns publishing, through trusted publishing rather than a
-      # registry token. The dry run stays on: it is the check that the crate
+      # release-plz owns versioning, the changelog, tags, GitHub releases and
+      # the publish -- matching `uds_protocol` and `automotive_wire_codec`.
+      # It also disables the workflow's tag-gated `Release & Publish` job, so
+      # the two paths cannot both fire.
+      use-release-plz: true
+      # Restrict publishing to the canonical repo so a fork never publishes
+      # under this crate's name.
+      publish-repository: luminartech/simple_doip
+
+      # The dry run stays on for pull requests: it is the check that the crate
       # still packages, and it needs no credentials.
-      publish-crate: false
       run-publish-dry-run: true
 
       # OFF until the first version is on crates.io. `cargo-semver-checks`
       # diffs against the published baseline, and there is none yet -- turn
-      # this on in the same change that enables publishing.
+      # this on once the first release-plz publish has happened.
+      #
+      # Worth knowing when it is on: it reads the public API surface, so it
+      # catches a changed signature and not a changed behavior. A function
+      # that starts emitting different bytes passes it. Breaking changes of
+      # that kind still have to be marked `!` on the PR title by hand.
       run-semver-checks: false
 
       # OFF until the crate has cargo-fuzz targets. `cargo fuzz build` fails
