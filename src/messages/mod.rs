@@ -300,12 +300,34 @@ impl Encode for Message<'_> {
         Ok(Header::SIZE + self.payload.encoded_size()?)
     }
 
-    /// Serialize this message (header + payload) into `writer`
+    /// Serialize this message (header + payload) into `writer`.
+    ///
+    /// The header's `payload_length` is **derived from the payload** rather
+    /// than taken from `self.header`. A decoded message keeps whatever length
+    /// the wire declared, and [`Payload::decode`] is not required to consume
+    /// all of it -- so writing that field verbatim can emit a frame whose
+    /// declared length no decoder, including this one, will accept. Deriving
+    /// it means an encoded frame is always self-consistent.
+    ///
+    /// The visible consequence: for a frame that arrived with a declared
+    /// length the payload did not occupy, `decode(encode(m)).header
+    /// .payload_length` is the payload's real size, not the length `m`
+    /// arrived with.
     ///
     /// # Errors
-    /// Returns a [`MessageError`] if the header or payload cannot be serialized
+    /// Returns a [`MessageError`] if the header or payload cannot be
+    /// serialized, or [`MessageError::PayloadTooLarge`] if the payload does
+    /// not fit the `u32` length field.
     fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
-        let written = self.header.encode(writer)?;
+        let payload_length = self.payload.encoded_size()?;
+        let header = Header::new(
+            self.header.protocol_version,
+            self.header.payload_type,
+            u32::try_from(payload_length).map_err(|_| MessageError::PayloadTooLarge {
+                size: payload_length,
+            })?,
+        );
+        let written = header.encode(writer)?;
         Ok(written + self.payload.encode(writer)?)
     }
 }

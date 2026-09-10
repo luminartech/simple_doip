@@ -576,6 +576,18 @@ one TCP connection at a time; entity status and vehicle identification requests
 over TCP are silently dropped; the handler passed to `Server::new` is not
 validated.
 
+`Message::decode` still accepts a header whose `payload_length` disagrees with
+what the payload actually occupies -- it hands the payload exactly that many
+bytes and does not require them all to be consumed. `Message::encode` no longer
+propagates such a length (it derives the field), so the frame it emits is always
+self-consistent, but the lenient decode remains. ISO 13400-2 has an entity
+answer an invalid payload length with NACK `0x04`, and
+`MessageError::PayloadLengthTooShort` exists, unused, for exactly this. Making
+the decode strict is a redesign rather than a fix: `Payload::decode` would have
+to report unconsumed bytes, and the identification requests deliberately
+discard their EID/VIN body, so a `0x0002` request carrying its 6 EID bytes
+would start being rejected outright rather than declined.
+
 `RoutingActivationRequest::encode` omits the optional vehicle-manufacturer
 field when it is `None`, writing 7 bytes instead of 11. That is what the
 optionality means, and every golden vector agrees — but no vector exercises a
