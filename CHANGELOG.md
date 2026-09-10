@@ -11,7 +11,7 @@ This file was reconstructed from the commit and pull-request history when the
 crate was prepared for publication, so entries before that point describe what
 changed rather than what was announced at the time.
 
-## [Unreleased]
+## [0.6.0] — 2026-09-10
 
 ### Added
 
@@ -28,13 +28,15 @@ changed rather than what was announced at the time.
 
 ### Fixed
 
-- `Message::encode` derives the header's `payload_length` from the payload
-  instead of writing the field verbatim. A decoded message keeps whatever
-  length the wire declared, and `Payload::decode` need not consume all of it,
-  so re-encoding a frame that arrived with a mismatched length emitted a frame
-  no decoder would accept. Anything that decodes and re-emits -- a proxy, a
-  replay tool, a logging fake -- was turning a malformed-but-accepted frame
-  into a corrupt one. Consequence to know about: for such a frame,
+- **Breaking:** `Message::encode` derives the header's `payload_length` from
+  the payload instead of writing the field verbatim. A decoded message keeps
+  whatever length the wire declared, and `Payload::decode` need not consume
+  all of it, so re-encoding a frame that arrived with a mismatched length
+  emitted a frame no decoder would accept. Anything that decodes and re-emits
+  -- a proxy, a replay tool, a logging fake -- was turning a
+  malformed-but-accepted frame into a corrupt one. Nothing stops compiling;
+  what changes is the bytes emitted, which is why this is a minor bump and
+  not a patch. For such a frame,
   `decode(encode(m)).header.payload_length` is now the payload's real size
   rather than the length it arrived with.
 - `MessageError::PayloadLengthTooShort`'s message said "does match" where it
@@ -131,9 +133,10 @@ changed rather than what was announced at the time.
 Initial implementation: DoIP message types, framing, and an async client and
 server over tokio.
 
-<!-- Only v0.1.0 and v0.5.1 were ever tagged, so the intermediate versions
-     have no comparison range to link. -->
+<!-- Only v0.1.0, v0.5.1 and v0.5.2 were ever tagged, so the intermediate
+     versions have no comparison range to link. -->
 
-[Unreleased]: https://github.com/luminartech/simple_doip/compare/v0.5.1...HEAD
+[0.6.0]: https://github.com/luminartech/simple_doip/compare/v0.5.2...v0.6.0
+[0.5.2]: https://github.com/luminartech/simple_doip/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/luminartech/simple_doip/compare/v0.1.0...v0.5.1
 [0.1.0]: https://github.com/luminartech/simple_doip/releases/tag/v0.1.0
