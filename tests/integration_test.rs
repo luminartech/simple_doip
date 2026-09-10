@@ -618,7 +618,7 @@ async fn wrong_routing_activation_response_type_errors_without_panicking() {
 
 /// A [`ServerConnectionHandler`] that *denies* routing activation, mimicking a
 /// `DoIP` entity whose single `TCP_DATA` slot is already held by another tester
-/// (for example EnVision polling the same sensor).
+/// (a diagnostic tool already polling the same ECU, say).
 struct DenyingRoutingHandler;
 
 #[async_trait]
@@ -1481,7 +1481,10 @@ async fn handler_holds_pending_wait_open_between_sends() {
 
     // Bound 2: the two pendings are separated by the handler's 50ms sleep. Batched, they
     // arrive in the same flush and the gap collapses to microseconds.
-    let pending_gap = pending_at[1] - pending_at[0];
+    // `saturating_sub`, not `-`: the two instants are recorded in order, so the
+    // difference cannot be negative -- but an underflow here would panic the
+    // test rather than fail the assertion below, which reads as a hang.
+    let pending_gap = pending_at[1].saturating_sub(pending_at[0]);
     assert!(
         pending_gap >= INTERLEAVING_MARGIN,
         "the two pending responses arrived {pending_gap:?} apart (at {:?} and {:?}); the \
@@ -1505,7 +1508,8 @@ async fn handler_holds_pending_wait_open_between_sends() {
     let _ = accept_loop.await;
 }
 
-/// A raw DoIP entity that answers exactly one diagnostic request and then hangs up:
+/// A raw `DoIP` entity that answers exactly one diagnostic request and then hangs
+/// up:
 /// routing activation response, positive ack, the response itself, then close.
 ///
 /// Written against raw halves rather than [`Server`] because the point of the fixture

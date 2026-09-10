@@ -10,8 +10,13 @@ preserve when changing the crate.
 
 ## Building and testing
 
-The minimum supported Rust version is **1.88**. `default = []`, so a bare
-`cargo test` exercises only the `no_std` core:
+The minimum supported Rust version is **1.88**, declared as `rust-version` in
+`Cargo.toml`. There is deliberately no `rust-toolchain.toml`: a directory-local
+toolchain file overrides the toolchain CI installs, which silently turns the
+MSRV and miri jobs into no-ops. Use whatever stable you have, and name a
+toolchain explicitly (`cargo +1.88 build`) when you want to check the floor.
+
+`default = []`, so a bare `cargo test` exercises only the `no_std` core:
 
 ```sh
 cargo test --all-features                       # everything

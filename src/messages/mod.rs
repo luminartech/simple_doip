@@ -541,19 +541,29 @@ mod tests {
     fn test_valid_messages() {
         let buf: [u8; 9] = [0x02, 0xFD, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03];
         let deserialized_message: Message<'_> = Message::decode(&buf).unwrap().0;
-        assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2012);
-        assert!(deserialized_message.header.payload_type == PayloadType::NegativeAcknowledge);
-        assert!(deserialized_message.header.payload_length == 1);
+        assert_eq!(
+            deserialized_message.header.protocol_version,
+            ProtocolVersion::V2012
+        );
+        assert_eq!(
+            deserialized_message.header.payload_type,
+            PayloadType::NegativeAcknowledge
+        );
+        assert_eq!(deserialized_message.header.payload_length, 1);
         let buf: [u8; 15] = [
             0x01, 0xFE, 0x00, 0x01, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00,
         ];
         let deserialized_message: Message<'_> = Message::decode(&buf).unwrap().0;
-        assert!(deserialized_message.header.protocol_version == ProtocolVersion::V2010);
-        assert!(
-            deserialized_message.header.payload_type == PayloadType::VehicleIdentificationRequest
+        assert_eq!(
+            deserialized_message.header.protocol_version,
+            ProtocolVersion::V2010
         );
-        assert!(deserialized_message.header.payload_length == 7);
+        assert_eq!(
+            deserialized_message.header.payload_type,
+            PayloadType::VehicleIdentificationRequest
+        );
+        assert_eq!(deserialized_message.header.payload_length, 7);
     }
     #[test]
     fn test_invalid_inverse() {

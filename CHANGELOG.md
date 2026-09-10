@@ -31,6 +31,13 @@ changed rather than what was announced at the time.
   right source address. It stays `0x0000` before activation and after an
   activation the handler denied.
 
+### Security
+
+- The committed lockfile pinned three versions with RUSTSEC advisories against
+  them — `bytes 1.4.0`, `mio 0.8.8` and `tracing-subscriber 0.3.19`. All three
+  are refreshed past their patched versions. No manifest requirement changed;
+  every one was already permitted.
+
 ### Changed
 
 - docs.rs now builds with all features, so the `client`, `server` and `codec`
