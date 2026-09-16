@@ -14,6 +14,7 @@
 //! against the pre-`no_std` `write`/`read` API that 0.2.0 removed. The
 //! properties are his; the calls are rewritten for `Encode`/`Decode`.
 
+use automotive_wire_codec::SliceSink;
 use proptest::prelude::*;
 use simple_doip::{
     LogicalAddress,
@@ -26,14 +27,14 @@ use simple_doip::{
     },
 };
 
-/// Encode into a fixed buffer the way a bare-metal caller would -- a `&mut [u8]`
-/// is the `embedded_io::Write` this crate is built around -- and return the
-/// written prefix. Also asserts `encoded_size()` agrees with what `encode`
+/// Encode into a fixed buffer the way a bare-metal caller would -- a
+/// [`SliceSink`] over a `&mut [u8]` is the `Sink` this crate is built around --
+/// and return the written prefix. Also asserts `encoded_size()` agrees with what `encode`
 /// wrote, since a closed-form size override that drifts from its `encode`
 /// corrupts the header's `payload_length` silently.
 fn encode_to<'buf>(value: &impl Encode<Error = MessageError>, buf: &'buf mut [u8]) -> &'buf [u8] {
     let written = {
-        let mut writer: &mut [u8] = buf;
+        let mut writer = SliceSink::new(buf);
         value.encode(&mut writer).expect("encode failed")
     };
     assert_eq!(
@@ -330,7 +331,7 @@ fn frame<'buf>(
         u32::try_from(payload_len).expect("payload fits in u32"),
     );
     let written = {
-        let mut writer: &mut [u8] = buf;
+        let mut writer = SliceSink::new(buf);
         header.encode(&mut writer).expect("header encode failed")
             + payload.encode(&mut writer).expect("payload encode failed")
     };

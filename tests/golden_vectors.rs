@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 use std::{env, fs};
 
+use automotive_wire_codec::SliceSink;
 use simple_doip::LogicalAddress;
 use simple_doip::messages::{
     ActivationTypeCode, AliveCheckResponse, DiagnosticAckCode, DiagnosticMessage,
@@ -50,7 +51,7 @@ fn check_bytes(name: &str, bytes: &[u8]) {
 fn check(name: &str, value: &impl Encode<Error = MessageError>) {
     let mut buf = [0u8; 128];
     let written = {
-        let mut writer: &mut [u8] = &mut buf;
+        let mut writer = SliceSink::new(&mut buf);
         value.encode(&mut writer).expect("encode failed")
     };
     // encoded_size() must agree with what encode() actually wrote. A mismatch means a
@@ -79,7 +80,7 @@ fn check_frame(
     );
     let mut buf = [0u8; 128];
     let written = {
-        let mut writer: &mut [u8] = &mut buf;
+        let mut writer = SliceSink::new(&mut buf);
         let header_written = header.encode(&mut writer).expect("header encode failed");
         let payload_written = payload.encode(&mut writer).expect("payload encode failed");
         header_written + payload_written

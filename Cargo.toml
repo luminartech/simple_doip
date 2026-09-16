@@ -26,8 +26,7 @@ exclude = [
 all-features = true
 
 [dependencies]
-automotive-wire-codec = "0.3"
-embedded-io = { version = "0.7", default-features = false }
+automotive-wire-codec = { path = "../../automotive_wire_format" }
 strum = { version = "0.27", default-features = false, features = ["derive"] }
 thiserror = { version = "2", default-features = false }
 tracing = { version = "0.1", default-features = false, optional = true }
@@ -51,8 +50,8 @@ tracing-subscriber = { version = "0.3", features = ["fmt"] }
 
 [features]
 default = []
-alloc = ["embedded-io/alloc"]
-std = ["alloc", "embedded-io/std", "thiserror/std", "dep:tracing", "tracing/std"]
+alloc = []
+std = ["alloc", "thiserror/std", "dep:tracing", "tracing/std"]
 codec = ["std", "dep:tokio", "dep:tokio-util", "dep:bytes"]
 client = ["codec", "dep:async-trait", "dep:futures"]
 server = ["codec", "dep:async-trait", "dep:futures"]

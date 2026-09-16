@@ -2,7 +2,7 @@ use core::fmt;
 
 use crate::logical_address::LogicalAddress;
 
-use automotive_wire_codec::{read_u8, read_u16_be, write_all, write_u8, write_u16_be};
+use automotive_wire_codec::{read_u8, read_u16_be, write_bytes, write_u8, write_u16_be};
 
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
@@ -203,12 +203,12 @@ impl Encode for DiagnosticMessageAck<'_> {
     ///
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
         write_u16_be(writer, self.source_address.into())?;
         write_u16_be(writer, self.target_address.into())?;
         write_u8(writer, self.ack_code.into())?;
         let previous_message_data = self.previous_message_data;
-        write_all(writer, previous_message_data)?;
+        write_bytes(writer, previous_message_data)?;
         Ok(5 + previous_message_data.len())
     }
 }

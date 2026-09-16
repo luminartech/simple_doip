@@ -73,9 +73,14 @@ impl Encoder<&OwnedMessage> for MessageCodec {
     type Error = MessageError;
     fn encode(&mut self, message: &OwnedMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let size = message.encoded_size()?;
+        // `automotive_wire_codec` ships no growable sink (see MIGRATION notes),
+        // and the orphan rule blocks a local `Sink for Vec<u8>`/`BytesMut` impl
+        // here. `size` is the exact byte count `encode` will write, so a slice
+        // sized to it is bounded and exact, not actually open-ended.
+        let mut out = std::vec![0u8; size];
+        let mut sink = automotive_wire_codec::SliceSink::new(&mut out);
+        message.encode(&mut sink)?;
         dst.reserve(size);
-        let mut out = std::vec::Vec::with_capacity(size);
-        message.encode(&mut out)?;
         dst.extend_from_slice(&out);
         Ok(())
     }

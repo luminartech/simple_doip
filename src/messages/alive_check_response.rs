@@ -44,7 +44,7 @@ impl Encode for AliveCheckResponse {
     ///
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
         write_u16_be(writer, self.source_address.into())?;
         Ok(2)
     }

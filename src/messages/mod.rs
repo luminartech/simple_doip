@@ -318,7 +318,7 @@ impl Encode for Message<'_> {
     /// Returns a [`MessageError`] if the header or payload cannot be
     /// serialized, or [`MessageError::PayloadTooLarge`] if the payload does
     /// not fit the `u32` length field.
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
         let payload_length = self.payload.encoded_size()?;
         let header = Header::new(
             self.header.protocol_version,
@@ -531,7 +531,7 @@ impl Encode for OwnedMessage {
         self.as_ref().encoded_size()
     }
 
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
         self.as_ref().encode(writer)
     }
 }
@@ -556,6 +556,7 @@ impl Default for OwnedMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use automotive_wire_codec::SliceSink;
     use header::{PayloadType, ProtocolVersion};
 
     /// Check that we properly decode and encode hex bytes
@@ -614,7 +615,7 @@ mod tests {
 
         let mut buf = [0u8; 64];
         let written = {
-            let mut writer: &mut [u8] = &mut buf;
+            let mut writer = SliceSink::new(&mut buf);
             message.encode(&mut writer).unwrap()
         };
 
@@ -645,7 +646,7 @@ mod tests {
 
         let mut buf = [0u8; 64];
         let written = {
-            let mut writer: &mut [u8] = &mut buf;
+            let mut writer = SliceSink::new(&mut buf);
             message.encode(&mut writer).unwrap()
         };
 
@@ -677,7 +678,7 @@ mod tests {
 
         let mut buf = [0u8; 64];
         let written = {
-            let mut writer: &mut [u8] = &mut buf;
+            let mut writer = SliceSink::new(&mut buf);
             message.encode(&mut writer).unwrap()
         };
 

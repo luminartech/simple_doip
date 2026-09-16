@@ -530,15 +530,19 @@ where
 
             // Mirrors `MessageCodec`'s `Encoder` impl: size the message, encode
             // into a `Vec`, then write it. There is no framing to do - a
-            // datagram is already one message.
+            // datagram is already one message. `automotive_wire_codec` ships no
+            // growable sink, so the `Vec` is pre-sized to the exact byte count
+            // `encoded_size` reports and written through a `SliceSink` over it,
+            // rather than relying on push-growth.
             let mut encoded = match reply.encoded_size() {
-                Ok(size) => std::vec::Vec::with_capacity(size),
+                Ok(size) => std::vec![0u8; size],
                 Err(size_error) => {
                     warn!("Failed to size identification response for {peer}: {size_error}");
                     continue;
                 }
             };
-            if let Err(encode_error) = reply.encode(&mut encoded) {
+            let mut sink = automotive_wire_codec::SliceSink::new(&mut encoded);
+            if let Err(encode_error) = reply.encode(&mut sink) {
                 warn!("Failed to encode identification response for {peer}: {encode_error}");
                 continue;
             }

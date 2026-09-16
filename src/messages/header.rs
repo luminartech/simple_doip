@@ -268,7 +268,7 @@ impl Encode for Header {
     ///
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
         write_u8(writer, self.protocol_version.into())?;
         write_u8(writer, self.inverse_protocol_version)?;
         write_u16_be(writer, self.payload_type.into())?;

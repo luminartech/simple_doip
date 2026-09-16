@@ -4,7 +4,7 @@ use core::fmt::UpperHex;
 use crate::LogicalAddress;
 
 use automotive_wire_codec::{
-    read_array, read_optional_array, read_u8, read_u16_be, write_all, write_u8, write_u16_be,
+    read_array, read_optional_array, read_u8, read_u16_be, write_bytes, write_u8, write_u16_be,
 };
 
 use super::message_error::MessageError;
@@ -145,12 +145,12 @@ impl Encode for RoutingActivationRequest {
     ///
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
         write_u16_be(writer, self.source_address.into())?;
         write_u8(writer, self.activation_type.into())?;
-        write_all(writer, &self.reserved)?;
+        write_bytes(writer, &self.reserved)?;
         if let Some(reserved_vehicle_manufacturer) = self.reserved_vehicle_manufacturer {
-            write_all(writer, &reserved_vehicle_manufacturer)?;
+            write_bytes(writer, &reserved_vehicle_manufacturer)?;
             return Ok(11);
         }
         Ok(7)

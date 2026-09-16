@@ -286,7 +286,7 @@ impl Encode for Payload<'_> {
     ///
     /// # Errors
     /// Returns a [`MessageError`] if the payload cannot be serialized
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
         Ok(match self {
             Payload::DoIPNack(nack) => nack.encode(writer)?,
             Payload::AliveCheckRequest
@@ -326,6 +326,7 @@ mod tests {
     use super::*;
     use crate::LogicalAddress;
     use crate::messages::{FurtherActionRequired, VinGidSyncStatus};
+    use automotive_wire_codec::SliceSink;
 
     /// A peer sending a payload type we cannot decode (e.g. a reserved type) must return
     /// an error, never panic (regression test for `todo!()` decode arms).
@@ -372,7 +373,7 @@ mod tests {
 
         let mut buf = [0u8; 64];
         let written = {
-            let mut writer: &mut [u8] = &mut buf;
+            let mut writer = SliceSink::new(&mut buf);
             payload.encode(&mut writer).unwrap()
         };
         assert_eq!(written, payload.encoded_size().unwrap());

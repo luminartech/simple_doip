@@ -1,5 +1,6 @@
 //! The embedded-server TX hot path: encode a `DoIP` header + diagnostic payload into ONE
 //! stack buffer, no staging buffer, using `encoded_size` to pre-size the header.
+use automotive_wire_codec::{InsufficientBuffer, SliceSink, WriteError};
 use simple_doip::messages::{
     DiagnosticMessage, Encode, Header, MessageError, Payload, PayloadType, ProtocolVersion,
 };
@@ -24,7 +25,7 @@ fn nested_encode_no_staging_buffer() {
 
     // 2. One stack buffer, two sequential encodes.
     let mut tx_buf = [0u8; 64];
-    let mut writer: &mut [u8] = &mut tx_buf;
+    let mut writer = SliceSink::new(&mut tx_buf);
     let mut total = header.encode(&mut writer).unwrap();
     total += dm.encode(&mut writer).unwrap();
     assert_eq!(total, Header::SIZE + payload_len);
@@ -38,16 +39,22 @@ fn nested_encode_no_staging_buffer() {
         other => panic!("wrong payload: {other:?}"),
     }
 
-    // 4. Too-small buffer errors recoverably (no panic): embedded-io's `&mut [u8]`
-    //    writer surfaces exhaustion as `Io(WriteZero)` — recoverable per the tier
-    //    classifier. Pinned here so a future change cannot turn buffer exhaustion on
-    //    this path into a panic or a framing-fatal error.
+    // 4. Too-small buffer errors recoverably (no panic): a `SliceSink` surfaces
+    //    exhaustion as `Io(WriteError::Insufficient(..))` with counts attached
+    //    — recoverable per the tier classifier. Pinned here so a future change
+    //    cannot turn buffer exhaustion on this path into a panic or a
+    //    framing-fatal error. `needed` (8) is a lower bound: 4 bytes already
+    //    written plus the 4-byte `write_u32_be` that failed, not the header's
+    //    full 8-byte size (which happens to coincide here).
     let mut small = [0u8; 4];
-    let mut w: &mut [u8] = &mut small;
+    let mut w = SliceSink::new(&mut small);
     let err = header.encode(&mut w).unwrap_err();
     assert!(matches!(
         err,
-        MessageError::Io(embedded_io::ErrorKind::WriteZero)
+        MessageError::Io(WriteError::Insufficient(InsufficientBuffer {
+            needed: 8,
+            available: 4
+        }))
     ));
     assert!(!err.is_framing_fatal());
 }

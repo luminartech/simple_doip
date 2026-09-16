@@ -88,7 +88,7 @@ impl Encode for EntityStatusResponse {
     ///
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
         write_u8(writer, self.node_type.into())?;
         write_u8(writer, self.max_concurrent_tcp_sockets)?;
         write_u8(writer, self.open_tcp_sockets)?;

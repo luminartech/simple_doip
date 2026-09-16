@@ -1,7 +1,7 @@
 use crate::logical_address::LogicalAddress;
 
 use automotive_wire_codec::{
-    read_array, read_optional_array, read_u8, read_u16_be, write_all, write_u8, write_u16_be,
+    read_array, read_optional_array, read_u8, read_u16_be, write_bytes, write_u8, write_u16_be,
 };
 
 use super::message_error::MessageError;
@@ -157,13 +157,13 @@ impl Encode for RoutingActivationResponse {
     ///
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
         write_u16_be(writer, self.logical_address_tester.into())?;
         write_u16_be(writer, self.logical_address_of_doip_entity.into())?;
         write_u8(writer, self.routing_activation_response_code.into())?;
-        write_all(writer, &self.reserved_oem)?;
+        write_bytes(writer, &self.reserved_oem)?;
         if let Some(oem_specific) = self.oem_specific {
-            write_all(writer, &oem_specific)?;
+            write_bytes(writer, &oem_specific)?;
         }
         Ok(9 + self.oem_specific.map_or(0, |_| 4))
     }
