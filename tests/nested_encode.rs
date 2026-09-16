@@ -43,16 +43,16 @@ fn nested_encode_no_staging_buffer() {
     //    exhaustion as `Io(WriteError::Insufficient(..))` with counts attached
     //    — recoverable per the tier classifier. Pinned here so a future change
     //    cannot turn buffer exhaustion on this path into a panic or a
-    //    framing-fatal error. `needed` (8) is a lower bound: 4 bytes already
-    //    written plus the 4-byte `write_u32_be` that failed, not the header's
-    //    full 8-byte size (which happens to coincide here).
+    //    framing-fatal error. `needed_at_least` (8) is a lower bound: 4 bytes
+    //    already written plus the 4-byte `write_u32_be` that failed, not the
+    //    header's full 8-byte size (which happens to coincide here).
     let mut small = [0u8; 4];
     let mut w = SliceSink::new(&mut small);
     let err = header.encode(&mut w).unwrap_err();
     assert!(matches!(
         err,
         MessageError::Io(WriteError::Insufficient(InsufficientBuffer {
-            needed: 8,
+            needed_at_least: 8,
             available: 4
         }))
     ));
