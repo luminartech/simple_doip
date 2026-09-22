@@ -8,6 +8,7 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
+automotive-wire-codec = { path = "../../../automotive_wire_format" }
 libfuzzer-sys = "0.4"
 simple_doip = { path = "..", features = ["client", "server"] }
 bytes = "1"

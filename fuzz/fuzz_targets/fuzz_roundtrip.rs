@@ -1,5 +1,6 @@
 #![no_main]
 
+use automotive_wire_codec::SliceSink;
 use libfuzzer_sys::fuzz_target;
 use simple_doip::messages::{Decode, Encode, Message};
 
@@ -21,7 +22,7 @@ fuzz_target!(|data: &[u8]| {
     };
     let mut encoded = vec![0u8; size];
     {
-        let mut writer: &mut [u8] = &mut encoded;
+        let mut writer = SliceSink::new(&mut encoded);
         if message.encode(&mut writer).is_err() {
             return;
         }
@@ -50,7 +51,7 @@ fuzz_target!(|data: &[u8]| {
     // field order asymmetry, now that the length no longer masks it.
     let mut again = vec![0u8; reparsed.encoded_size().expect("size of a decoded message")];
     {
-        let mut writer: &mut [u8] = &mut again;
+        let mut writer = SliceSink::new(&mut again);
         reparsed
             .encode(&mut writer)
             .expect("re-encode must not fail");

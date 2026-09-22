@@ -6,6 +6,7 @@
 //! touches the `core`-only API surface of `simple_doip`. It compiles cleanly
 //! with `cargo build --example bare_metal_codec --no-default-features`.
 
+use automotive_wire_codec::SliceSink;
 use simple_doip::messages::{ActivationTypeCode, Encode, Message, Payload, ProtocolVersion};
 use simple_doip::{LogicalAddress, try_frame};
 
@@ -20,7 +21,7 @@ fn main() {
 
     let mut routing_buf = [0u8; 64];
     let routing_written = {
-        let mut writer: &mut [u8] = &mut routing_buf[..];
+        let mut writer = SliceSink::new(&mut routing_buf[..]);
         routing_request
             .encode(&mut writer)
             .expect("encoding a routing activation request should not fail")
@@ -54,7 +55,7 @@ fn main() {
 
     let mut diagnostic_buf = [0u8; 64];
     let diagnostic_written = {
-        let mut writer: &mut [u8] = &mut diagnostic_buf[..];
+        let mut writer = SliceSink::new(&mut diagnostic_buf[..]);
         diagnostic_message
             .encode(&mut writer)
             .expect("encoding a diagnostic message should not fail")

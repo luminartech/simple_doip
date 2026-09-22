@@ -28,6 +28,7 @@ use crate::messages::{
     ProtocolVersion, RoutingActivationRequest, VehicleIdentificationResponse, VinGidSyncStatus,
 };
 use crate::{LogicalAddress, try_frame};
+use automotive_wire_codec::SliceSink;
 
 /// Version stamped into every response header. V2012 (0x02) is the version
 /// deployed diagnostic testers negotiate by default.
@@ -288,7 +289,7 @@ fn framed(payload_type: PayloadType, payload: Payload<'_>) -> Option<Message<'_>
 }
 
 fn encode_into(buf: &mut [u8], msg: &Message<'_>) -> Option<usize> {
-    let mut writer: &mut [u8] = buf;
+    let mut writer = SliceSink::new(buf);
     msg.encode(&mut writer).ok()
 }
 
@@ -716,7 +717,7 @@ mod tests {
             PayloadType::DiagnosticMessage,
             u32::try_from(MAX_RX_PAYLOAD + 1).expect("test payload length fits in u32"),
         );
-        let mut writer: &mut [u8] = &mut header;
+        let mut writer = SliceSink::new(&mut header);
         msg.encode(&mut writer).unwrap();
 
         assert_eq!(entity.on_tcp_rx(&header), TcpVerdict::Close);

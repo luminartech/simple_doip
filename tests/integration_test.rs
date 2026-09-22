@@ -17,6 +17,7 @@
 //! Implementation" example in `src/connection.rs`) and requires no changes to `src/`.
 
 use async_trait::async_trait;
+use automotive_wire_codec::SliceSink;
 use futures::{SinkExt, StreamExt};
 use simple_doip::{
     Error, LogicalAddress,
@@ -447,7 +448,7 @@ async fn unsupported_payload_type_does_not_kill_server() {
     );
     let mut activation_bytes = vec![0u8; routing_activation_request.encoded_size().unwrap()];
     let written = {
-        let mut writer: &mut [u8] = &mut activation_bytes;
+        let mut writer = SliceSink::new(&mut activation_bytes);
         routing_activation_request.encode(&mut writer).unwrap()
     };
     activation_bytes.truncate(written);

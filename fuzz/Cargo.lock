@@ -21,12 +21,7 @@ dependencies = [
 
 [[package]]
 name = "automotive-wire-codec"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3619f2db27c70d93c5390ce2e90482c26c99675a85392271d2bfe07451234f6"
-dependencies = [
- "embedded-io",
-]
+version = "0.4.0"
 
 [[package]]
 name = "bytes"
@@ -51,12 +46,6 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
-
-[[package]]
-name = "embedded-io"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9eb1aa714776b75c7e67e1da744b81a129b3ff919c8712b5e1b32252c1f07cc7"
 
 [[package]]
 name = "find-msvc-tools"
@@ -261,7 +250,6 @@ dependencies = [
  "async-trait",
  "automotive-wire-codec",
  "bytes",
- "embedded-io",
  "futures",
  "strum",
  "thiserror",
@@ -274,6 +262,7 @@ dependencies = [
 name = "simple_doip-fuzz"
 version = "0.0.0"
 dependencies = [
+ "automotive-wire-codec",
  "bytes",
  "libfuzzer-sys",
  "simple_doip",

@@ -1,6 +1,6 @@
 use crate::LogicalAddress;
 
-use automotive_wire_codec::{read_u16_be, write_all, write_u16_be};
+use automotive_wire_codec::{read_u16_be, write_bytes, write_u16_be};
 
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
@@ -101,11 +101,11 @@ impl Encode for DiagnosticMessage<'_> {
     ///
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
         write_u16_be(writer, self.source_address.into())?;
         write_u16_be(writer, self.target_address.into())?;
         let user_data = self.user_data;
-        write_all(writer, user_data)?;
+        write_bytes(writer, user_data)?;
         Ok(4 + user_data.len())
     }
 }

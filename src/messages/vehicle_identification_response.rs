@@ -1,6 +1,8 @@
 use crate::logical_address::LogicalAddress;
 
-use automotive_wire_codec::{read_array, read_u8, read_u16_be, write_all, write_u8, write_u16_be};
+use automotive_wire_codec::{
+    read_array, read_u8, read_u16_be, write_bytes, write_u8, write_u16_be,
+};
 
 use super::message_error::MessageError;
 use super::traits::{Decode, Encode};
@@ -150,14 +152,14 @@ impl Encode for VehicleIdentificationResponse {
     ///
     /// # Errors
     /// Returns [`MessageError::Io`] if the writer fails.
-    fn encode(&self, writer: &mut impl embedded_io::Write) -> Result<usize, MessageError> {
-        write_all(writer, &self.vin)?;
+    fn encode(&self, writer: &mut impl automotive_wire_codec::Sink) -> Result<usize, MessageError> {
+        write_bytes(writer, &self.vin)?;
         write_u16_be(writer, self.logical_address.into())?;
-        write_all(writer, &self.entity_id)?;
+        write_bytes(writer, &self.entity_id)?;
         if let Some(group_id) = self.group_id {
-            write_all(writer, &group_id)?;
+            write_bytes(writer, &group_id)?;
         } else {
-            write_all(writer, &[0x00; 6])?;
+            write_bytes(writer, &[0x00; 6])?;
         }
         write_u8(writer, self.further_action.into())?;
         write_u8(writer, self.vin_gid_sync_status.into())?;

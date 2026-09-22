@@ -11,13 +11,14 @@
 //! well-formed, but both are accepted, and being accepted is what put them on
 //! the re-encode path.
 
+use automotive_wire_codec::SliceSink;
 use simple_doip::messages::{Decode, Encode, Message, Payload, PayloadType};
 
 /// Encode `message` into a fresh buffer sized by `encoded_size`.
 fn encode(message: &Message<'_>) -> Vec<u8> {
     let mut buf = vec![0u8; message.encoded_size().expect("encoded_size failed")];
     {
-        let mut writer: &mut [u8] = &mut buf;
+        let mut writer = SliceSink::new(&mut buf);
         message.encode(&mut writer).expect("encode failed");
     }
     buf

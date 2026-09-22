@@ -156,15 +156,15 @@ where
                                 last_activity = tokio::time::Instant::now();
                                 // Socket-level errors from the tokio layer arrive as
                                 // `MessageError::Std`, preserving OS error detail.
-                                // `MessageError::Io` is encode-side only (embedded-io
-                                // short writes) and is not expected on this RX path, but
-                                // is classified identically so the match stays honest.
+                                // `MessageError::Io` is encode-side only (a `Sink`
+                                // write failure, e.g. an undersized buffer), is not
+                                // expected on this RX path, and its `WriteError`
+                                // payload carries no socket-level detail at all -- so
+                                // it falls through to the catch-all below along with
+                                // every other non-I/O variant.
                                 let reset = match &e {
                                     MessageError::Std(io_err) => {
                                         Some(io_err.kind() == std::io::ErrorKind::ConnectionReset)
-                                    }
-                                    MessageError::Io(kind) => {
-                                        Some(*kind == embedded_io::ErrorKind::ConnectionReset)
                                     }
                                     _ => None,
                                 };

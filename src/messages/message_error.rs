@@ -9,7 +9,7 @@
 //! | `Incomplete` | framing-fatal | wire decode |
 //! | `TrailingBytes` | recoverable | wire decode |
 //! | `PayloadLengthTooShort`, `UnexpectedPayloadType`, `UnsupportedPayloadType` | recoverable (body) | wire decode |
-//! | `Io` | recoverable (TX-side short write, e.g. `Io(WriteZero)` on an undersized stack buffer) | encode / embedded-io |
+//! | `Io` | recoverable (TX-side short write, e.g. `Io(WriteError::Insufficient(..))` on an undersized stack buffer) | encode / automotive-wire-codec |
 //! | `Std` | not a frame property at all | tokio/codec boundary |
 
 use crate::messages::header::PayloadType;
@@ -89,11 +89,12 @@ pub enum MessageError {
     /// framing itself succeeded, only the body was longer than expected.
     #[error(transparent)]
     TrailingBytes(#[from] TrailingBytes),
-    /// An [`embedded_io`] write failed while encoding a message (e.g. `WriteZero`
-    /// from an undersized stack buffer). Recoverable on the TX side: the caller can
-    /// retry with a larger buffer.
-    #[error("I/O error: {0:?}")]
-    Io(embedded_io::ErrorKind),
+    /// A [`Sink`](automotive_wire_codec::Sink) write failed while encoding a
+    /// message (e.g. [`WriteError::Insufficient`](automotive_wire_codec::WriteError::Insufficient)
+    /// from an undersized stack buffer). Recoverable on the TX side: the caller
+    /// can retry with a larger buffer.
+    #[error(transparent)]
+    Io(#[from] automotive_wire_codec::WriteError),
     /// Full `std::io::Error` from the tokio/codec layer, preserving the OS error detail
     /// (code and message) that the flattened [`MessageError::Io`] kind would lose. The
     /// `no_std` core never produces this variant.
@@ -115,16 +116,11 @@ impl MessageError {
     }
 }
 
-impl From<embedded_io::ErrorKind> for MessageError {
-    fn from(kind: embedded_io::ErrorKind) -> Self {
-        MessageError::Io(kind)
-    }
-}
-
 /// Required by `tokio_util::codec::Decoder` (its `Error` must be `From<std::io::Error>`).
 ///
 /// Preserves the full [`std::io::Error`] (OS code and message) rather than flattening to
-/// an [`embedded_io::ErrorKind`], so the tokio layer keeps actionable error detail.
+/// a bare [`WriteError`](automotive_wire_codec::WriteError), so the tokio layer keeps
+/// actionable error detail.
 #[cfg(feature = "std")]
 impl From<std::io::Error> for MessageError {
     fn from(err: std::io::Error) -> Self {
