@@ -11,6 +11,12 @@ This file was reconstructed from the commit and pull-request history when the
 crate was prepared for publication, so entries before that point describe what
 changed rather than what was announced at the time.
 
+## [0.6.1](https://github.com/luminartech/simple_doip/compare/v0.6.0...v0.6.1) - 2026-09-22
+
+### Documentation
+
+- add a code of conduct and code owners ([#19](https://github.com/luminartech/simple_doip/pull/19))
+
 ## [0.6.0] — 2026-09-10
 
 ### Added
